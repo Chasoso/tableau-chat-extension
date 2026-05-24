@@ -164,6 +164,7 @@ Resources:
   HttpApi:
     Type: AWS::ApiGatewayV2::Api
     Properties:
+      Name: !Sub "${AWS::StackName}-http-api"
       ProtocolType: HTTP
       CorsConfiguration:
         AllowCredentials: false
