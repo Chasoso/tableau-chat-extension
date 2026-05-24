@@ -1,0 +1,26 @@
+{
+  "name": "tableau-chat-extension-backend",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "tsx src/localServer.ts",
+    "build": "tsc",
+    "build:lambda": "esbuild src/handlers/chatHandler.ts src/handlers/healthHandler.ts --bundle --platform=node --target=node22 --format=cjs --outdir=dist-lambda --sourcemap --minify",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@aws-sdk/client-dynamodb": "^3.850.0",
+    "@aws-sdk/client-secrets-manager": "^3.850.0",
+    "@aws-sdk/util-dynamodb": "^3.850.0",
+    "jsonwebtoken": "^9.0.2"
+  },
+  "devDependencies": {
+    "@types/jsonwebtoken": "^9.0.10",
+    "@types/node": "^24.0.0",
+    "tsx": "^4.20.0",
+    "typescript": "^5.8.0",
+    "esbuild": "^0.25.0",
+    "vitest": "^3.2.0"
+  }
+}

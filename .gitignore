@@ -1,0 +1,16 @@
+node_modules/
+dist/
+dist-lambda/
+coverage/
+.env
+.env.*
+!.env.example
+*.log
+*.zip
+*.tsbuildinfo
+.aws-sam/
+.DS_Store
+frontend/.vite/
+backend/.serverless/
+backend/cdk.out/
+
