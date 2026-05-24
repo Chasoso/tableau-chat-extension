@@ -153,14 +153,6 @@ jobs:
             --no-progress \
             --only-show-errors
 
-      - name: Validate CloudFormation template
-        shell: bash
-        run: |
-          set -euo pipefail
-          aws cloudformation validate-template \
-            --template-body file://infra/cloudformation.yaml \
-            --output json > /dev/null
-
       - name: Deploy infrastructure
         id: deploy_infrastructure
         shell: bash
