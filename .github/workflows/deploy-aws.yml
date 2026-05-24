@@ -153,7 +153,16 @@ jobs:
             --no-progress \
             --only-show-errors
 
+      - name: Validate CloudFormation template
+        shell: bash
+        run: |
+          set -euo pipefail
+          aws cloudformation validate-template \
+            --template-body file://infra/cloudformation.yaml \
+            --output json > /dev/null
+
       - name: Deploy infrastructure
+        id: deploy_infrastructure
         shell: bash
         run: |
           set -euo pipefail
@@ -177,6 +186,35 @@ jobs:
               TableauDefaultSubject="$TABLEAU_DEFAULT_SUBJECT" \
               TableauScopes="$TABLEAU_SCOPES" \
               TableauContextProvider="$TABLEAU_CONTEXT_PROVIDER"
+
+      - name: Show sanitized CloudFormation failure events
+        if: failure() && steps.deploy_infrastructure.outcome == 'failure'
+        shell: bash
+        run: |
+          set -euo pipefail
+          aws cloudformation describe-stack-events \
+            --stack-name "$STACK_NAME" \
+            --max-items 30 \
+            --output json \
+            | jq -r '
+              .StackEvents[]
+              | select(.ResourceStatus | test("FAILED$"))
+              | [
+                  .Timestamp,
+                  .LogicalResourceId,
+                  .ResourceType,
+                  .ResourceStatus,
+                  (.ResourceStatusReason // "No reason provided")
+                ]
+              | @tsv
+            ' \
+            | sed -E \
+              -e 's/[0-9]{12}/<account-id>/g' \
+              -e 's#arn:aws[a-zA-Z-]*:[^[:space:]]+#<aws-arn>#g' \
+              -e 's#[a-z0-9.-]+\.cloudfront\.net#<cloudfront-domain>#g' \
+              -e 's#[a-z0-9]+\.execute-api\.[a-z0-9-]+\.amazonaws\.com#<api-gateway-domain>#g' \
+              -e 's#https://[^[:space:]]+#<url>#g' \
+              -e 's#s3://[^[:space:]]+#s3://<bucket-or-key>#g'
 
       - name: Upload frontend and invalidate cache
         shell: bash

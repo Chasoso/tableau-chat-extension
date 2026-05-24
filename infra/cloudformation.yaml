@@ -331,6 +331,7 @@ Resources:
   ApiPathRewriteFunction:
     Type: AWS::CloudFront::Function
     Properties:
+      Name: !Sub "${AWS::StackName}-api-rewrite-v2"
       AutoPublish: true
       FunctionConfig:
         Comment: Rewrite /api/* requests to the API Gateway default stage paths.

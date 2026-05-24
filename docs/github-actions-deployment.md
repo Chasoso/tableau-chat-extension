@@ -395,7 +395,9 @@ If `AWS::Lambda::Function` fails with an S3 `AccessDenied` error for `backend.zi
 
 Attach this to the CloudFormation execution role, not the GitHub OIDC deploy role. The GitHub role uploads the zip, but CloudFormation creates the Lambda function and must read the zip. If the artifact bucket uses SSE-KMS with a customer-managed KMS key, also allow `kms:Decrypt` for that key.
 
-If `AWS::CloudFront::Function` fails with `AlreadyExists`, an old manually-created or previously-rolled-back CloudFront Function may still exist with the same name. This template lets CloudFormation generate the function name to avoid name collisions. If you previously deployed a version that set a fixed `Name`, delete the orphaned function from CloudFront or rerun with this updated template.
+If `AWS::CloudFront::Function` fails with `AlreadyExists`, an old manually-created or previously-rolled-back CloudFront Function may still exist with the same name. CloudFront Function requires a `Name`, so this template uses a versioned name: `${AWS::StackName}-api-rewrite-v2`. If this name also collides, delete the orphaned function from CloudFront or bump the suffix in `infra/cloudformation.yaml`.
+
+If change set creation fails with `AWS::EarlyValidation::PropertyValidation` after editing the CloudFront Function, check that the function still has a `Name`. `AWS::CloudFront::Function` does not allow omitting `Name`.
 
 ### Logging Rules
 
@@ -806,7 +808,9 @@ HttpApi:
 
 これは GitHub OIDC deploy role ではなく、CloudFormation execution role に付けます。GitHub role は zip をアップロードしますが、Lambda 関数を作るのは CloudFormation なので、CloudFormation 側が zip を読む必要があります。artifact bucket が customer-managed KMS key の SSE-KMS を使っている場合は、その key に対する `kms:Decrypt` も許可してください。
 
-`AWS::CloudFront::Function` が `AlreadyExists` で失敗する場合は、古い手動作成リソースまたは以前のロールバックで残った CloudFront Function が同じ名前で存在している可能性があります。このテンプレートでは、名前衝突を避けるため CloudFormation に function 名を自動生成させます。過去に固定 `Name` を設定したテンプレートで実行済みの場合は、CloudFront から orphaned function を削除するか、この更新済みテンプレートで再実行してください。
+`AWS::CloudFront::Function` が `AlreadyExists` で失敗する場合は、古い手動作成リソースまたは以前のロールバックで残った CloudFront Function が同じ名前で存在している可能性があります。CloudFront Function は `Name` が必須なので、このテンプレートでは version 付きの `${AWS::StackName}-api-rewrite-v2` を使います。この名前でも衝突する場合は、CloudFront から orphaned function を削除するか、`infra/cloudformation.yaml` の suffix を上げてください。
+
+CloudFront Function を編集した後に change set 作成が `AWS::EarlyValidation::PropertyValidation` で失敗する場合は、function に `Name` が残っているか確認してください。`AWS::CloudFront::Function` は `Name` 省略を許可しません。
 
 ### ログ出力ルール
 
