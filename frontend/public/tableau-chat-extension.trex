@@ -9,6 +9,7 @@
     <source-location>
       <url>http://localhost:5173/</url>
     </source-location>
+    <icon>iVBORw0KGgoAAAANSUhEUgAAAEYAAABGCAYAAABxLuKEAAABJUlEQVR4nO3QwRFCQQgD0F+DfdmM/c+sBTjqfggE2BxyTvKutdalfIY+oGroA6qGPqBq6AOqhj6gatILH8/XsmYcjAeDhdQKIxOpPUoUTnuQKKBRKEicUSBIoLEoXpzRKB6c8ShWnCNQLDiCQcCwj2XiHIVyB0cwHhj2EQbOkSg7OIIRDBCGPZyJIxjBgGDYg9k4ghGMYAQjGMEIplQEIxjBCEYwgqkTwSBgTsH59l0wggHCTMf59VswggHDTMX593kLZhrOzl/BeGGm4Ox+vQXTHefOT8GgYLri3P1ogumGY/lnhumCY/3mgqmO4/nlhqkIhPgDg6mCg/oChWECoT+EwGTjROwPg4lGit6cAoNCytyZDtMl9AFVQx9QNfQBVUMfUDVvf1pOZNFcMacAAAAASUVORK5CYII=</icon>
     <permissions>
       <permission>full data</permission>
     </permissions>
