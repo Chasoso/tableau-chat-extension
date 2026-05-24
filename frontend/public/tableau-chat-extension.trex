@@ -4,12 +4,11 @@
     <default-locale>en_US</default-locale>
     <name resource-id="name"/>
     <description>A dashboard extension that lets users ask questions about the current Tableau dashboard.</description>
-    <author name="PoC Team" email="admin@example.com" organization="Example"/>
+    <author name="PoC Team" email="admin@example.com" organization="Example" website="https://example.com"/>
     <min-api-version>1.10</min-api-version>
     <source-location>
       <url>http://localhost:5173/</url>
     </source-location>
-    <icon>icon.png</icon>
     <permissions>
       <permission>full data</permission>
     </permissions>
@@ -20,4 +19,3 @@
     </resource>
   </resources>
 </manifest>
-
