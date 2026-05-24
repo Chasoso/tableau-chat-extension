@@ -1,9 +1,19 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { handler } from "../src/handlers/chatHandler";
 
 describe("chatHandler", () => {
-  afterEach(() => {
+  const originalAuthRequired = process.env.AUTH_REQUIRED;
+
+  beforeEach(() => {
     delete process.env.AUTH_REQUIRED;
+  });
+
+  afterEach(() => {
+    if (originalAuthRequired === undefined) {
+      delete process.env.AUTH_REQUIRED;
+    } else {
+      process.env.AUTH_REQUIRED = originalAuthRequired;
+    }
   });
 
   it("returns 400 when question is empty", async () => {
