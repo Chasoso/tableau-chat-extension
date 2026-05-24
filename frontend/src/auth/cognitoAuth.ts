@@ -95,7 +95,7 @@ export function signOut(): void {
 
   const logoutUrl = new URL(`${getCognitoDomain()}/logout`);
   logoutUrl.searchParams.set("client_id", env.cognito.clientId);
-  logoutUrl.searchParams.set("logout_uri", getRedirectUri());
+  logoutUrl.searchParams.set("logout_uri", getLogoutUri());
   window.location.assign(logoutUrl.toString());
 }
 
@@ -115,7 +115,15 @@ function getCognitoDomain(): string {
 }
 
 function getRedirectUri(): string {
+  if (env.cognito.redirectUri) {
+    return env.cognito.redirectUri;
+  }
+
   return `${window.location.origin}${window.location.pathname}`;
+}
+
+function getLogoutUri(): string {
+  return env.cognito.logoutUri || getRedirectUri();
 }
 
 function randomBase64Url(byteLength: number): string {

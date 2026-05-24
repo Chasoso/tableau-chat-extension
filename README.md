@@ -89,12 +89,16 @@ Authentication settings:
 - Frontend: `VITE_COGNITO_CLIENT_ID`
 - Frontend: `VITE_COGNITO_REGION`
 - Frontend: `VITE_COGNITO_DOMAIN`: Cognito Hosted UI domain, for example `https://your-domain.auth.ap-northeast-1.amazoncognito.com`
+- Frontend: `VITE_COGNITO_REDIRECT_URI`: exact Cognito callback URL, including trailing slash, for example `https://example.cloudfront.net/`
+- Frontend: `VITE_COGNITO_LOGOUT_URI`: exact Cognito sign-out URL. Defaults to `VITE_COGNITO_REDIRECT_URI`.
 - Backend: `AUTH_REQUIRED=true`
 - Backend: `COGNITO_USER_POOL_ID`
 - Backend: `COGNITO_CLIENT_ID`
 - Backend: `COGNITO_REGION`
 
 When authentication is enabled, the frontend redirects users to Cognito Hosted UI and sends the access token in the `Authorization` header. The backend verifies the Cognito JWT and derives the Tableau subject from the verified Cognito `email` claim. Frontend-provided usernames are never trusted for Tableau access.
+
+Cognito callback and sign-out URLs must exactly match the frontend redirect URL, including scheme, host, path, and trailing slash. `https://example.cloudfront.net` and `https://example.cloudfront.net/` are different values to Cognito.
 
 Provider selection:
 
@@ -242,12 +246,16 @@ Direct Trust JWT で Tableau REST API にサインインするため、バック
 - Frontend: `VITE_COGNITO_CLIENT_ID`
 - Frontend: `VITE_COGNITO_REGION`
 - Frontend: `VITE_COGNITO_DOMAIN`: Cognito Hosted UI domain。例 `https://your-domain.auth.ap-northeast-1.amazoncognito.com`
+- Frontend: `VITE_COGNITO_REDIRECT_URI`: Cognito callback URL と完全一致させる値。末尾 `/` を含めます。例 `https://example.cloudfront.net/`
+- Frontend: `VITE_COGNITO_LOGOUT_URI`: Cognito sign-out URL と完全一致させる値。未指定時は `VITE_COGNITO_REDIRECT_URI` と同じです。
 - Backend: `AUTH_REQUIRED=true`
 - Backend: `COGNITO_USER_POOL_ID`
 - Backend: `COGNITO_CLIENT_ID`
 - Backend: `COGNITO_REGION`
 
 認証を有効化すると、フロントエンドは Cognito Hosted UI へリダイレクトし、API 呼び出し時に access token を `Authorization` header へ付与します。バックエンドは Cognito JWT を検証し、検証済み Cognito `email` claim から Tableau subject を決定します。フロントエンドから送られたユーザー名は Tableau access には使いません。
+
+Cognito の callback URL と sign-out URL は、scheme、host、path、末尾スラッシュまで完全一致が必要です。Cognito では `https://example.cloudfront.net` と `https://example.cloudfront.net/` は別の値として扱われます。
 
 Provider の切り替え:
 

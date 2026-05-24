@@ -45,6 +45,8 @@ Store these as GitHub Actions Secrets, not plain repository Variables:
 | `COGNITO_USER_POOL_ID` | Cognito User Pool ID when `AUTH_REQUIRED=true`. |
 | `COGNITO_CLIENT_ID` | Cognito app client ID when `AUTH_REQUIRED=true`. |
 | `VITE_COGNITO_DOMAIN` | Cognito Hosted UI domain used by the frontend login flow. |
+| `VITE_COGNITO_REDIRECT_URI` | Exact Cognito callback URL. Include the trailing slash when the app is hosted at `/`. |
+| `VITE_COGNITO_LOGOUT_URI` | Exact Cognito sign-out URL. Usually the same as the callback URL. |
 | `TABLEAU_MCP_SERVER_URL` | Backend-side Tableau MCP endpoint when `TABLEAU_CONTEXT_PROVIDER=mcp`. |
 
 GitHub Secrets are masked by default. The workflow also calls `::add-mask::` for these values before using them.
@@ -469,6 +471,8 @@ CloudFormation は、URL や AWSアカウント固有の識別子を Outputs に
 | `COGNITO_USER_POOL_ID` | `AUTH_REQUIRED=true` の場合の Cognito User Pool ID。 |
 | `COGNITO_CLIENT_ID` | `AUTH_REQUIRED=true` の場合の Cognito app client ID。 |
 | `VITE_COGNITO_DOMAIN` | フロントエンド login flow が使う Cognito Hosted UI domain。 |
+| `VITE_COGNITO_REDIRECT_URI` | Cognito callback URL と完全一致させる値。アプリが `/` 配信の場合は末尾 `/` を含めます。 |
+| `VITE_COGNITO_LOGOUT_URI` | Cognito sign-out URL と完全一致させる値。通常は callback URL と同じです。 |
 | `TABLEAU_MCP_SERVER_URL` | `TABLEAU_CONTEXT_PROVIDER=mcp` の場合にバックエンドから呼ぶ Tableau MCP endpoint。 |
 
 GitHub Secrets は既定で mask されます。ワークフローでも使用前に `::add-mask::` を呼び出します。

@@ -7,6 +7,8 @@ export const env = {
     clientId: import.meta.env.VITE_COGNITO_CLIENT_ID ?? "",
     region: import.meta.env.VITE_COGNITO_REGION ?? "",
     domain: import.meta.env.VITE_COGNITO_DOMAIN ?? "",
+    redirectUri: import.meta.env.VITE_COGNITO_REDIRECT_URI ?? "",
+    logoutUri: import.meta.env.VITE_COGNITO_LOGOUT_URI ?? "",
   },
   appVersion: "0.1.0",
 };

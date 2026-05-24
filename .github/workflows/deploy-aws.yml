@@ -48,6 +48,8 @@ jobs:
       VITE_COGNITO_CLIENT_ID: ${{ secrets.COGNITO_CLIENT_ID }}
       VITE_COGNITO_REGION: ${{ vars.COGNITO_REGION }}
       VITE_COGNITO_DOMAIN: ${{ secrets.VITE_COGNITO_DOMAIN }}
+      VITE_COGNITO_REDIRECT_URI: ${{ secrets.VITE_COGNITO_REDIRECT_URI }}
+      VITE_COGNITO_LOGOUT_URI: ${{ secrets.VITE_COGNITO_LOGOUT_URI }}
       TABLEAU_MCP_SERVER_URL: ${{ secrets.TABLEAU_MCP_SERVER_URL }}
       TABLEAU_MCP_TRANSPORT: ${{ vars.TABLEAU_MCP_TRANSPORT || 'http' }}
       TABLEAU_MCP_AUTH_MODE: ${{ vars.TABLEAU_MCP_AUTH_MODE || 'none' }}
@@ -83,6 +85,8 @@ jobs:
             "$COGNITO_CLIENT_ID" \
             "$COGNITO_REGION" \
             "$VITE_COGNITO_DOMAIN" \
+            "$VITE_COGNITO_REDIRECT_URI" \
+            "$VITE_COGNITO_LOGOUT_URI" \
             "$TABLEAU_MCP_SERVER_URL" \
             "$TABLEAU_MCP_TRANSPORT" \
             "$TABLEAU_MCP_AUTH_MODE" \
@@ -124,6 +128,7 @@ jobs:
               COGNITO_CLIENT_ID
               COGNITO_REGION
               VITE_COGNITO_DOMAIN
+              VITE_COGNITO_REDIRECT_URI
             )
             for name in "${auth_required_settings[@]}"; do
               if [ -z "${!name:-}" ]; then
