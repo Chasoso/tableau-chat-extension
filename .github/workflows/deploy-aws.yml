@@ -40,7 +40,7 @@ jobs:
       TABLEAU_SCOPES: ${{ vars.TABLEAU_SCOPES || 'tableau:content:read' }}
       TABLEAU_CONTEXT_PROVIDER: ${{ vars.TABLEAU_CONTEXT_PROVIDER || 'mock' }}
       AUTH_REQUIRED: ${{ vars.AUTH_REQUIRED || 'false' }}
-      VITE_AUTH_REQUIRED: ${{ vars.VITE_AUTH_REQUIRED || vars.AUTH_REQUIRED || 'false' }}
+      VITE_AUTH_REQUIRED: ${{ vars.AUTH_REQUIRED || 'false' }}
       COGNITO_USER_POOL_ID: ${{ secrets.COGNITO_USER_POOL_ID }}
       COGNITO_CLIENT_ID: ${{ secrets.COGNITO_CLIENT_ID }}
       COGNITO_REGION: ${{ vars.COGNITO_REGION }}
@@ -118,6 +118,20 @@ jobs:
               exit 1
             fi
           done
+          if [ "$AUTH_REQUIRED" = "true" ]; then
+            auth_required_settings=(
+              COGNITO_USER_POOL_ID
+              COGNITO_CLIENT_ID
+              COGNITO_REGION
+              VITE_COGNITO_DOMAIN
+            )
+            for name in "${auth_required_settings[@]}"; do
+              if [ -z "${!name:-}" ]; then
+                echo "A required authentication setting is missing."
+                exit 1
+              fi
+            done
+          fi
 
       - name: Checkout
         uses: actions/checkout@v4
