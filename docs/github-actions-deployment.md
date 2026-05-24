@@ -117,8 +117,7 @@ Replace placeholders outside GitHub Actions logs. Use the CloudFront distributio
         "cloudformation:DescribeStackResource",
         "cloudformation:DescribeStacks",
         "cloudformation:ExecuteChangeSet",
-        "cloudformation:GetTemplate",
-        "cloudformation:ValidateTemplate"
+        "cloudformation:GetTemplate"
       ],
       "Resource": [
         "arn:aws:cloudformation:<region>:<account-id>:stack/<stack-name>/*",
@@ -530,8 +529,7 @@ placeholder の置き換えは GitHub Actions ログ外で行ってください�
         "cloudformation:DescribeStackResource",
         "cloudformation:DescribeStacks",
         "cloudformation:ExecuteChangeSet",
-        "cloudformation:GetTemplate",
-        "cloudformation:ValidateTemplate"
+        "cloudformation:GetTemplate"
       ],
       "Resource": [
         "arn:aws:cloudformation:<region>:<account-id>:stack/<stack-name>/*",
