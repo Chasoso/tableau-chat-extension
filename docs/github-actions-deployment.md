@@ -395,6 +395,8 @@ If `AWS::Lambda::Function` fails with an S3 `AccessDenied` error for `backend.zi
 
 Attach this to the CloudFormation execution role, not the GitHub OIDC deploy role. The GitHub role uploads the zip, but CloudFormation creates the Lambda function and must read the zip. If the artifact bucket uses SSE-KMS with a customer-managed KMS key, also allow `kms:Decrypt` for that key.
 
+If `AWS::CloudFront::Function` fails with `AlreadyExists`, an old manually-created or previously-rolled-back CloudFront Function may still exist with the same name. This template lets CloudFormation generate the function name to avoid name collisions. If you previously deployed a version that set a fixed `Name`, delete the orphaned function from CloudFront or rerun with this updated template.
+
 ### Logging Rules
 
 The workflow follows these rules:
@@ -803,6 +805,8 @@ HttpApi:
 ```
 
 これは GitHub OIDC deploy role ではなく、CloudFormation execution role に付けます。GitHub role は zip をアップロードしますが、Lambda 関数を作るのは CloudFormation なので、CloudFormation 側が zip を読む必要があります。artifact bucket が customer-managed KMS key の SSE-KMS を使っている場合は、その key に対する `kms:Decrypt` も許可してください。
+
+`AWS::CloudFront::Function` が `AlreadyExists` で失敗する場合は、古い手動作成リソースまたは以前のロールバックで残った CloudFront Function が同じ名前で存在している可能性があります。このテンプレートでは、名前衝突を避けるため CloudFormation に function 名を自動生成させます。過去に固定 `Name` を設定したテンプレートで実行済みの場合は、CloudFront から orphaned function を削除するか、この更新済みテンプレートで再実行してください。
 
 ### ログ出力ルール
 
