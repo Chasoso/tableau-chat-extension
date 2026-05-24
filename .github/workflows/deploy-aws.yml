@@ -20,6 +20,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
       AWS_REGION: ${{ vars.AWS_REGION }}
       STACK_NAME: ${{ secrets.AWS_CFN_STACK_NAME }}
       AWS_GHA_DEPLOY_ROLE_ARN: ${{ secrets.AWS_GHA_DEPLOY_ROLE_ARN }}
