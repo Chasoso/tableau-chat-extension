@@ -46,6 +46,38 @@ Parameters:
     AllowedValues:
       - mock
       - direct
+      - direct-api
+      - mcp
+  AuthRequired:
+    Type: String
+    Default: "false"
+    AllowedValues:
+      - "true"
+      - "false"
+  CognitoUserPoolId:
+    Type: String
+    NoEcho: true
+    Default: ""
+  CognitoClientId:
+    Type: String
+    NoEcho: true
+    Default: ""
+  CognitoRegion:
+    Type: String
+    Default: ""
+  TableauMcpServerUrl:
+    Type: String
+    NoEcho: true
+    Default: ""
+  TableauMcpTransport:
+    Type: String
+    Default: "http"
+  TableauMcpAuthMode:
+    Type: String
+    Default: "none"
+  TableauMcpTimeoutMs:
+    Type: Number
+    Default: 5000
 
 Resources:
   ChatHistoryTable:
@@ -144,6 +176,14 @@ Resources:
           TABLEAU_DEFAULT_SUBJECT: !Ref TableauDefaultSubject
           TABLEAU_SCOPES: !Ref TableauScopes
           TABLEAU_CONTEXT_PROVIDER: !Ref TableauContextProvider
+          AUTH_REQUIRED: !Ref AuthRequired
+          COGNITO_USER_POOL_ID: !Ref CognitoUserPoolId
+          COGNITO_CLIENT_ID: !Ref CognitoClientId
+          COGNITO_REGION: !Ref CognitoRegion
+          TABLEAU_MCP_SERVER_URL: !Ref TableauMcpServerUrl
+          TABLEAU_MCP_TRANSPORT: !Ref TableauMcpTransport
+          TABLEAU_MCP_AUTH_MODE: !Ref TableauMcpAuthMode
+          TABLEAU_MCP_TIMEOUT_MS: !Ref TableauMcpTimeoutMs
 
   HealthFunction:
     Type: AWS::Lambda::Function

@@ -5,7 +5,7 @@ import { TableauMetadataClient } from "./tableauMetadataClient";
 import { TableauRestClient } from "./tableauRestClient";
 
 export class DirectTableauApiContextProvider implements TableauContextProvider {
-  readonly name = "direct-tableau-api" as const;
+  readonly name = "direct-api" as const;
 
   constructor(
     private readonly restClient = new TableauRestClient(),
@@ -15,11 +15,12 @@ export class DirectTableauApiContextProvider implements TableauContextProvider {
   async getAdditionalContext(input: GetAdditionalContextInput): Promise<TableauAdditionalContext> {
     const warnings: string[] = [];
     let session;
+    const restClient = input.tableauSubject ? new TableauRestClient({ subject: input.tableauSubject }) : this.restClient;
 
     try {
-      session = await this.restClient.signInWithJwt();
+      session = await restClient.signInWithJwt();
       const [datasourcesResult, metadataResult] = await Promise.allSettled([
-        this.restClient.listDatasources(session),
+        restClient.listDatasources(session),
         input.dashboardContext.workbookName
           ? this.metadataClient.getBasicWorkbookMetadata(session, input.dashboardContext.workbookName)
           : Promise.resolve(null),
@@ -46,9 +47,8 @@ export class DirectTableauApiContextProvider implements TableauContextProvider {
       };
     } finally {
       if (session) {
-        await this.restClient.signOut(session).catch(() => undefined);
+        await restClient.signOut(session).catch(() => undefined);
       }
     }
   }
 }
-

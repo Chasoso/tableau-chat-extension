@@ -44,10 +44,9 @@ export type DashboardContext = {
 };
 
 export type TableauAdditionalContext = {
-  provider: "mock" | "direct-tableau-api" | "tableau-mcp";
+  provider: "mock" | "direct-api" | "tableau-mcp";
   workbook?: unknown;
   datasources?: unknown[];
   metadata?: unknown;
   warnings?: string[];
 };
-

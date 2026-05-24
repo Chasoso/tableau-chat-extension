@@ -1,6 +1,9 @@
 import { useEffect, useState } from "react";
+import { env } from "./env";
+import AuthGate from "./components/AuthGate";
 import ChatPanel from "./components/ChatPanel";
 import { initializeTableauExtension } from "./tableau/tableauExtension";
+import type { AuthSession } from "./types/auth";
 import type { DashboardContext } from "./types/tableau";
 
 export default function App() {
@@ -35,10 +38,15 @@ export default function App() {
     return <div className="app-shell loading-state">Loading dashboard context...</div>;
   }
 
-  return (
+  const renderPanel = (session?: AuthSession) => (
     <div className="app-shell">
-      <ChatPanel dashboardContext={dashboardContext} />
+      <ChatPanel dashboardContext={dashboardContext} accessToken={session?.accessToken} userEmail={session?.email} />
     </div>
   );
-}
 
+  if (env.authRequired) {
+    return <AuthGate>{(session) => renderPanel(session)}</AuthGate>;
+  }
+
+  return renderPanel();
+}

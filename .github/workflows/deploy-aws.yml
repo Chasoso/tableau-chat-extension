@@ -38,6 +38,19 @@ jobs:
       TABLEAU_API_VERSION: ${{ vars.TABLEAU_API_VERSION || '3.25' }}
       TABLEAU_SCOPES: ${{ vars.TABLEAU_SCOPES || 'tableau:content:read' }}
       TABLEAU_CONTEXT_PROVIDER: ${{ vars.TABLEAU_CONTEXT_PROVIDER || 'mock' }}
+      AUTH_REQUIRED: ${{ vars.AUTH_REQUIRED || 'false' }}
+      VITE_AUTH_REQUIRED: ${{ vars.VITE_AUTH_REQUIRED || vars.AUTH_REQUIRED || 'false' }}
+      COGNITO_USER_POOL_ID: ${{ secrets.COGNITO_USER_POOL_ID }}
+      COGNITO_CLIENT_ID: ${{ secrets.COGNITO_CLIENT_ID }}
+      COGNITO_REGION: ${{ vars.COGNITO_REGION }}
+      VITE_COGNITO_USER_POOL_ID: ${{ secrets.COGNITO_USER_POOL_ID }}
+      VITE_COGNITO_CLIENT_ID: ${{ secrets.COGNITO_CLIENT_ID }}
+      VITE_COGNITO_REGION: ${{ vars.COGNITO_REGION }}
+      VITE_COGNITO_DOMAIN: ${{ secrets.VITE_COGNITO_DOMAIN }}
+      TABLEAU_MCP_SERVER_URL: ${{ secrets.TABLEAU_MCP_SERVER_URL }}
+      TABLEAU_MCP_TRANSPORT: ${{ vars.TABLEAU_MCP_TRANSPORT || 'http' }}
+      TABLEAU_MCP_AUTH_MODE: ${{ vars.TABLEAU_MCP_AUTH_MODE || 'none' }}
+      TABLEAU_MCP_TIMEOUT_MS: ${{ vars.TABLEAU_MCP_TIMEOUT_MS || '5000' }}
 
     steps:
       - name: Mask configured values
@@ -62,7 +75,17 @@ jobs:
             "$TABLEAU_DEFAULT_SUBJECT" \
             "$TABLEAU_API_VERSION" \
             "$TABLEAU_SCOPES" \
-            "$TABLEAU_CONTEXT_PROVIDER"; do
+            "$TABLEAU_CONTEXT_PROVIDER" \
+            "$AUTH_REQUIRED" \
+            "$VITE_AUTH_REQUIRED" \
+            "$COGNITO_USER_POOL_ID" \
+            "$COGNITO_CLIENT_ID" \
+            "$COGNITO_REGION" \
+            "$VITE_COGNITO_DOMAIN" \
+            "$TABLEAU_MCP_SERVER_URL" \
+            "$TABLEAU_MCP_TRANSPORT" \
+            "$TABLEAU_MCP_AUTH_MODE" \
+            "$TABLEAU_MCP_TIMEOUT_MS"; do
             if [ -n "${value:-}" ]; then
               echo "::add-mask::$value"
             fi
@@ -207,7 +230,15 @@ jobs:
               TableauConnectedAppSecretValue="$TABLEAU_CONNECTED_APP_SECRET_VALUE" \
               TableauDefaultSubject="$TABLEAU_DEFAULT_SUBJECT" \
               TableauScopes="$TABLEAU_SCOPES" \
-              TableauContextProvider="$TABLEAU_CONTEXT_PROVIDER"
+              TableauContextProvider="$TABLEAU_CONTEXT_PROVIDER" \
+              AuthRequired="$AUTH_REQUIRED" \
+              CognitoUserPoolId="$COGNITO_USER_POOL_ID" \
+              CognitoClientId="$COGNITO_CLIENT_ID" \
+              CognitoRegion="$COGNITO_REGION" \
+              TableauMcpServerUrl="$TABLEAU_MCP_SERVER_URL" \
+              TableauMcpTransport="$TABLEAU_MCP_TRANSPORT" \
+              TableauMcpAuthMode="$TABLEAU_MCP_AUTH_MODE" \
+              TableauMcpTimeoutMs="$TABLEAU_MCP_TIMEOUT_MS"
 
       - name: Upload frontend and invalidate cache
         shell: bash

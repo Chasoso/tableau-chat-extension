@@ -9,9 +9,11 @@ import MessageList from "./MessageList";
 
 type Props = {
   dashboardContext: DashboardContext;
+  accessToken?: string;
+  userEmail?: string;
 };
 
-export default function ChatPanel({ dashboardContext }: Props) {
+export default function ChatPanel({ dashboardContext, accessToken, userEmail }: Props) {
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
       id: "welcome",
@@ -50,7 +52,7 @@ export default function ChatPanel({ dashboardContext }: Props) {
           appVersion: env.appVersion,
         },
         sessionId,
-      });
+      }, accessToken);
 
       setSessionId(response.sessionId);
       setMessages((current) => [
@@ -78,6 +80,7 @@ export default function ChatPanel({ dashboardContext }: Props) {
         </div>
         <span className="status-pill">PoC</span>
       </header>
+      {userEmail ? <div className="user-strip">Signed in as {userEmail}</div> : null}
 
       <DashboardContextPanel dashboardContext={dashboardContext} />
       <MessageList messages={messages} isLoading={isLoading} />
@@ -88,4 +91,3 @@ export default function ChatPanel({ dashboardContext }: Props) {
     </section>
   );
 }
-

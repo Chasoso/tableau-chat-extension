@@ -3,7 +3,9 @@ import { getConfig } from "../config";
 import { createChatHistoryRepository, type ChatHistoryRepository } from "../repositories/chatHistoryRepository";
 import { DirectTableauApiContextProvider } from "../tableau/directTableauApiContextProvider";
 import { MockTableauContextProvider } from "../tableau/mockTableauContextProvider";
+import { TableauMcpContextProvider } from "../tableau/tableauMcpContextProvider";
 import type { TableauContextProvider } from "../tableau/contextProvider";
+import type { AuthenticatedUser } from "../types/auth";
 import type { ChatRequest, ChatResponse } from "../types/chat";
 import { MockAnswerGenerator, type AnswerGenerator } from "./answerGenerator";
 import { buildPrompt } from "./promptBuilder";
@@ -15,12 +17,15 @@ export class ChatService {
     private readonly repository: ChatHistoryRepository,
   ) {}
 
-  async generateAnswer(request: ChatRequest): Promise<ChatResponse> {
+  async generateAnswer(request: ChatRequest, authenticatedUser?: AuthenticatedUser): Promise<ChatResponse> {
     const sessionId = request.sessionId || randomUUID();
     const messageId = randomUUID();
+    const tableauSubject = resolveTableauSubject(authenticatedUser);
     const additionalContext = await this.contextProvider.getAdditionalContext({
       dashboardContext: request.dashboardContext,
       question: request.question,
+      authenticatedUser,
+      tableauSubject,
     });
     const prompt = buildPrompt(request, additionalContext);
     const answer = await this.answerGenerator.generate({
@@ -55,12 +60,25 @@ export class ChatService {
 }
 
 export function createChatService(): ChatService {
-  const provider = process.env.TABLEAU_CONTEXT_PROVIDER === "direct"
-    ? new DirectTableauApiContextProvider()
-    : new MockTableauContextProvider();
+  const config = getConfig();
+  const provider = createContextProvider(config.tableau.contextProvider);
 
   return new ChatService(provider, new MockAnswerGenerator(), createChatHistoryRepository());
 }
 
-void getConfig;
+function createContextProvider(providerName: ReturnType<typeof getConfig>["tableau"]["contextProvider"]): TableauContextProvider {
+  switch (providerName) {
+    case "direct-api":
+      return new DirectTableauApiContextProvider();
+    case "mcp":
+      return new TableauMcpContextProvider();
+    case "mock":
+    default:
+      return new MockTableauContextProvider();
+  }
+}
 
+function resolveTableauSubject(authenticatedUser: AuthenticatedUser | undefined): string | undefined {
+  const config = getConfig();
+  return authenticatedUser?.tableauSubject ?? (config.tableau.defaultSubject || undefined);
+}

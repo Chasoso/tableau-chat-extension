@@ -28,11 +28,43 @@ textarea {
 }
 
 .loading-state,
-.error-state {
+.error-state,
+.auth-state {
   display: grid;
   place-items: center;
   color: #546371;
   font-size: 14px;
+}
+
+.auth-card {
+  display: grid;
+  gap: 12px;
+  width: min(360px, 100%);
+  padding: 20px;
+  border: 1px solid #d8e0e8;
+  border-radius: 16px;
+  background: #ffffff;
+  box-shadow: 0 16px 36px rgba(21, 32, 43, 0.12);
+}
+
+.auth-card h1 {
+  margin: 0;
+  color: #0f293b;
+  font-size: 20px;
+}
+
+.auth-card p {
+  margin: 0;
+}
+
+.auth-card button {
+  border: 0;
+  border-radius: 12px;
+  padding: 11px 14px;
+  background: #2176ae;
+  color: #ffffff;
+  font-weight: 700;
+  cursor: pointer;
 }
 
 .chat-panel {
@@ -76,6 +108,14 @@ textarea {
   color: #0b5cab;
   font-size: 12px;
   font-weight: 700;
+}
+
+.user-strip {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #647487;
+  font-size: 12px;
 }
 
 .context-card {
@@ -232,4 +272,3 @@ textarea {
     border-radius: 0;
   }
 }
-

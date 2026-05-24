@@ -1,11 +1,12 @@
 import { env } from "../env";
 import type { ChatRequest, ChatResponse } from "../types/chat";
 
-export async function sendChatQuestion(request: ChatRequest): Promise<ChatResponse> {
+export async function sendChatQuestion(request: ChatRequest, accessToken?: string): Promise<ChatResponse> {
   const response = await fetch(`${env.apiBaseUrl.replace(/\/$/, "")}/chat`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
+      ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
     },
     body: JSON.stringify(request),
   });

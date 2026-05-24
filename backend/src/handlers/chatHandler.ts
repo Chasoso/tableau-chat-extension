@@ -1,4 +1,5 @@
 import { getConfig } from "../config";
+import { authenticateRequest } from "../auth/cognitoAuth";
 import { createChatService } from "../services/chatService";
 import type { ApiGatewayProxyEvent, ApiGatewayProxyResult } from "../types/api";
 import type { ChatRequest } from "../types/chat";
@@ -9,13 +10,18 @@ export async function handler(event: ApiGatewayProxyEvent): Promise<ApiGatewayPr
   }
 
   try {
+    const authResult = await authenticateRequest(event.headers);
+    if (!authResult.ok) {
+      return jsonResponse(authResult.statusCode, { message: authResult.message });
+    }
+
     const request = parseRequest(event.body);
     const validationError = validateRequest(request);
     if (validationError) {
       return jsonResponse(400, { message: validationError });
     }
 
-    const response = await createChatService().generateAnswer(request);
+    const response = await createChatService().generateAnswer(request, authResult.user);
     return jsonResponse(200, response);
   } catch (error) {
     console.error("Failed to handle chat request.", safeError(error));
@@ -64,4 +70,3 @@ function jsonResponse(statusCode: number, payload: unknown): ApiGatewayProxyResu
 function safeError(error: unknown): string {
   return error instanceof Error ? error.message : "Unknown error";
 }
-

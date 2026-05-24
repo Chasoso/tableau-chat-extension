@@ -24,10 +24,10 @@ describe("ChatService with mock provider", () => {
       },
     });
 
-    expect(response.answer).toContain("2 個のワークシート");
+    expect(response.answer).toContain("含まれるワークシートは 2 個");
+    expect(response.answer).toContain("Sheet 1, Sheet 2");
     expect(response.debug?.usedMock).toBe(true);
     expect(response.debug?.tableauContextProvider).toBe("mock");
     expect(repository.getAll()).toHaveLength(1);
   });
 });
-
