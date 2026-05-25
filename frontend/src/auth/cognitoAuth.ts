@@ -88,8 +88,7 @@ export async function startLogin(): Promise<void> {
 }
 
 export async function startLoginPopup(): Promise<void> {
-  const loginUrl = await createLoginUrl();
-  const popup = window.open(loginUrl, "tableau-chat-cognito-login", "popup,width=520,height=720");
+  const popup = window.open(getPopupStartUrl(), "tableau-chat-cognito-login", "popup,width=520,height=720");
   if (!popup) {
     throw new Error("Unable to open the sign-in window. Please allow pop-ups for this site.");
   }
@@ -98,6 +97,10 @@ export async function startLoginPopup(): Promise<void> {
 
 export function isAuthRedirect(): boolean {
   return new URL(window.location.href).searchParams.has("code");
+}
+
+export function isAuthPopupStart(): boolean {
+  return new URL(window.location.href).searchParams.get("auth_action") === "login_popup";
 }
 
 export function isAuthCompleteMessage(message: MessageEvent): message is MessageEvent<AuthCompleteMessage> {
@@ -168,6 +171,12 @@ function getRedirectUri(): string {
 
 function getLogoutUri(): string {
   return env.cognito.logoutUri || getRedirectUri();
+}
+
+function getPopupStartUrl(): string {
+  const url = new URL(getRedirectUri());
+  url.searchParams.set("auth_action", "login_popup");
+  return url.toString();
 }
 
 function notifyOpener(session: AuthSession): void {

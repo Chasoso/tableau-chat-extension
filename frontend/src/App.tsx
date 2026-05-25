@@ -1,14 +1,19 @@
 import { useEffect, useState } from "react";
 import { env } from "./env";
-import { isAuthRedirect } from "./auth/cognitoAuth";
+import { isAuthPopupStart, isAuthRedirect } from "./auth/cognitoAuth";
 import AuthCallback from "./components/AuthCallback";
 import AuthGate from "./components/AuthGate";
+import AuthPopupStart from "./components/AuthPopupStart";
 import ChatPanel from "./components/ChatPanel";
 import { initializeTableauExtension } from "./tableau/tableauExtension";
 import type { AuthSession } from "./types/auth";
 import type { DashboardContext } from "./types/tableau";
 
 export default function App() {
+  if (env.authRequired && isAuthPopupStart()) {
+    return <AuthPopupStart />;
+  }
+
   if (env.authRequired && isAuthRedirect()) {
     return <AuthCallback />;
   }
