@@ -1,4 +1,5 @@
 import type { TableauSession } from "./tableauRestClient";
+import { TableauRequestError } from "./tableauErrors";
 
 export type TableauMetadataClientOptions = {
   serverUrl: string;
@@ -23,7 +24,11 @@ export class TableauMetadataClient {
     });
 
     if (!response.ok) {
-      throw new Error(`Tableau Metadata API request failed with status ${response.status}.`);
+      throw new TableauRequestError(`Tableau Metadata API request failed with status ${response.status}.`, {
+        operation: "metadata",
+        status: response.status,
+        path: "/api/metadata/graphql",
+      });
     }
 
     return response.json() as Promise<T>;
@@ -51,4 +56,3 @@ export class TableauMetadataClient {
     return this.query(session, query, { name: workbookNameOrId });
   }
 }
-

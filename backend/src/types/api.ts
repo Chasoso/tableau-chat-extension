@@ -1,6 +1,12 @@
 export type ApiGatewayProxyEvent = {
   httpMethod?: string;
   headers?: Record<string, string | undefined>;
+  requestContext?: {
+    requestId?: string;
+    http?: {
+      method?: string;
+    };
+  };
   body?: string | null;
 };
 
@@ -9,4 +15,3 @@ export type ApiGatewayProxyResult = {
   headers: Record<string, string>;
   body: string;
 };
-

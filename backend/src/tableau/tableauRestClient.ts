@@ -1,6 +1,7 @@
 import { getConfig } from "../config";
 import { getTableauConnectedAppSecrets } from "../aws/secrets";
 import { generateTableauConnectedAppJwt } from "./tableauAuth";
+import { TableauRequestError } from "./tableauErrors";
 
 export type TableauSession = {
   token: string;
@@ -61,7 +62,11 @@ export class TableauRestClient {
     });
 
     if (!response.ok) {
-      throw new Error(`Tableau sign in failed with status ${response.status}.`);
+      throw new TableauRequestError(`Tableau sign in failed with status ${response.status}.`, {
+        operation: "signin",
+        status: response.status,
+        path: `/api/${this.apiVersion}/auth/signin`,
+      });
     }
 
     const body = (await response.json()) as {
@@ -117,7 +122,11 @@ export class TableauRestClient {
     });
 
     if (!response.ok) {
-      throw new Error(`Tableau REST API request failed with status ${response.status}.`);
+      throw new TableauRequestError(`Tableau REST API request failed with status ${response.status}.`, {
+        operation: "rest",
+        status: response.status,
+        path,
+      });
     }
 
     if (response.status === 204) {
@@ -131,4 +140,3 @@ export class TableauRestClient {
 function trimTrailingSlash(value: string): string {
   return value.replace(/\/$/, "");
 }
-

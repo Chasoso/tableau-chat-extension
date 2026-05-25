@@ -1,30 +1,49 @@
 import { getConfig } from "../config";
 import { authenticateRequest } from "../auth/cognitoAuth";
+import { logError, logInfo, logWarn, safeErrorDetails, safeHash } from "../logging";
 import { createChatService } from "../services/chatService";
 import type { ApiGatewayProxyEvent, ApiGatewayProxyResult } from "../types/api";
 import type { ChatRequest } from "../types/chat";
 
 export async function handler(event: ApiGatewayProxyEvent): Promise<ApiGatewayProxyResult> {
-  if (event.httpMethod === "OPTIONS") {
+  const requestId = event.requestContext?.requestId;
+  const method = event.httpMethod ?? event.requestContext?.http?.method;
+
+  if (method === "OPTIONS") {
     return jsonResponse(204, {});
   }
 
   try {
+    logInfo("chat.request.received", { requestId, method });
     const authResult = await authenticateRequest(event.headers);
     if (!authResult.ok) {
+      logWarn("chat.auth.rejected", { requestId, statusCode: authResult.statusCode });
       return jsonResponse(authResult.statusCode, { message: authResult.message });
     }
+    logInfo("chat.auth.accepted", {
+      requestId,
+      userHash: safeHash(authResult.user?.userId),
+      emailHash: safeHash(authResult.user?.email),
+      tableauSubjectHash: safeHash(authResult.user?.tableauSubject),
+    });
 
     const request = parseRequest(event.body);
     const validationError = validateRequest(request);
     if (validationError) {
+      logWarn("chat.request.invalid", { requestId, validationError });
       return jsonResponse(400, { message: validationError });
     }
 
     const response = await createChatService().generateAnswer(request, authResult.user);
+    logInfo("chat.request.completed", {
+      requestId,
+      provider: response.debug?.tableauContextProvider,
+      sessionId: response.sessionId,
+      messageId: response.messageId,
+    });
     return jsonResponse(200, response);
   } catch (error) {
-    console.error("Failed to handle chat request.", safeError(error));
+    logError("chat.request.failed", { requestId, ...safeErrorDetails(error) });
     return jsonResponse(500, { message: "Failed to generate an answer." });
   }
 }
@@ -65,8 +84,4 @@ function jsonResponse(statusCode: number, payload: unknown): ApiGatewayProxyResu
     },
     body: statusCode === 204 ? "" : JSON.stringify(payload),
   };
-}
-
-function safeError(error: unknown): string {
-  return error instanceof Error ? error.message : "Unknown error";
 }
