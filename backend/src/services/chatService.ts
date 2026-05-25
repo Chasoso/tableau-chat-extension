@@ -31,6 +31,8 @@ export class ChatService {
       filterCount: request.dashboardContext.filters.length,
       parameterCount: request.dashboardContext.parameters.length,
       authenticated: Boolean(authenticatedUser),
+      authTokenUse: authenticatedUser?.tokenUse,
+      hasAuthenticatedEmail: Boolean(authenticatedUser?.email),
       tableauSubjectHash: safeHash(tableauSubject),
     });
     const additionalContext = await this.contextProvider.getAdditionalContext({

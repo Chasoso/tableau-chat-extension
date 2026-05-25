@@ -25,6 +25,7 @@ export async function handler(event: ApiGatewayProxyEvent): Promise<ApiGatewayPr
       userHash: safeHash(authResult.user?.userId),
       emailHash: safeHash(authResult.user?.email),
       tableauSubjectHash: safeHash(authResult.user?.tableauSubject),
+      tokenUse: authResult.user?.tokenUse,
     });
 
     const request = parseRequest(event.body);

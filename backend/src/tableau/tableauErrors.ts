@@ -5,10 +5,12 @@ export class TableauRequestError extends Error {
       operation: string;
       status?: number;
       path?: string;
+      tableauErrorCode?: string;
+      tableauErrorSummary?: string;
+      tableauErrorDetail?: string;
     },
   ) {
     super(message);
     this.name = "TableauRequestError";
   }
 }
-

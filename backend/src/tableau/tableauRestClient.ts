@@ -1,5 +1,6 @@
 import { getConfig } from "../config";
 import { getTableauConnectedAppSecrets } from "../aws/secrets";
+import { logInfo, safeHash } from "../logging";
 import { generateTableauConnectedAppJwt } from "./tableauAuth";
 import { TableauRequestError } from "./tableauErrors";
 
@@ -39,6 +40,16 @@ export class TableauRestClient {
     }
 
     const connectedApp = await getTableauConnectedAppSecrets();
+    logInfo("tableau.rest.sign_in.configuration", {
+      serverHost: safeHost(this.serverUrl),
+      siteContentUrlConfigured: this.siteContentUrl.length > 0,
+      apiVersion: this.apiVersion,
+      subjectHash: safeHash(this.subject),
+      scopes: this.scopes,
+      connectedAppClientIdHash: safeHash(connectedApp.clientId),
+      connectedAppSecretIdHash: safeHash(connectedApp.secretId),
+      connectedAppSecretValueConfigured: connectedApp.secretValue.length > 0,
+    });
     const token = generateTableauConnectedAppJwt({
       connectedApp,
       subject: this.subject,
@@ -62,10 +73,12 @@ export class TableauRestClient {
     });
 
     if (!response.ok) {
+      const tableauError = await readTableauError(response);
       throw new TableauRequestError(`Tableau sign in failed with status ${response.status}.`, {
         operation: "signin",
         status: response.status,
         path: `/api/${this.apiVersion}/auth/signin`,
+        ...tableauError,
       });
     }
 
@@ -122,10 +135,12 @@ export class TableauRestClient {
     });
 
     if (!response.ok) {
+      const tableauError = await readTableauError(response);
       throw new TableauRequestError(`Tableau REST API request failed with status ${response.status}.`, {
         operation: "rest",
         status: response.status,
         path,
+        ...tableauError,
       });
     }
 
@@ -139,4 +154,41 @@ export class TableauRestClient {
 
 function trimTrailingSlash(value: string): string {
   return value.replace(/\/$/, "");
+}
+
+function safeHost(value: string): string | undefined {
+  try {
+    return new URL(value).host;
+  } catch {
+    return undefined;
+  }
+}
+
+async function readTableauError(response: Response): Promise<{
+  tableauErrorCode?: string;
+  tableauErrorSummary?: string;
+  tableauErrorDetail?: string;
+}> {
+  const contentType = response.headers.get("content-type") ?? "";
+  if (!contentType.includes("application/json")) {
+    return {};
+  }
+
+  try {
+    const body = (await response.clone().json()) as {
+      error?: {
+        code?: string;
+        summary?: string;
+        detail?: string;
+      };
+    };
+
+    return {
+      tableauErrorCode: body.error?.code,
+      tableauErrorSummary: body.error?.summary,
+      tableauErrorDetail: body.error?.detail,
+    };
+  } catch {
+    return {};
+  }
 }

@@ -3,5 +3,5 @@ export type AuthenticatedUser = {
   email?: string;
   tableauSubject?: string;
   claims?: Record<string, unknown>;
+  tokenUse?: string;
 };
-

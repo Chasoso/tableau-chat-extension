@@ -67,6 +67,7 @@ export async function authenticateRequest(headers: Record<string, string | undef
         userId,
         email,
         tableauSubject: email,
+        tokenUse: typeof payload.token_use === "string" ? payload.token_use : undefined,
         claims: {
           token_use: payload.token_use,
         },

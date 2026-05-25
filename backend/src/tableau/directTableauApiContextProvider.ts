@@ -65,7 +65,7 @@ export class DirectTableauApiContextProvider implements TableauContextProvider {
       logError("tableau.direct.lookup.failed", safeErrorDetails(error));
       return {
         provider: this.name,
-        warnings: ["Direct Tableau API context lookup failed. Falling back to frontend dashboard context only."],
+        warnings: [buildSafeLookupWarning(error)],
       };
     } finally {
       if (session) {
@@ -82,4 +82,20 @@ export class DirectTableauApiContextProvider implements TableauContextProvider {
       }
     }
   }
+}
+
+function buildSafeLookupWarning(error: unknown): string {
+  const details =
+    error instanceof Error && "details" in error && typeof error.details === "object"
+      ? (error.details as Record<string, unknown>)
+      : undefined;
+  const status = typeof details?.status === "number" ? `status ${details.status}` : undefined;
+  const tableauCode = typeof details?.tableauErrorCode === "string" ? `Tableau error ${details.tableauErrorCode}` : undefined;
+  const tableauSummary =
+    typeof details?.tableauErrorSummary === "string" ? `summary: ${details.tableauErrorSummary}` : undefined;
+  const reason = [status, tableauCode, tableauSummary].filter(Boolean).join(", ");
+
+  return reason
+    ? `Direct Tableau API context lookup failed (${reason}). Falling back to frontend dashboard context only.`
+    : "Direct Tableau API context lookup failed. Falling back to frontend dashboard context only.";
 }

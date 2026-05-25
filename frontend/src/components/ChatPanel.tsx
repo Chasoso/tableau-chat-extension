@@ -9,11 +9,11 @@ import MessageList from "./MessageList";
 
 type Props = {
   dashboardContext: DashboardContext;
-  accessToken?: string;
+  authToken?: string;
   userEmail?: string;
 };
 
-export default function ChatPanel({ dashboardContext, accessToken, userEmail }: Props) {
+export default function ChatPanel({ dashboardContext, authToken, userEmail }: Props) {
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
       id: "welcome",
@@ -52,7 +52,7 @@ export default function ChatPanel({ dashboardContext, accessToken, userEmail }: 
           appVersion: env.appVersion,
         },
         sessionId,
-      }, accessToken);
+      }, authToken);
 
       setSessionId(response.sessionId);
       setMessages((current) => [
