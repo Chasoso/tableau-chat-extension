@@ -3,7 +3,7 @@ import { authenticateRequest } from "../auth/cognitoAuth";
 import { logError, logInfo, logWarn, safeErrorDetails, safeHash } from "../logging";
 import { createChatService } from "../services/chatService";
 import type { ApiGatewayProxyEvent, ApiGatewayProxyResult } from "../types/api";
-import type { ChatRequest } from "../types/chat";
+import type { ChatRequest, ContextRequest } from "../types/chat";
 
 export async function handler(event: ApiGatewayProxyEvent): Promise<ApiGatewayProxyResult> {
   const requestId = event.requestContext?.requestId;
@@ -28,14 +28,34 @@ export async function handler(event: ApiGatewayProxyEvent): Promise<ApiGatewayPr
       tokenUse: authResult.user?.tokenUse,
     });
 
+    const routePath = getRoutePath(event);
     const request = parseRequest(event.body);
-    const validationError = validateRequest(request);
+
+    if (routePath === "/context") {
+      const contextRequest = request as ContextRequest;
+      const validationError = validateContextRequest(contextRequest);
+      if (validationError) {
+        logWarn("chat.context_request.invalid", { requestId, validationError });
+        return jsonResponse(400, { message: validationError });
+      }
+
+      const response = await createChatService().getDashboardContextPatch(contextRequest, authResult.user);
+      logInfo("chat.context_request.completed", {
+        requestId,
+        provider: response.debug?.tableauContextProvider,
+        patchedFields: response.dashboardContextPatch?.workbookName ? ["workbookName"] : [],
+      });
+      return jsonResponse(200, response);
+    }
+
+    const chatRequest = request as ChatRequest;
+    const validationError = validateRequest(chatRequest);
     if (validationError) {
       logWarn("chat.request.invalid", { requestId, validationError });
       return jsonResponse(400, { message: validationError });
     }
 
-    const response = await createChatService().generateAnswer(request, authResult.user);
+    const response = await createChatService().generateAnswer(chatRequest, authResult.user);
     logInfo("chat.request.completed", {
       requestId,
       provider: response.debug?.tableauContextProvider,
@@ -49,12 +69,12 @@ export async function handler(event: ApiGatewayProxyEvent): Promise<ApiGatewayPr
   }
 }
 
-function parseRequest(body: string | null | undefined): ChatRequest {
+function parseRequest(body: string | null | undefined): unknown {
   if (!body) {
     throw new Error("Request body is required.");
   }
 
-  return JSON.parse(body) as ChatRequest;
+  return JSON.parse(body) as unknown;
 }
 
 function validateRequest(request: ChatRequest): string | null {
@@ -71,6 +91,22 @@ function validateRequest(request: ChatRequest): string | null {
   }
 
   return null;
+}
+
+function validateContextRequest(request: ContextRequest): string | null {
+  if (!request.dashboardContext) {
+    return "dashboardContext is required.";
+  }
+
+  if (!Array.isArray(request.dashboardContext.worksheets)) {
+    return "dashboardContext.worksheets must be an array.";
+  }
+
+  return null;
+}
+
+function getRoutePath(event: ApiGatewayProxyEvent): string {
+  return event.rawPath ?? event.path ?? "";
 }
 
 function jsonResponse(statusCode: number, payload: unknown): ApiGatewayProxyResult {

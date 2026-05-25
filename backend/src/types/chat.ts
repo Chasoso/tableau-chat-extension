@@ -12,13 +12,27 @@ export type ChatRequest = {
   sessionId?: string;
 };
 
+export type ContextRequest = {
+  dashboardContext: DashboardContext;
+  clientContext?: ClientContext;
+};
+
+export type DashboardContextPatch = Partial<Pick<DashboardContext, "workbookName">>;
+
 export type ChatResponse = {
   answer: string;
   sessionId: string;
   messageId: string;
-  dashboardContextPatch?: Partial<Pick<DashboardContext, "workbookName">>;
+  dashboardContextPatch?: DashboardContextPatch;
   debug?: {
     usedMock: boolean;
+    tableauContextProvider: TableauAdditionalContext["provider"];
+  };
+};
+
+export type ContextResponse = {
+  dashboardContextPatch?: DashboardContextPatch;
+  debug?: {
     tableauContextProvider: TableauAdditionalContext["provider"];
   };
 };

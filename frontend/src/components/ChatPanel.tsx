@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { env } from "../env";
 import { sendChatQuestion } from "../api/chatApi";
+import { enrichDashboardContext } from "../api/contextApi";
 import type { ChatMessage } from "../types/chat";
 import type { DashboardContext } from "../types/tableau";
 import DashboardContextPanel from "./DashboardContextPanel";
@@ -15,6 +16,7 @@ type Props = {
 };
 
 export default function ChatPanel({ dashboardContext, authToken, userEmail, onDashboardContextPatch }: Props) {
+  const enrichmentStartedKey = useRef<string | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
       id: "welcome",
@@ -26,6 +28,38 @@ export default function ChatPanel({ dashboardContext, authToken, userEmail, onDa
   const [sessionId, setSessionId] = useState<string | undefined>();
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (dashboardContext.workbookName) {
+      return;
+    }
+
+    if (env.authRequired && !authToken) {
+      return;
+    }
+
+    const enrichmentKey = `${dashboardContext.dashboardName}:${dashboardContext.capturedAt}`;
+    if (enrichmentStartedKey.current === enrichmentKey) {
+      return;
+    }
+
+    enrichmentStartedKey.current = enrichmentKey;
+    enrichDashboardContext({
+      dashboardContext,
+      clientContext: {
+        source: "tableau-extension",
+        appVersion: env.appVersion,
+      },
+    }, authToken)
+      .then((response) => {
+        if (response.dashboardContextPatch?.workbookName) {
+          onDashboardContextPatch?.(response.dashboardContextPatch);
+        }
+      })
+      .catch(() => {
+        // Keep the UI usable; chat responses can still explain missing context.
+      });
+  }, [authToken, dashboardContext, onDashboardContextPatch]);
 
   async function handleSend(question: string) {
     const trimmedQuestion = question.trim();

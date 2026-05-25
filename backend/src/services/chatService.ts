@@ -7,7 +7,8 @@ import { MockTableauContextProvider } from "../tableau/mockTableauContextProvide
 import { TableauMcpContextProvider } from "../tableau/tableauMcpContextProvider";
 import type { TableauContextProvider } from "../tableau/contextProvider";
 import type { AuthenticatedUser } from "../types/auth";
-import type { ChatRequest, ChatResponse } from "../types/chat";
+import type { ChatRequest, ChatResponse, ContextRequest, ContextResponse } from "../types/chat";
+import type { DashboardContext } from "../types/tableau";
 import { MockAnswerGenerator, type AnswerGenerator } from "./answerGenerator";
 import { buildPrompt } from "./promptBuilder";
 
@@ -90,10 +91,48 @@ export class ChatService {
       },
     };
   }
+
+  async getDashboardContextPatch(
+    request: ContextRequest,
+    authenticatedUser?: AuthenticatedUser,
+  ): Promise<ContextResponse> {
+    const tableauSubject = resolveTableauSubject(authenticatedUser);
+    logInfo("chat.service.context_patch.started", {
+      provider: this.contextProvider.name,
+      dashboardName: request.dashboardContext.dashboardName,
+      workbookNamePresent: Boolean(request.dashboardContext.workbookName),
+      worksheetCount: request.dashboardContext.worksheets.length,
+      authenticated: Boolean(authenticatedUser),
+      authTokenUse: authenticatedUser?.tokenUse,
+      hasAuthenticatedEmail: Boolean(authenticatedUser?.email),
+      tableauSubjectHash: safeHash(tableauSubject),
+    });
+
+    const additionalContext = await this.contextProvider.getAdditionalContext({
+      dashboardContext: request.dashboardContext,
+      question: "Resolve dashboard context for Tableau Assistant UI.",
+      authenticatedUser,
+      tableauSubject,
+    });
+    const dashboardContextPatch = buildDashboardContextPatch(request, additionalContext);
+
+    logInfo("chat.service.context_patch.completed", {
+      provider: additionalContext.provider,
+      patchedFields: dashboardContextPatch?.workbookName ? ["workbookName"] : [],
+      warningCount: additionalContext.warnings?.length ?? 0,
+    });
+
+    return {
+      dashboardContextPatch,
+      debug: {
+        tableauContextProvider: additionalContext.provider,
+      },
+    };
+  }
 }
 
 function buildDashboardContextPatch(
-  request: ChatRequest,
+  request: { dashboardContext: DashboardContext },
   additionalContext: Awaited<ReturnType<TableauContextProvider["getAdditionalContext"]>>,
 ): ChatResponse["dashboardContextPatch"] {
   if (request.dashboardContext.workbookName) {

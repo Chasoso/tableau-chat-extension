@@ -13,6 +13,7 @@ const server = createServer(async (request, response) => {
     const body = Buffer.concat(chunks).toString("utf8");
     const event: ApiGatewayProxyEvent = {
       httpMethod: request.method,
+      rawPath: request.url?.split("?")[0],
       headers: Object.fromEntries(Object.entries(request.headers).map(([key, value]) => [key, String(value)])),
       body: body || null,
     };
@@ -20,7 +21,7 @@ const server = createServer(async (request, response) => {
     const result =
       request.url?.startsWith("/health")
         ? await healthHandler()
-        : request.url?.startsWith("/chat")
+        : request.url?.startsWith("/chat") || request.url?.startsWith("/context")
           ? await chatHandler(event)
           : {
               statusCode: 404,
@@ -36,4 +37,3 @@ const server = createServer(async (request, response) => {
 server.listen(port, () => {
   console.log(`Local backend listening on http://localhost:${port}`);
 });
-

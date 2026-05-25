@@ -248,6 +248,13 @@ Resources:
       RouteKey: "POST /chat"
       Target: !Sub "integrations/${ChatIntegration}"
 
+  ContextRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref HttpApi
+      RouteKey: "POST /context"
+      Target: !Sub "integrations/${ChatIntegration}"
+
   HealthRoute:
     Type: AWS::ApiGatewayV2::Route
     Properties:
@@ -262,6 +269,14 @@ Resources:
       FunctionName: !Ref ChatFunction
       Principal: apigateway.amazonaws.com
       SourceArn: !Sub "arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${HttpApi}/*/*/chat"
+
+  ContextInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref ChatFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub "arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${HttpApi}/*/*/context"
 
   HealthInvokePermission:
     Type: AWS::Lambda::Permission

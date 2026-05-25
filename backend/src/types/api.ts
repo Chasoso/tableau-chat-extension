@@ -1,5 +1,7 @@
 export type ApiGatewayProxyEvent = {
   httpMethod?: string;
+  rawPath?: string;
+  path?: string;
   headers?: Record<string, string | undefined>;
   requestContext?: {
     requestId?: string;

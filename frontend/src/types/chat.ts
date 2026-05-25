@@ -19,13 +19,30 @@ export type ChatRequest = {
   sessionId?: string;
 };
 
+export type ContextRequest = {
+  dashboardContext: DashboardContext;
+  clientContext: {
+    source: "tableau-extension";
+    appVersion: string;
+  };
+};
+
+export type DashboardContextPatch = Partial<Pick<DashboardContext, "workbookName">>;
+
 export type ChatResponse = {
   answer: string;
   sessionId: string;
   messageId: string;
-  dashboardContextPatch?: Partial<Pick<DashboardContext, "workbookName">>;
+  dashboardContextPatch?: DashboardContextPatch;
   debug?: {
     usedMock?: boolean;
+    tableauContextProvider?: string;
+  };
+};
+
+export type ContextResponse = {
+  dashboardContextPatch?: DashboardContextPatch;
+  debug?: {
     tableauContextProvider?: string;
   };
 };
