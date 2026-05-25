@@ -1,6 +1,11 @@
 import { useEffect, useState } from "react";
 import type React from "react";
-import { completeLoginFromRedirect, startLogin } from "../auth/cognitoAuth";
+import {
+  completeLoginFromRedirect,
+  isAuthCompleteMessage,
+  startLoginPopup,
+  storeSession,
+} from "../auth/cognitoAuth";
 import type { AuthSession } from "../types/auth";
 
 type Props = {
@@ -14,6 +19,17 @@ export default function AuthGate({ children }: Props) {
 
   useEffect(() => {
     let mounted = true;
+    function handleMessage(message: MessageEvent) {
+      if (!isAuthCompleteMessage(message)) {
+        return;
+      }
+
+      storeSession(message.data.session);
+      setSession(message.data.session);
+      setError(null);
+    }
+
+    window.addEventListener("message", handleMessage);
     completeLoginFromRedirect()
       .then((nextSession) => {
         if (mounted) {
@@ -33,6 +49,7 @@ export default function AuthGate({ children }: Props) {
 
     return () => {
       mounted = false;
+      window.removeEventListener("message", handleMessage);
     };
   }, []);
 
@@ -50,7 +67,14 @@ export default function AuthGate({ children }: Props) {
         <h1>Tableau Assistant</h1>
         <p>Sign in to ask questions about this dashboard.</p>
         {error ? <div className="error-banner">{error}</div> : null}
-        <button type="button" onClick={() => void startLogin()}>
+        <button
+          type="button"
+          onClick={() => {
+            startLoginPopup().catch((unknownError) => {
+              setError(unknownError instanceof Error ? unknownError.message : "Failed to start sign-in.");
+            });
+          }}
+        >
           Sign in
         </button>
       </section>

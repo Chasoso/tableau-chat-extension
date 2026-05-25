@@ -3,6 +3,12 @@ import type { AuthSession } from "../types/auth";
 
 const sessionKey = "tableau-chat.auth.session";
 const verifierKey = "tableau-chat.auth.pkce.verifier";
+const authMessageType = "tableau-chat.auth.complete";
+
+export type AuthCompleteMessage = {
+  type: typeof authMessageType;
+  session: AuthSession;
+};
 
 export function getStoredSession(): AuthSession | null {
   const raw = sessionStorage.getItem(sessionKey);
@@ -64,6 +70,7 @@ export async function completeLoginFromRedirect(): Promise<AuthSession | null> {
 
   sessionStorage.setItem(sessionKey, JSON.stringify(session));
   sessionStorage.removeItem(verifierKey);
+  notifyOpener(session);
   url.searchParams.delete("code");
   url.searchParams.delete("state");
   window.history.replaceState({}, document.title, url.toString());
@@ -71,6 +78,32 @@ export async function completeLoginFromRedirect(): Promise<AuthSession | null> {
 }
 
 export async function startLogin(): Promise<void> {
+  const loginUrl = await createLoginUrl();
+  window.location.assign(loginUrl);
+}
+
+export async function startLoginPopup(): Promise<void> {
+  const loginUrl = await createLoginUrl();
+  const popup = window.open(loginUrl, "tableau-chat-cognito-login", "popup,width=520,height=720");
+  if (!popup) {
+    throw new Error("Unable to open the sign-in window. Please allow pop-ups for this site.");
+  }
+  popup.focus();
+}
+
+export function isAuthRedirect(): boolean {
+  return new URL(window.location.href).searchParams.has("code");
+}
+
+export function isAuthCompleteMessage(message: MessageEvent): message is MessageEvent<AuthCompleteMessage> {
+  return message.origin === window.location.origin && message.data?.type === authMessageType && Boolean(message.data.session);
+}
+
+export function storeSession(session: AuthSession): void {
+  sessionStorage.setItem(sessionKey, JSON.stringify(session));
+}
+
+async function createLoginUrl(): Promise<string> {
   assertAuthConfigured();
   const verifier = randomBase64Url(32);
   const challenge = await sha256Base64Url(verifier);
@@ -83,7 +116,7 @@ export async function startLogin(): Promise<void> {
   authUrl.searchParams.set("redirect_uri", getRedirectUri());
   authUrl.searchParams.set("code_challenge_method", "S256");
   authUrl.searchParams.set("code_challenge", challenge);
-  window.location.assign(authUrl.toString());
+  return authUrl.toString();
 }
 
 export function signOut(): void {
@@ -124,6 +157,20 @@ function getRedirectUri(): string {
 
 function getLogoutUri(): string {
   return env.cognito.logoutUri || getRedirectUri();
+}
+
+function notifyOpener(session: AuthSession): void {
+  if (!window.opener) {
+    return;
+  }
+
+  window.opener.postMessage(
+    {
+      type: authMessageType,
+      session,
+    } satisfies AuthCompleteMessage,
+    window.location.origin,
+  );
 }
 
 function randomBase64Url(byteLength: number): string {
