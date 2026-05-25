@@ -194,6 +194,12 @@ Resources:
                 Resource:
                   - !Sub "arn:${AWS::Partition}:bedrock:${BedrockRegion}::foundation-model/${BedrockModelId}"
                   - !Sub "arn:${AWS::Partition}:bedrock:${BedrockRegion}::foundation-model/${BedrockFoundationModelId}"
+                  # The US Nova 2 Lite inference profile can route from us-east-1 to
+                  # us-east-1, us-east-2, and us-west-2. All destination foundation
+                  # model ARNs must be permitted for cross-Region inference.
+                  - !Sub "arn:${AWS::Partition}:bedrock:us-east-1::foundation-model/${BedrockFoundationModelId}"
+                  - !Sub "arn:${AWS::Partition}:bedrock:us-east-2::foundation-model/${BedrockFoundationModelId}"
+                  - !Sub "arn:${AWS::Partition}:bedrock:us-west-2::foundation-model/${BedrockFoundationModelId}"
                   - !Sub "arn:${AWS::Partition}:bedrock:${BedrockRegion}:${AWS::AccountId}:inference-profile/${BedrockModelId}"
                   - !Sub "arn:${AWS::Partition}:bedrock:${BedrockRegion}::inference-profile/${BedrockModelId}"
 

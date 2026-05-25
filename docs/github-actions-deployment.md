@@ -88,11 +88,16 @@ For Bedrock, add:
   ],
   "Resource": [
     "arn:aws:bedrock:<bedrock-region>::foundation-model/<foundation-model-id>",
+    "arn:aws:bedrock:us-east-1::foundation-model/<foundation-model-id>",
+    "arn:aws:bedrock:us-east-2::foundation-model/<foundation-model-id>",
+    "arn:aws:bedrock:us-west-2::foundation-model/<foundation-model-id>",
     "arn:aws:bedrock:<bedrock-region>:<account-id>:inference-profile/<model-id>",
     "arn:aws:bedrock:<bedrock-region>::inference-profile/<model-id>"
   ]
 }
 ```
+
+When `BEDROCK_MODEL_ID=us.amazon.nova-2-lite-v1:0`, Bedrock can route requests to US destination Regions such as `us-east-1`, `us-east-2`, and `us-west-2`. The Lambda runtime role therefore needs permission for the destination foundation model ARNs, not only the source Region inference profile.
 
 This permission is attached by the CloudFormation template to the Lambda backend role. The CloudFormation execution role must also be allowed to create/update that inline IAM policy.
 
@@ -189,6 +194,8 @@ Actionsログには AWSアカウントID、ARN、バケット名、CloudFront/AP
 CloudFormation execution role には、既存の Lambda、API Gateway、CloudFront、S3、DynamoDB、Logs、IAM、Secrets Manager 権限が必要です。
 
 Bedrock利用のため、Lambda backend role に `bedrock:InvokeModel` と `bedrock:InvokeModelWithResponseStream` を付与します。CloudFormation execution role は、その inline IAM policy を作成・更新できる必要があります。
+
+`BEDROCK_MODEL_ID=us.amazon.nova-2-lite-v1:0` の場合、Bedrock は US の destination Region、たとえば `us-east-1`、`us-east-2`、`us-west-2` にリクエストをルーティングできます。そのため、Lambda実行ロールには source Region の inference profile だけでなく、destination Region の foundation model ARN も許可する必要があります。
 
 また、Connected App secret の更新や rollback 時に CloudFormation が secret value を読むことがあるため、CloudFormation execution role には対象 Secret への `secretsmanager:GetSecretValue` も必要です。
 
