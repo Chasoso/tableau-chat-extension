@@ -127,11 +127,9 @@ export async function getDashboardContext(
 
 function resolveWorkbookName(dashboard: TableauDashboard, options: DashboardContextOptions): string | null {
   const explicitName =
-    normalizeName(dashboard.workbook?.name) ??
-    normalizeName((options.workbook as TableauWorkbook | undefined)?.name) ??
-    normalizeName((options.workbook as TableauWorkbook | undefined)?.workbookName) ??
-    findLikelyWorkbookName(options.workbook) ??
-    findLikelyWorkbookName(dashboard);
+    normalizeName(readStringProperty(dashboard.workbook, "name")) ??
+    normalizeName(readStringProperty(options.workbook, "name")) ??
+    normalizeName(readStringProperty(options.workbook, "workbookName"));
 
   if (explicitName) {
     return explicitName;
@@ -165,54 +163,17 @@ function parseWorkbookNameFromUrl(value: string | null | undefined): string | nu
   return null;
 }
 
-function findLikelyWorkbookName(value: unknown): string | null {
+function readStringProperty(value: unknown, key: string): string | undefined {
   if (!value || typeof value !== "object") {
-    return null;
+    return undefined;
   }
 
-  const record = value as Record<string, unknown>;
-  const directName = pickFirstString(record, ["workbookName", "_workbookName", "publishedWorkbookName"]);
-  if (directName) {
-    return directName;
+  try {
+    const propertyValue = (value as Record<string, unknown>)[key];
+    return typeof propertyValue === "string" ? propertyValue : undefined;
+  } catch {
+    return undefined;
   }
-
-  const url = pickFirstString(record, ["url", "_url", "sheetUrl", "workbookUrl"]);
-  const nameFromUrl = parseWorkbookNameFromUrl(url);
-  if (nameFromUrl) {
-    return nameFromUrl;
-  }
-
-  for (const child of Object.values(record)) {
-    if (child && typeof child === "object") {
-      const nestedName = pickFirstString(child as Record<string, unknown>, [
-        "workbookName",
-        "_workbookName",
-        "publishedWorkbookName",
-      ]);
-      if (nestedName) {
-        return nestedName;
-      }
-
-      const nestedUrl = pickFirstString(child as Record<string, unknown>, ["url", "_url", "sheetUrl", "workbookUrl"]);
-      const nestedNameFromUrl = parseWorkbookNameFromUrl(nestedUrl);
-      if (nestedNameFromUrl) {
-        return nestedNameFromUrl;
-      }
-    }
-  }
-
-  return null;
-}
-
-function pickFirstString(record: Record<string, unknown>, keys: string[]): string | null {
-  for (const key of keys) {
-    const value = normalizeName(typeof record[key] === "string" ? record[key] : undefined);
-    if (value) {
-      return value;
-    }
-  }
-
-  return null;
 }
 
 function normalizeName(value: string | undefined): string | null {
