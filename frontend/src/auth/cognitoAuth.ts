@@ -2,7 +2,7 @@ import { env } from "../env";
 import type { AuthSession } from "../types/auth";
 
 const sessionKey = "tableau-chat.auth.session";
-const verifierKey = "tableau-chat.auth.pkce.verifier";
+const verifierKeyPrefix = "tableau-chat.auth.pkce.verifier.";
 const authMessageType = "tableau-chat.auth.complete";
 
 export type AuthCompleteMessage = {
@@ -28,11 +28,16 @@ export function getStoredSession(): AuthSession | null {
 export async function completeLoginFromRedirect(): Promise<AuthSession | null> {
   const url = new URL(window.location.href);
   const code = url.searchParams.get("code");
+  const state = url.searchParams.get("state");
   if (!code) {
     return getStoredSession();
   }
 
-  const verifier = localStorage.getItem(verifierKey);
+  if (!state) {
+    throw new Error("Login state is missing. Please sign in again.");
+  }
+
+  const verifier = localStorage.getItem(getVerifierKey(state));
   if (!verifier) {
     throw new Error("Login session expired. Please sign in again.");
   }
@@ -69,7 +74,7 @@ export async function completeLoginFromRedirect(): Promise<AuthSession | null> {
   };
 
   localStorage.setItem(sessionKey, JSON.stringify(session));
-  localStorage.removeItem(verifierKey);
+  localStorage.removeItem(getVerifierKey(state));
   notifyOpener(session);
   url.searchParams.delete("code");
   url.searchParams.delete("state");
@@ -106,14 +111,16 @@ export function storeSession(session: AuthSession): void {
 async function createLoginUrl(): Promise<string> {
   assertAuthConfigured();
   const verifier = randomBase64Url(32);
+  const state = randomBase64Url(16);
   const challenge = await sha256Base64Url(verifier);
-  localStorage.setItem(verifierKey, verifier);
+  localStorage.setItem(getVerifierKey(state), verifier);
 
   const authUrl = new URL(`${getCognitoDomain()}/oauth2/authorize`);
   authUrl.searchParams.set("client_id", env.cognito.clientId);
   authUrl.searchParams.set("response_type", "code");
   authUrl.searchParams.set("scope", "openid email profile");
   authUrl.searchParams.set("redirect_uri", getRedirectUri());
+  authUrl.searchParams.set("state", state);
   authUrl.searchParams.set("code_challenge_method", "S256");
   authUrl.searchParams.set("code_challenge", challenge);
   return authUrl.toString();
@@ -140,7 +147,11 @@ export function assertAuthConfigured(): void {
 
 function clearSession(): void {
   localStorage.removeItem(sessionKey);
-  localStorage.removeItem(verifierKey);
+  for (const key of Object.keys(localStorage)) {
+    if (key.startsWith(verifierKeyPrefix)) {
+      localStorage.removeItem(key);
+    }
+  }
 }
 
 function getCognitoDomain(): string {
@@ -171,6 +182,10 @@ function notifyOpener(session: AuthSession): void {
     } satisfies AuthCompleteMessage,
     window.location.origin,
   );
+}
+
+function getVerifierKey(state: string): string {
+  return `${verifierKeyPrefix}${state}`;
 }
 
 function randomBase64Url(byteLength: number): string {

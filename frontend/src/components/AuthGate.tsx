@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import type React from "react";
 import {
   completeLoginFromRedirect,
+  getStoredSession,
   isAuthCompleteMessage,
   startLoginPopup,
   storeSession,
@@ -29,7 +30,20 @@ export default function AuthGate({ children }: Props) {
       setError(null);
     }
 
+    function handleStorage(event: StorageEvent) {
+      if (event.key !== "tableau-chat.auth.session") {
+        return;
+      }
+
+      const storedSession = getStoredSession();
+      if (storedSession) {
+        setSession(storedSession);
+        setError(null);
+      }
+    }
+
     window.addEventListener("message", handleMessage);
+    window.addEventListener("storage", handleStorage);
     completeLoginFromRedirect()
       .then((nextSession) => {
         if (mounted) {
@@ -50,6 +64,7 @@ export default function AuthGate({ children }: Props) {
     return () => {
       mounted = false;
       window.removeEventListener("message", handleMessage);
+      window.removeEventListener("storage", handleStorage);
     };
   }, []);
 
