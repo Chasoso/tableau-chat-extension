@@ -5,6 +5,7 @@ import { createMockDashboardContext, getDashboardContext } from "./dashboardCont
 type TableauExtensionsGlobal = {
   extensions?: {
     initializeAsync: () => Promise<void>;
+    workbook?: unknown;
     dashboardContent?: {
       dashboard?: unknown;
     };
@@ -34,7 +35,10 @@ export async function initializeTableauExtension(): Promise<DashboardContext> {
       return createMockDashboardContext("Tableau Extensions API initialized, but no active dashboard was available.");
     }
 
-    return getDashboardContext(dashboard);
+    return getDashboardContext(dashboard, {
+      workbook: tableau.workbook,
+      referrer: document.referrer,
+    });
   } catch (error) {
     console.warn("Falling back to mock Tableau context. Tableau initialization failed.", error);
     return createMockDashboardContext("Tableau Extensions API initialization failed.");

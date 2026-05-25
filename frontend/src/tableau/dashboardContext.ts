@@ -14,6 +14,17 @@ type TableauDashboard = {
   getParametersAsync?: () => Promise<unknown[]>;
 };
 
+type TableauWorkbook = {
+  name?: string;
+  workbookName?: string;
+  getAllDataSourcesAsync?: () => Promise<unknown[]>;
+};
+
+type DashboardContextOptions = {
+  workbook?: unknown;
+  referrer?: string;
+};
+
 type TableauWorksheet = {
   name?: string;
   sheetType?: string;
@@ -75,8 +86,12 @@ export function createMockDashboardContext(contextWarning = "Using mock dashboar
   };
 }
 
-export async function getDashboardContext(dashboard: TableauDashboard): Promise<DashboardContext> {
+export async function getDashboardContext(
+  dashboard: TableauDashboard,
+  options: DashboardContextOptions = {},
+): Promise<DashboardContext> {
   const worksheets = dashboard.worksheets ?? [];
+  const workbookName = resolveWorkbookName(dashboard, options);
 
   const worksheetSummaries: WorksheetSummary[] = worksheets.map((worksheet) => ({
     name: worksheet.name ?? "Untitled worksheet",
@@ -99,7 +114,7 @@ export async function getDashboardContext(dashboard: TableauDashboard): Promise<
 
   return {
     dashboardName: dashboard.name ?? "Untitled dashboard",
-    workbookName: dashboard.workbook?.name ?? null,
+    workbookName,
     worksheets: worksheetSummaries,
     filters,
     parameters,
@@ -108,6 +123,101 @@ export async function getDashboardContext(dashboard: TableauDashboard): Promise<
     contextSource: "tableau-extension",
     capturedAt: new Date().toISOString(),
   };
+}
+
+function resolveWorkbookName(dashboard: TableauDashboard, options: DashboardContextOptions): string | null {
+  const explicitName =
+    normalizeName(dashboard.workbook?.name) ??
+    normalizeName((options.workbook as TableauWorkbook | undefined)?.name) ??
+    normalizeName((options.workbook as TableauWorkbook | undefined)?.workbookName) ??
+    findLikelyWorkbookName(options.workbook) ??
+    findLikelyWorkbookName(dashboard);
+
+  if (explicitName) {
+    return explicitName;
+  }
+
+  return parseWorkbookNameFromUrl(options.referrer);
+}
+
+function parseWorkbookNameFromUrl(value: string | null | undefined): string | null {
+  if (!value) {
+    return null;
+  }
+
+  try {
+    const parsed = new URL(value);
+    const hashPath = parsed.hash.startsWith("#") ? parsed.hash.slice(1) : parsed.hash;
+    const pathCandidates = [hashPath, parsed.pathname].filter(Boolean);
+
+    for (const path of pathCandidates) {
+      const match = path.match(/\/views\/([^/?#]+)\//);
+      const workbookContentUrl = match?.[1];
+      const name = normalizeName(workbookContentUrl ? decodeURIComponent(workbookContentUrl) : undefined);
+      if (name) {
+        return name;
+      }
+    }
+  } catch {
+    return null;
+  }
+
+  return null;
+}
+
+function findLikelyWorkbookName(value: unknown): string | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+
+  const record = value as Record<string, unknown>;
+  const directName = pickFirstString(record, ["workbookName", "_workbookName", "publishedWorkbookName"]);
+  if (directName) {
+    return directName;
+  }
+
+  const url = pickFirstString(record, ["url", "_url", "sheetUrl", "workbookUrl"]);
+  const nameFromUrl = parseWorkbookNameFromUrl(url);
+  if (nameFromUrl) {
+    return nameFromUrl;
+  }
+
+  for (const child of Object.values(record)) {
+    if (child && typeof child === "object") {
+      const nestedName = pickFirstString(child as Record<string, unknown>, [
+        "workbookName",
+        "_workbookName",
+        "publishedWorkbookName",
+      ]);
+      if (nestedName) {
+        return nestedName;
+      }
+
+      const nestedUrl = pickFirstString(child as Record<string, unknown>, ["url", "_url", "sheetUrl", "workbookUrl"]);
+      const nestedNameFromUrl = parseWorkbookNameFromUrl(nestedUrl);
+      if (nestedNameFromUrl) {
+        return nestedNameFromUrl;
+      }
+    }
+  }
+
+  return null;
+}
+
+function pickFirstString(record: Record<string, unknown>, keys: string[]): string | null {
+  for (const key of keys) {
+    const value = normalizeName(typeof record[key] === "string" ? record[key] : undefined);
+    if (value) {
+      return value;
+    }
+  }
+
+  return null;
+}
+
+function normalizeName(value: string | undefined): string | null {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : null;
 }
 
 async function collectFilters(worksheets: TableauWorksheet[]): Promise<FilterSummary[]> {
