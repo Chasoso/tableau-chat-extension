@@ -5,8 +5,16 @@ type Props = {
 };
 
 export default function DashboardContextPanel({ dashboardContext }: Props) {
+  const isMockContext = dashboardContext.contextSource === "mock";
+
   return (
     <aside className="context-card" aria-label="Dashboard context summary">
+      <div className="context-source-row">
+        <span className={isMockContext ? "context-source mock" : "context-source live"}>
+          {isMockContext ? "Mock context" : "Tableau context"}
+        </span>
+      </div>
+      {dashboardContext.contextWarning ? <div className="context-warning">{dashboardContext.contextWarning}</div> : null}
       <div className="context-row">
         <span>Dashboard</span>
         <strong>{dashboardContext.dashboardName}</strong>
@@ -32,4 +40,3 @@ export default function DashboardContextPanel({ dashboardContext }: Props) {
     </aside>
   );
 }
-

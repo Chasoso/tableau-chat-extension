@@ -19,25 +19,24 @@ declare global {
 
 export async function initializeTableauExtension(): Promise<DashboardContext> {
   if (env.useMockTableau) {
-    return createMockDashboardContext();
+    return createMockDashboardContext("VITE_USE_MOCK_TABLEAU=true is enabled.");
   }
 
   const tableau = window.tableau?.extensions;
   if (!tableau?.initializeAsync) {
-    return createMockDashboardContext();
+    return createMockDashboardContext("Tableau Extensions API was not available in the browser window.");
   }
 
   try {
     await tableau.initializeAsync();
     const dashboard = tableau.dashboardContent?.dashboard;
     if (!dashboard) {
-      return createMockDashboardContext();
+      return createMockDashboardContext("Tableau Extensions API initialized, but no active dashboard was available.");
     }
 
     return getDashboardContext(dashboard);
   } catch (error) {
     console.warn("Falling back to mock Tableau context. Tableau initialization failed.", error);
-    return createMockDashboardContext();
+    return createMockDashboardContext("Tableau Extensions API initialization failed.");
   }
 }
-

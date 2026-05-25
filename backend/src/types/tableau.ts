@@ -40,6 +40,8 @@ export type DashboardContext = {
   parameters: ParameterSummary[];
   selectedMarks?: SelectedMarkSummary[];
   dataSources?: DataSourceSummary[];
+  contextSource?: "tableau-extension" | "mock";
+  contextWarning?: string;
   capturedAt: string;
 };
 

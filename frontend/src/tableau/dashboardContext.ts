@@ -23,7 +23,7 @@ type TableauWorksheet = {
   getDataSourcesAsync?: () => Promise<unknown[]>;
 };
 
-export function createMockDashboardContext(): DashboardContext {
+export function createMockDashboardContext(contextWarning = "Using mock dashboard context."): DashboardContext {
   return {
     dashboardName: "Mock Executive Sales Dashboard",
     workbookName: "Mock Sales Workbook",
@@ -69,6 +69,8 @@ export function createMockDashboardContext(): DashboardContext {
         id: "mock-datasource",
       },
     ],
+    contextSource: "mock",
+    contextWarning,
     capturedAt: new Date().toISOString(),
   };
 }
@@ -103,6 +105,7 @@ export async function getDashboardContext(dashboard: TableauDashboard): Promise<
     parameters,
     selectedMarks,
     dataSources,
+    contextSource: "tableau-extension",
     capturedAt: new Date().toISOString(),
   };
 }
@@ -230,4 +233,3 @@ async function collectDataSources(worksheets: TableauWorksheet[]): Promise<DataS
 
   return summaries.flat();
 }
-
