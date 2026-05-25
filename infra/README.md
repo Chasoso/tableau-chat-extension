@@ -23,7 +23,8 @@ The template intentionally does not output API Gateway URLs, CloudFront domains,
 - `TABLEAU_CONTEXT_PROVIDER`: `mock`, `direct-api`, or `mcp`
 - `MODEL_PROVIDER`: `mock` or `bedrock`
 - `BEDROCK_REGION`: default `us-east-1`
-- `BEDROCK_MODEL_ID`: default `amazon.nova-lite-v1:0`
+- `BEDROCK_MODEL_ID`: default `us.amazon.nova-2-lite-v1:0`
+- `BEDROCK_FOUNDATION_MODEL_ID`: default `amazon.nova-2-lite-v1:0`
 - `TABLEAU_MCP_TRANSPORT`: default `stdio`
 - `TABLEAU_MCP_AUTH_MODE`: default `direct-trust`
 - `TABLEAU_MCP_ALLOWED_TOOLS`: optional allowlist
@@ -51,7 +52,8 @@ The template intentionally does not output API Gateway URLs, CloudFront domains,
 - `TABLEAU_CONTEXT_PROVIDER`: `mock`, `direct-api`, `mcp`
 - `MODEL_PROVIDER`: `mock`, `bedrock`
 - `BEDROCK_REGION`: default `us-east-1`
-- `BEDROCK_MODEL_ID`: default `amazon.nova-lite-v1:0`
+- `BEDROCK_MODEL_ID`: default `us.amazon.nova-2-lite-v1:0`
+- `BEDROCK_FOUNDATION_MODEL_ID`: default `amazon.nova-2-lite-v1:0`
 - `TABLEAU_MCP_TRANSPORT`: default `stdio`
 - `TABLEAU_MCP_AUTH_MODE`: default `direct-trust`
 - `TABLEAU_MCP_ALLOWED_TOOLS`: 任意の allowlist

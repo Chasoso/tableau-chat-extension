@@ -47,7 +47,7 @@ export function getConfig(): AppConfig {
       provider: parseModelProvider(process.env.MODEL_PROVIDER),
       bedrock: {
         region: process.env.BEDROCK_REGION ?? "us-east-1",
-        modelId: process.env.BEDROCK_MODEL_ID ?? "amazon.nova-lite-v1:0",
+        modelId: process.env.BEDROCK_MODEL_ID ?? "us.amazon.nova-2-lite-v1:0",
         maxOutputTokens: Number(process.env.BEDROCK_MAX_OUTPUT_TOKENS ?? 1200),
         temperature: Number(process.env.BEDROCK_TEMPERATURE ?? 0.2),
       },

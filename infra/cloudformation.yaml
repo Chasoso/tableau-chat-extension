@@ -104,7 +104,10 @@ Parameters:
     Default: "us-east-1"
   BedrockModelId:
     Type: String
-    Default: "amazon.nova-lite-v1:0"
+    Default: "us.amazon.nova-2-lite-v1:0"
+  BedrockFoundationModelId:
+    Type: String
+    Default: "amazon.nova-2-lite-v1:0"
   BedrockMaxOutputTokens:
     Type: Number
     Default: 1200
@@ -190,6 +193,7 @@ Resources:
                   - bedrock:InvokeModelWithResponseStream
                 Resource:
                   - !Sub "arn:${AWS::Partition}:bedrock:${BedrockRegion}::foundation-model/${BedrockModelId}"
+                  - !Sub "arn:${AWS::Partition}:bedrock:${BedrockRegion}::foundation-model/${BedrockFoundationModelId}"
                   - !Sub "arn:${AWS::Partition}:bedrock:${BedrockRegion}:${AWS::AccountId}:inference-profile/${BedrockModelId}"
                   - !Sub "arn:${AWS::Partition}:bedrock:${BedrockRegion}::inference-profile/${BedrockModelId}"
 

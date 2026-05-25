@@ -60,7 +60,8 @@ jobs:
       TABLEAU_MCP_MAX_TOOL_CALLS: ${{ vars.TABLEAU_MCP_MAX_TOOL_CALLS || '3' }}
       MODEL_PROVIDER: ${{ vars.MODEL_PROVIDER || 'mock' }}
       BEDROCK_REGION: ${{ vars.BEDROCK_REGION || 'us-east-1' }}
-      BEDROCK_MODEL_ID: ${{ vars.BEDROCK_MODEL_ID || 'amazon.nova-lite-v1:0' }}
+      BEDROCK_MODEL_ID: ${{ vars.BEDROCK_MODEL_ID || 'us.amazon.nova-2-lite-v1:0' }}
+      BEDROCK_FOUNDATION_MODEL_ID: ${{ vars.BEDROCK_FOUNDATION_MODEL_ID || 'amazon.nova-2-lite-v1:0' }}
       BEDROCK_MAX_OUTPUT_TOKENS: ${{ vars.BEDROCK_MAX_OUTPUT_TOKENS || '1200' }}
       BEDROCK_TEMPERATURE: ${{ vars.BEDROCK_TEMPERATURE || '0.2' }}
 
@@ -107,6 +108,7 @@ jobs:
             "$MODEL_PROVIDER" \
             "$BEDROCK_REGION" \
             "$BEDROCK_MODEL_ID" \
+            "$BEDROCK_FOUNDATION_MODEL_ID" \
             "$BEDROCK_MAX_OUTPUT_TOKENS" \
             "$BEDROCK_TEMPERATURE"; do
             if [ -n "${value:-}" ]; then
@@ -289,6 +291,7 @@ jobs:
               ModelProvider="$MODEL_PROVIDER" \
               BedrockRegion="$BEDROCK_REGION" \
               BedrockModelId="$BEDROCK_MODEL_ID" \
+              BedrockFoundationModelId="$BEDROCK_FOUNDATION_MODEL_ID" \
               BedrockMaxOutputTokens="$BEDROCK_MAX_OUTPUT_TOKENS" \
               BedrockTemperature="$BEDROCK_TEMPERATURE"
 

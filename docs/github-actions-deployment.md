@@ -67,7 +67,8 @@ These can be repository Variables if acceptable:
 | `TABLEAU_MCP_MAX_TOOL_CALLS` | `3` | Maximum MCP tool calls per request. |
 | `MODEL_PROVIDER` | `mock` | `mock` or `bedrock`. |
 | `BEDROCK_REGION` | `us-east-1` | Bedrock model region. |
-| `BEDROCK_MODEL_ID` | `amazon.nova-lite-v1:0` | Bedrock model ID. |
+| `BEDROCK_MODEL_ID` | `us.amazon.nova-2-lite-v1:0` | Bedrock model ID or inference profile ID. |
+| `BEDROCK_FOUNDATION_MODEL_ID` | `amazon.nova-2-lite-v1:0` | Foundation model ID that backs the inference profile. |
 | `BEDROCK_MAX_OUTPUT_TOKENS` | `1200` | Max generated tokens. |
 | `BEDROCK_TEMPERATURE` | `0.2` | Generation temperature. |
 
@@ -86,7 +87,7 @@ For Bedrock, add:
     "bedrock:InvokeModelWithResponseStream"
   ],
   "Resource": [
-    "arn:aws:bedrock:<bedrock-region>::foundation-model/<model-id>",
+    "arn:aws:bedrock:<bedrock-region>::foundation-model/<foundation-model-id>",
     "arn:aws:bedrock:<bedrock-region>:<account-id>:inference-profile/<model-id>",
     "arn:aws:bedrock:<bedrock-region>::inference-profile/<model-id>"
   ]
@@ -178,7 +179,8 @@ Actionsログには AWSアカウントID、ARN、バケット名、CloudFront/AP
 | `TABLEAU_MCP_MAX_TOOL_CALLS` | `3` | 1リクエストあたりの最大MCP tool呼び出し数 |
 | `MODEL_PROVIDER` | `mock` | `mock` または `bedrock` |
 | `BEDROCK_REGION` | `us-east-1` | Bedrock model region |
-| `BEDROCK_MODEL_ID` | `amazon.nova-lite-v1:0` | Bedrock model ID |
+| `BEDROCK_MODEL_ID` | `us.amazon.nova-2-lite-v1:0` | Bedrock model ID または inference profile ID |
+| `BEDROCK_FOUNDATION_MODEL_ID` | `amazon.nova-2-lite-v1:0` | inference profile の背後にある foundation model ID |
 | `BEDROCK_MAX_OUTPUT_TOKENS` | `1200` | 最大生成token数 |
 | `BEDROCK_TEMPERATURE` | `0.2` | temperature |
 
