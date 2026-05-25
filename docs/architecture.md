@@ -6,31 +6,39 @@
 flowchart TD
   A[Tableau Cloud Dashboard] --> B[Dashboard Extension]
   B --> C[React Chat UI]
-  C --> D[API Gateway]
+  C --> D[CloudFront / API Gateway]
   D --> E[AWS Lambda]
-  E --> F[Tableau Connected App JWT]
-  F --> G[Tableau REST API / Metadata API]
-  E --> H[DynamoDB]
-  E --> I[LLM Provider]
+  E --> F[Cognito JWT Verification]
+  F --> G[ChatService]
+  G --> H[TableauContextProvider]
+  H --> I[Mock Provider]
+  H --> J[Direct Tableau REST API / Metadata API]
+  H --> K[Tableau MCP stdio child process]
+  K --> L[Tableau Cloud]
+  J --> L
+  G --> M[Bedrock Nova Lite]
+  G --> N[DynamoDB Chat History]
+  E --> O[Secrets Manager]
+  O --> J
+  O --> K
 ```
 
 ### Runtime Flow
 
 1. Tableau loads the `.trex` manifest and opens the React app as a Dashboard Extension.
-2. The React app initializes `tableau.extensions.initializeAsync()`.
-3. The frontend captures safe dashboard metadata, such as dashboard name, worksheet names, filters, and parameters.
-4. A user submits a question through the chat UI.
-5. The frontend sends the question and dashboard context to `POST /chat`.
-6. The Lambda handler validates the request and calls `ChatService`.
-7. `ChatService` asks a `TableauContextProvider` for additional context.
-8. The direct provider generates a Connected Apps JWT, signs in to Tableau REST API, and can query REST / Metadata APIs.
-9. The answer generator returns a mock answer in this PoC.
-10. Chat history is saved to DynamoDB or the in-memory local repository.
+2. The React app initializes the Tableau Extensions API and captures dashboard metadata.
+3. If authentication is required, the user signs in with Cognito Hosted UI.
+4. The frontend sends `POST /chat` with dashboard context and a Cognito token.
+5. Lambda verifies the Cognito JWT and derives the Tableau subject from the verified email claim.
+6. `ChatService` asks the selected `TableauContextProvider` for additional context.
+7. `mock` returns local test context, `direct-api` calls Tableau REST / Metadata API, and `mcp` launches Tableau MCP over stdio.
+8. `AnswerGenerator` either returns a deterministic context answer or calls Bedrock Nova Lite.
+9. Chat history is saved to DynamoDB.
 
 ### Key Abstractions
 
 - `TableauContextProvider`: hides whether Tableau context came from REST API, Metadata API, MCP, or mocks.
-- `AnswerGenerator`: hides whether answers come from a mock, OpenAI, Bedrock, or another LLM.
+- `AnswerGenerator`: hides whether answers come from deterministic mock logic or Bedrock.
 - `ChatHistoryRepository`: hides whether history is saved in DynamoDB or memory.
 
 ## 日本語
@@ -39,30 +47,37 @@ flowchart TD
 flowchart TD
   A[Tableau Cloud Dashboard] --> B[Dashboard Extension]
   B --> C[React Chat UI]
-  C --> D[API Gateway]
+  C --> D[CloudFront / API Gateway]
   D --> E[AWS Lambda]
-  E --> F[Tableau Connected App JWT]
-  F --> G[Tableau REST API / Metadata API]
-  E --> H[DynamoDB]
-  E --> I[LLM Provider]
+  E --> F[Cognito JWT Verification]
+  F --> G[ChatService]
+  G --> H[TableauContextProvider]
+  H --> I[Mock Provider]
+  H --> J[Direct Tableau REST API / Metadata API]
+  H --> K[Tableau MCP stdio child process]
+  K --> L[Tableau Cloud]
+  J --> L
+  G --> M[Bedrock Nova Lite]
+  G --> N[DynamoDB Chat History]
+  E --> O[Secrets Manager]
+  O --> J
+  O --> K
 ```
 
 ### 実行時の流れ
 
 1. Tableau が `.trex` manifest を読み込み、React アプリを Dashboard Extension として開きます。
-2. React アプリが `tableau.extensions.initializeAsync()` を実行します。
-3. フロントエンドがダッシュボード名、ワークシート名、フィルター、パラメーターなどの安全なメタデータを取得します。
-4. ユーザーがチャットUIから質問を送信します。
-5. フロントエンドが質問とダッシュボードコンテキストを `POST /chat` へ送信します。
-6. Lambda ハンドラーがリクエストを検証し、`ChatService` を呼び出します。
-7. `ChatService` が `TableauContextProvider` に追加コンテキスト取得を依頼します。
-8. Direct provider は Connected Apps JWT を生成し、Tableau REST API にサインインして REST / Metadata API を呼び出せます。
-9. この PoC では answer generator がモック回答を返します。
-10. チャット履歴は DynamoDB またはローカル用 in-memory repository に保存されます。
+2. React アプリが Tableau Extensions API を初期化し、ダッシュボードメタデータを取得します。
+3. 認証が必要な場合、ユーザーは Cognito Hosted UI でサインインします。
+4. フロントエンドが dashboard context と Cognito token を付けて `POST /chat` を呼びます。
+5. Lambda が Cognito JWT を検証し、検証済み email claim から Tableau subject を決定します。
+6. `ChatService` が選択された `TableauContextProvider` に追加コンテキスト取得を依頼します。
+7. `mock` はローカル用コンテキストを返し、`direct-api` は Tableau REST / Metadata API を呼び、`mcp` は Tableau MCP を stdio で起動します。
+8. `AnswerGenerator` が決定的なコンテキスト回答、または Bedrock Nova Lite による回答を返します。
+9. チャット履歴を DynamoDB に保存します。
 
 ### 主要な抽象化
 
-- `TableauContextProvider`: Tableau コンテキスト取得元が REST API、Metadata API、MCP、モックのどれかを隠蔽します。
-- `AnswerGenerator`: 回答生成元がモック、OpenAI、Bedrock、その他LLMのどれかを隠蔽します。
+- `TableauContextProvider`: Tableau コンテキスト取得元が REST API、Metadata API、MCP、mock のどれかを隠蔽します。
+- `AnswerGenerator`: 回答生成元が mock ロジックか Bedrock かを隠蔽します。
 - `ChatHistoryRepository`: 履歴保存先が DynamoDB かメモリかを隠蔽します。
-

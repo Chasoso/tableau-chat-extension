@@ -2,6 +2,15 @@ export type AppConfig = {
   chatHistoryTableName?: string;
   useInMemoryRepository: boolean;
   corsAllowedOrigin: string;
+  model: {
+    provider: "mock" | "bedrock";
+    bedrock: {
+      region: string;
+      modelId: string;
+      maxOutputTokens: number;
+      temperature: number;
+    };
+  };
   auth: {
     required: boolean;
     cognitoUserPoolId: string;
@@ -21,6 +30,10 @@ export type AppConfig = {
       transport: string;
       authMode: string;
       timeoutMs: number;
+      command: string;
+      args: string[];
+      allowedTools: string[];
+      maxToolCalls: number;
     };
   };
 };
@@ -30,6 +43,15 @@ export function getConfig(): AppConfig {
     chatHistoryTableName: process.env.CHAT_HISTORY_TABLE_NAME,
     useInMemoryRepository: process.env.USE_IN_MEMORY_REPOSITORY !== "false",
     corsAllowedOrigin: process.env.CORS_ALLOWED_ORIGIN ?? "*",
+    model: {
+      provider: parseModelProvider(process.env.MODEL_PROVIDER),
+      bedrock: {
+        region: process.env.BEDROCK_REGION ?? "us-east-1",
+        modelId: process.env.BEDROCK_MODEL_ID ?? "amazon.nova-lite-v1:0",
+        maxOutputTokens: Number(process.env.BEDROCK_MAX_OUTPUT_TOKENS ?? 1200),
+        temperature: Number(process.env.BEDROCK_TEMPERATURE ?? 0.2),
+      },
+    },
     auth: {
       required: process.env.AUTH_REQUIRED === "true",
       cognitoUserPoolId: process.env.COGNITO_USER_POOL_ID ?? "",
@@ -46,12 +68,24 @@ export function getConfig(): AppConfig {
       contextProvider: parseContextProvider(process.env.TABLEAU_CONTEXT_PROVIDER),
       mcp: {
         serverUrl: process.env.TABLEAU_MCP_SERVER_URL ?? "",
-        transport: process.env.TABLEAU_MCP_TRANSPORT ?? "http",
-        authMode: process.env.TABLEAU_MCP_AUTH_MODE ?? "none",
+        transport: process.env.TABLEAU_MCP_TRANSPORT ?? "stdio",
+        authMode: process.env.TABLEAU_MCP_AUTH_MODE ?? "direct-trust",
         timeoutMs: Number(process.env.TABLEAU_MCP_TIMEOUT_MS ?? 5000),
+        command: process.env.TABLEAU_MCP_COMMAND ?? "",
+        args: parseCsv(process.env.TABLEAU_MCP_ARGS),
+        allowedTools: parseCsv(process.env.TABLEAU_MCP_ALLOWED_TOOLS),
+        maxToolCalls: Number(process.env.TABLEAU_MCP_MAX_TOOL_CALLS ?? 3),
       },
     },
   };
+}
+
+function parseModelProvider(value: string | undefined): AppConfig["model"]["provider"] {
+  if (value === "bedrock") {
+    return "bedrock";
+  }
+
+  return "mock";
 }
 
 function parseScopes(value: string | undefined): string[] {
@@ -62,6 +96,17 @@ function parseScopes(value: string | undefined): string[] {
   return value
     .split(",")
     .map((scope) => scope.trim())
+    .filter(Boolean);
+}
+
+function parseCsv(value: string | undefined): string[] {
+  if (!value) {
+    return [];
+  }
+
+  return value
+    .split(",")
+    .map((item) => item.trim())
     .filter(Boolean);
 }
 

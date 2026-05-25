@@ -2,9 +2,18 @@
 
 ## English
 
-This is a PoC for a chat-style Tableau Dashboard Extension running inside Tableau Cloud dashboards. The React UI captures the current dashboard context through the Tableau Extensions API and sends user questions to a Node.js backend shaped like API Gateway + Lambda.
+This PoC is a chat-style Tableau Dashboard Extension for Tableau Cloud. The React frontend captures dashboard context with the Tableau Extensions API, authenticates users with Cognito when enabled, and sends questions to an API Gateway + Lambda style backend.
 
-Answer generation is mocked for now. The backend depends on a `TableauContextProvider` interface, so the chat flow can switch between `DirectTableauApiContextProvider`, a future `TableauMcpContextProvider`, and `MockTableauContextProvider` without changing `ChatService`.
+The backend keeps Tableau access and secrets server-side. It can switch context providers with `TABLEAU_CONTEXT_PROVIDER`:
+
+- `mock`: local-safe fallback with no Tableau call.
+- `direct-api`: uses Tableau Connected Apps Direct Trust JWT to call Tableau REST API / Metadata API.
+- `mcp`: launches Tableau MCP from the backend. The low-cost PoC path uses stdio transport inside Lambda instead of always-on ECS.
+
+Answer generation can switch with `MODEL_PROVIDER`:
+
+- `mock`: deterministic context-based answer.
+- `bedrock`: Amazon Bedrock Converse API. The recommended low-cost visual-capable model for this PoC is `amazon.nova-lite-v1:0` in `us-east-1`.
 
 ### Architecture
 
@@ -12,17 +21,20 @@ Answer generation is mocked for now. The backend depends on a `TableauContextPro
 flowchart LR
   A[Tableau Cloud Dashboard] --> B[Dashboard Extension]
   B --> C[React Chat UI]
-  C --> D[API Gateway]
+  C --> D[API Gateway / CloudFront /api]
   D --> E[Lambda Handler]
-  E --> F[ChatService]
-  F --> G[TableauContextProvider]
-  G --> H[Tableau Connected App JWT]
-  H --> I[Tableau REST API / Metadata API]
-  F --> J[DynamoDB Chat History]
-  F --> K[LLM Provider - mock in PoC]
+  E --> F[Cognito JWT Verification]
+  F --> G[ChatService]
+  G --> H[TableauContextProvider]
+  H --> I[Mock Provider]
+  H --> J[Direct Tableau REST / Metadata API]
+  H --> K[Tableau MCP over stdio]
+  K --> L[Tableau Cloud with Connected Apps JWT]
+  G --> M[Bedrock Nova Lite]
+  G --> N[DynamoDB Chat History]
 ```
 
-### Local Setup
+### Local Development
 
 Frontend:
 
@@ -40,7 +52,7 @@ npm install
 npm run dev
 ```
 
-Default local URLs:
+Useful local defaults:
 
 - Frontend: `http://localhost:5173`
 - Backend: `http://localhost:3001`
@@ -52,132 +64,122 @@ For browser-only mock development outside Tableau:
 ```bash
 VITE_USE_MOCK_TABLEAU=true
 VITE_API_BASE_URL=http://localhost:3001
+TABLEAU_CONTEXT_PROVIDER=mock
+MODEL_PROVIDER=mock
 ```
 
-### Loading As A Tableau Extension
+### Tableau Extension
 
-Use `frontend/public/tableau-chat-extension.trex` when adding a Dashboard Extension in Tableau Desktop or Tableau Cloud.
+Use `frontend/public/tableau-chat-extension.trex` for local development, or the built `.trex` from `frontend/dist` after deployment.
 
-The local manifest points to `http://localhost:5173/`. For production, host the built frontend on HTTPS and update the `.trex` `source-location` URL.
+The manifest `source-location` must point to the deployed HTTPS frontend URL. Tableau Cloud may require an administrator to allow network-enabled extensions and approve the extension domain.
 
-Depending on Tableau Cloud / Server settings, an administrator may need to allow network-enabled extensions and approve the extension domain.
+### Authentication
 
-### Tableau Connected App Values
+Authentication is optional for local development and enabled with:
 
-The backend needs these values to sign in to Tableau REST API with Direct Trust JWT. Never put secret values in the frontend.
+- Frontend: `VITE_AUTH_REQUIRED=true`
+- Backend: `AUTH_REQUIRED=true`
 
-- `TABLEAU_SERVER_URL`: for example `https://prod-useast-a.online.tableau.com`
-- `TABLEAU_SITE_CONTENT_URL`: Tableau site content URL, sometimes empty for the default site
-- `TABLEAU_API_VERSION`: for example `3.25`
+Cognito frontend settings:
+
+- `VITE_COGNITO_USER_POOL_ID`
+- `VITE_COGNITO_CLIENT_ID`
+- `VITE_COGNITO_REGION`
+- `VITE_COGNITO_DOMAIN`
+- `VITE_COGNITO_REDIRECT_URI`
+- `VITE_COGNITO_LOGOUT_URI`
+
+Cognito backend settings:
+
+- `COGNITO_USER_POOL_ID`
+- `COGNITO_CLIENT_ID`
+- `COGNITO_REGION`
+
+The backend verifies the Cognito JWT and derives the Tableau subject from the verified `email` claim. It does not trust a username sent by the frontend.
+
+### Tableau Connected App Settings
+
+The backend needs these values. Never put them in frontend code:
+
+- `TABLEAU_SERVER_URL`
+- `TABLEAU_SITE_CONTENT_URL`
+- `TABLEAU_API_VERSION`
 - `TABLEAU_CONNECTED_APP_CLIENT_ID`
 - `TABLEAU_CONNECTED_APP_SECRET_ID`
 - `TABLEAU_CONNECTED_APP_SECRET_VALUE`
-- `TABLEAU_DEFAULT_SUBJECT`: Tableau Cloud user email for the PoC
-- `TABLEAU_SCOPES`: comma-separated, defaults to `tableau:content:read`
-- `TABLEAU_CONTEXT_PROVIDER`: defaults to `mock`; use `direct-api` for Tableau REST / Metadata API or `mcp` for the MCP provider stub
+- `TABLEAU_DEFAULT_SUBJECT`
+- `TABLEAU_SCOPES`
 
-Chat history settings:
+In AWS, the CloudFormation template stores Connected App values in Secrets Manager and gives Lambda read access.
 
-- `USE_IN_MEMORY_REPOSITORY=true`: use memory storage for local development
-- `CHAT_HISTORY_TABLE_NAME`: DynamoDB table name
-- `CORS_ALLOWED_ORIGIN`: restrict to the frontend origin in deployed environments
+### MCP Settings
 
-Authentication settings:
+For Lambda-local Tableau MCP:
 
-- Frontend: `VITE_AUTH_REQUIRED=true`
-- Frontend: `VITE_COGNITO_USER_POOL_ID`
-- Frontend: `VITE_COGNITO_CLIENT_ID`
-- Frontend: `VITE_COGNITO_REGION`
-- Frontend: `VITE_COGNITO_DOMAIN`: Cognito Hosted UI domain, for example `https://your-domain.auth.ap-northeast-1.amazoncognito.com`
-- Frontend: `VITE_COGNITO_REDIRECT_URI`: exact Cognito callback URL, including trailing slash, for example `https://example.cloudfront.net/`
-- Frontend: `VITE_COGNITO_LOGOUT_URI`: exact Cognito sign-out URL. Defaults to `VITE_COGNITO_REDIRECT_URI`.
-- Backend: `AUTH_REQUIRED=true`
-- Backend: `COGNITO_USER_POOL_ID`
-- Backend: `COGNITO_CLIENT_ID`
-- Backend: `COGNITO_REGION`
-
-When authentication is enabled, the frontend redirects users to Cognito Hosted UI and sends the access token in the `Authorization` header. The backend verifies the Cognito JWT and derives the Tableau subject from the verified Cognito `email` claim. Frontend-provided usernames are never trusted for Tableau access.
-
-Cognito callback and sign-out URLs must exactly match the frontend redirect URL, including scheme, host, path, and trailing slash. `https://example.cloudfront.net` and `https://example.cloudfront.net/` are different values to Cognito.
-
-Provider selection:
-
-- `mock`: no Tableau API or MCP call; safe local fallback.
-- `direct-api`: backend signs in to Tableau using Connected Apps JWT and calls REST / Metadata API.
-- `mcp`: backend calls `TableauMcpContextProvider`; currently a safe HTTP stub that returns warnings if MCP is not configured.
-
-MCP settings:
-
-- `TABLEAU_MCP_SERVER_URL`
-- `TABLEAU_MCP_TRANSPORT=http`
-- `TABLEAU_MCP_AUTH_MODE=none`
+- `TABLEAU_CONTEXT_PROVIDER=mcp`
+- `TABLEAU_MCP_TRANSPORT=stdio`
+- `TABLEAU_MCP_AUTH_MODE=direct-trust`
 - `TABLEAU_MCP_TIMEOUT_MS=5000`
+- `TABLEAU_MCP_ALLOWED_TOOLS`: optional comma-separated allowlist of MCP tools to call.
+- `TABLEAU_MCP_MAX_TOOL_CALLS=3`
+- `TABLEAU_MCP_COMMAND` and `TABLEAU_MCP_ARGS`: optional override. If omitted, Lambda runs the installed `@tableau/mcp-server` package with Node.js.
 
-### What Works In This PoC
+The MCP child process receives Connected App credentials only through backend environment variables. These values are not logged.
 
-- React + TypeScript + Vite Dashboard Extension UI
-- Tableau Extensions API initialization with mock fallback
-- Dashboard context capture for dashboard name, worksheets, filters, parameters, selected marks, and datasources where available
-- Chat UI sending questions to `/chat`
-- Lambda-style backend handlers and local HTTP server
-- Tableau Connected Apps Direct Trust JWT generation
-- Tableau REST API sign-in client structure
-- Metadata API GraphQL client structure
-- DynamoDB repository and local in-memory repository
-- Mock answer generation behind an `AnswerGenerator` interface
-- Basic AWS auto-deployment through GitHub Actions
-- Optional Cognito JWT protection for the chat API
-- Provider switching between `mock`, `direct-api`, and `mcp`
-- Context-based answer summaries that use dashboard metadata instead of only returning a mock placeholder
+### Bedrock Settings
 
-### Not Yet Implemented
+For the selected PoC model:
 
-- Real LLM integration with OpenAI, Bedrock, or another provider
-- Production-ready user lifecycle, IdP federation, and Tableau user mapping
-- Complete workbook LUID discovery from dashboard context
-- Full Metadata API model for workbook -> dashboard -> sheets -> datasources -> fields
-- Production-grade AWS additions such as custom domains, WAF, and audit logging
-- Verified production MCP authentication and per-user Tableau permission delegation
+- `MODEL_PROVIDER=bedrock`
+- `BEDROCK_REGION=us-east-1`
+- `BEDROCK_MODEL_ID=amazon.nova-lite-v1:0`
+- `BEDROCK_MAX_OUTPUT_TOKENS=1200`
+- `BEDROCK_TEMPERATURE=0.2`
 
-### GitHub Actions AWS Deployment
+The current implementation sends text context to Bedrock. Screenshot/image input is the next step because Nova Lite supports multimodal use cases, but the first implementation keeps data minimized.
 
-`.github/workflows/deploy-aws.yml` and `infra/cloudformation.yaml` provide automated AWS deployment.
+### AWS Deployment
 
-The workflow assumes an AWS role through GitHub OIDC, bundles backend Lambda code, deploys CloudFormation, uploads the frontend to S3, and invalidates CloudFront.
-
-To reduce log exposure, ARNs containing AWS account IDs, S3 bucket names, CloudFront/API URLs, Tableau URLs, Connected App values, and Tableau user names are expected to be stored in GitHub Secrets. The workflow also uses `::add-mask::`, `mask-aws-account-id: true`, and avoids CloudFormation Outputs for URLs or physical IDs.
+`.github/workflows/deploy-aws.yml` builds the backend and frontend, deploys `infra/cloudformation.yaml`, uploads frontend assets to S3, and invalidates CloudFront. Sensitive values should be stored in GitHub Secrets or repository Variables, and the workflow masks account-specific IDs and URLs in logs.
 
 See [docs/github-actions-deployment.md](docs/github-actions-deployment.md).
 
-### Future MCP Integration
+### What Works
 
-The chat flow depends only on `TableauContextProvider`. Today, `DirectTableauApiContextProvider` calls REST API / Metadata API directly.
+- Tableau Dashboard Extension UI with mock fallback.
+- Cognito-protected chat API.
+- Per-user Tableau subject derived from verified Cognito email.
+- Direct Tableau REST / Metadata context lookup.
+- Lambda-local Tableau MCP stdio provider.
+- Bedrock Nova Lite answer generator.
+- DynamoDB chat history.
+- GitHub Actions deployment to AWS.
 
-`TableauMcpContextProvider` is now present as a small backend-side provider. It is intentionally conservative until the exact MCP transport, hosting model, and Tableau authentication method are verified. Confirm whether Tableau MCP supports Connected Apps JWT or another per-user delegation model first. If not, continue direct REST API / Metadata API calls for production Tableau access.
+### Not Production Ready Yet
 
-See [docs/future-mcp-integration.md](docs/future-mcp-integration.md).
+- MCP tool selection is conservative and should be hardened with an explicit tool allowlist.
+- Screenshot analysis is not wired into the prompt yet.
+- Cognito email equals Tableau username is a PoC assumption.
+- Production user mapping, IdP federation, audit logging, WAF, custom domains, and data governance need additional design.
+- The Lambda artifact includes MCP runtime dependencies directly. A Lambda Layer or container image may be better if package size grows.
 
 ## 日本語
 
-これは Tableau Cloud のダッシュボード内で動作する、チャット型 Tableau Dashboard Extension の PoC です。React UI が Tableau Extensions API から現在のダッシュボード情報を取得し、API Gateway + Lambda 相当の Node.js バックエンドへユーザーの質問を送信します。
+このPoCは、Tableau Cloud のダッシュボード内で動くチャット型 Dashboard Extension です。React フロントエンドが Tableau Extensions API でダッシュボード情報を取得し、必要に応じて Cognito でユーザー認証したうえで、API Gateway + Lambda 相当のバックエンドへ質問を送ります。
 
-回答生成は現時点ではモックです。バックエンドは `TableauContextProvider` インターフェースに依存する設計にしており、`DirectTableauApiContextProvider`、将来追加する `TableauMcpContextProvider`、`MockTableauContextProvider` を `ChatService` から透過的に差し替えられます。
+Tableau の Secret、JWT、MCP 認証情報、Bedrock 呼び出しはすべてバックエンド側で扱います。フロントエンドには置きません。
 
-### アーキテクチャ
+`TABLEAU_CONTEXT_PROVIDER` で Tableau コンテキスト取得方式を切り替えます。
 
-```mermaid
-flowchart LR
-  A[Tableau Cloud Dashboard] --> B[Dashboard Extension]
-  B --> C[React Chat UI]
-  C --> D[API Gateway]
-  D --> E[Lambda Handler]
-  E --> F[ChatService]
-  F --> G[TableauContextProvider]
-  G --> H[Tableau Connected App JWT]
-  H --> I[Tableau REST API / Metadata API]
-  F --> J[DynamoDB Chat History]
-  F --> K[LLM Provider - PoCではmock]
-```
+- `mock`: Tableau API を呼ばないローカル開発向けの安全なフォールバックです。
+- `direct-api`: Tableau Connected Apps Direct Trust JWT で REST API / Metadata API を呼びます。
+- `mcp`: バックエンドから Tableau MCP を呼びます。PoCではコストを抑えるため、常時起動の ECS ではなく Lambda 内 stdio transport を優先します。
+
+`MODEL_PROVIDER` で回答生成方式を切り替えます。
+
+- `mock`: 取得済みコンテキストだけで決定的な回答を返します。
+- `bedrock`: Amazon Bedrock Converse API を使います。今回の推奨は `us-east-1` の `amazon.nova-lite-v1:0` です。
 
 ### ローカル起動
 
@@ -197,119 +199,72 @@ npm install
 npm run dev
 ```
 
-デフォルトのローカルURL:
-
-- フロントエンド: `http://localhost:5173`
-- バックエンド: `http://localhost:3001`
-- Chat API: `POST http://localhost:3001/chat`
-- Health API: `GET http://localhost:3001/health`
-
-Tableau 外のブラウザでモック開発する場合:
+Tableau 外のブラウザでモック起動する場合:
 
 ```bash
 VITE_USE_MOCK_TABLEAU=true
 VITE_API_BASE_URL=http://localhost:3001
+TABLEAU_CONTEXT_PROVIDER=mock
+MODEL_PROVIDER=mock
 ```
 
-### Tableau Extension として読み込む方法
+### Tableau への配置
 
-Tableau Desktop または Tableau Cloud で Dashboard Extension を追加するときに、`frontend/public/tableau-chat-extension.trex` を指定します。
+ローカルでは `frontend/public/tableau-chat-extension.trex` を使います。デプロイ後は `frontend/dist` に出力された `.trex` を使います。
 
-ローカル用の manifest は `http://localhost:5173/` を参照します。本番では、ビルド済みフロントエンドを HTTPS でホストし、`.trex` の `source-location` URL を本番URLへ変更してください。
+`.trex` の `source-location` は HTTPS の本番フロントエンドURLに合わせる必要があります。Tableau Cloud 側で Network-enabled Extension の許可やドメイン許可が必要な場合があります。
 
-Tableau Cloud / Server の設定によっては、管理者が Network-enabled Extension を許可し、Extension のドメインを許可リストへ追加する必要があります。
+### 認証
 
-### Tableau Connected App 設定値
-
-Direct Trust JWT で Tableau REST API にサインインするため、バックエンドには以下の値が必要です。Secret 値は絶対にフロントエンドへ置かないでください。
-
-- `TABLEAU_SERVER_URL`: 例 `https://prod-useast-a.online.tableau.com`
-- `TABLEAU_SITE_CONTENT_URL`: Tableau site content URL。既定サイトでは空文字になる場合があります。
-- `TABLEAU_API_VERSION`: 例 `3.25`
-- `TABLEAU_CONNECTED_APP_CLIENT_ID`
-- `TABLEAU_CONNECTED_APP_SECRET_ID`
-- `TABLEAU_CONNECTED_APP_SECRET_VALUE`
-- `TABLEAU_DEFAULT_SUBJECT`: PoC では Tableau Cloud ユーザーのメールアドレスを想定
-- `TABLEAU_SCOPES`: カンマ区切り。既定は `tableau:content:read`
-- `TABLEAU_CONTEXT_PROVIDER`: 既定は `mock`。Tableau REST / Metadata API を呼ぶ場合は `direct-api`、MCP provider stub を使う場合は `mcp`
-
-チャット履歴保存用の設定:
-
-- `USE_IN_MEMORY_REPOSITORY=true`: ローカル開発ではメモリ保存を使う
-- `CHAT_HISTORY_TABLE_NAME`: DynamoDB のテーブル名
-- `CORS_ALLOWED_ORIGIN`: デプロイ環境ではフロントエンドの Origin に制限する
-
-認証設定:
+ローカル開発では認証なしでも動かせます。本番寄りにする場合は以下を有効にします。
 
 - Frontend: `VITE_AUTH_REQUIRED=true`
-- Frontend: `VITE_COGNITO_USER_POOL_ID`
-- Frontend: `VITE_COGNITO_CLIENT_ID`
-- Frontend: `VITE_COGNITO_REGION`
-- Frontend: `VITE_COGNITO_DOMAIN`: Cognito Hosted UI domain。例 `https://your-domain.auth.ap-northeast-1.amazoncognito.com`
-- Frontend: `VITE_COGNITO_REDIRECT_URI`: Cognito callback URL と完全一致させる値。末尾 `/` を含めます。例 `https://example.cloudfront.net/`
-- Frontend: `VITE_COGNITO_LOGOUT_URI`: Cognito sign-out URL と完全一致させる値。未指定時は `VITE_COGNITO_REDIRECT_URI` と同じです。
 - Backend: `AUTH_REQUIRED=true`
-- Backend: `COGNITO_USER_POOL_ID`
-- Backend: `COGNITO_CLIENT_ID`
-- Backend: `COGNITO_REGION`
 
-認証を有効化すると、フロントエンドは Cognito Hosted UI へリダイレクトし、API 呼び出し時に access token を `Authorization` header へ付与します。バックエンドは Cognito JWT を検証し、検証済み Cognito `email` claim から Tableau subject を決定します。フロントエンドから送られたユーザー名は Tableau access には使いません。
+バックエンドは Cognito JWT を検証し、検証済みの `email` claim から Tableau subject を決定します。フロントエンドから送られたユーザー名は信用しません。
 
-Cognito の callback URL と sign-out URL は、scheme、host、path、末尾スラッシュまで完全一致が必要です。Cognito では `https://example.cloudfront.net` と `https://example.cloudfront.net/` は別の値として扱われます。
+### Tableau MCP
 
-Provider の切り替え:
+Lambda 内で Tableau MCP を stdio 起動する場合の主な設定です。
 
-- `mock`: Tableau API / MCP を呼ばない安全なローカルフォールバック。
-- `direct-api`: バックエンドが Connected Apps JWT で Tableau にサインインし、REST / Metadata API を呼ぶ。
-- `mcp`: `TableauMcpContextProvider` を使う。現時点では安全な HTTP stub で、MCP 未設定時は warnings を返します。
-
-MCP 設定:
-
-- `TABLEAU_MCP_SERVER_URL`
-- `TABLEAU_MCP_TRANSPORT=http`
-- `TABLEAU_MCP_AUTH_MODE=none`
+- `TABLEAU_CONTEXT_PROVIDER=mcp`
+- `TABLEAU_MCP_TRANSPORT=stdio`
+- `TABLEAU_MCP_AUTH_MODE=direct-trust`
 - `TABLEAU_MCP_TIMEOUT_MS=5000`
+- `TABLEAU_MCP_ALLOWED_TOOLS`: 呼び出しを許可するMCP tool名のカンマ区切り。未指定時は安全に推測できる範囲だけ呼びます。
+- `TABLEAU_MCP_MAX_TOOL_CALLS=3`
 
-### このPoCでできること
+MCP 子プロセスには、バックエンドで検証済みの Tableau subject と Secrets Manager から取得した Connected App 情報だけを渡します。SecretやJWTはログに出しません。
 
-- React + TypeScript + Vite の Dashboard Extension UI
-- Tableau Extensions API の初期化とモックフォールバック
-- ダッシュボード名、ワークシート、フィルター、パラメーター、選択マーク、データソース情報の取得
-- チャットUIから `/chat` API への質問送信
-- Lambda 形式のバックエンドハンドラーとローカルHTTPサーバー
-- Tableau Connected Apps Direct Trust JWT の生成
-- Tableau REST API sign-in クライアント構造
-- Metadata API GraphQL クライアント構造
-- DynamoDB Repository とローカル用 In-memory Repository
-- `AnswerGenerator` インターフェース越しのモック回答生成
-- GitHub Actions から AWS へ自動デプロイするための基本構成
-- Chat API の Cognito JWT 保護を任意で有効化
-- `mock`、`direct-api`、`mcp` の Provider 切り替え
-- 単なるモック文ではなく、取得済みダッシュボードメタデータを使ったコンテキスト要約回答
+### Bedrock
 
-### まだできないこと
+今回の方針では、コストとスクリーンショット分析への拡張性を考えて以下を使います。
 
-- OpenAI / Bedrock などの実LLM連携
-- 本番レベルのユーザーライフサイクル、IdP 連携、Tableau ユーザーマッピング
-- ダッシュボードコンテキストからの完全な workbook LUID 特定
-- workbook -> dashboard -> sheets -> datasources -> fields までの完全な Metadata API モデル化
-- 独自ドメイン、WAF、監査ログなどを含む本番運用向けAWS構成
-- 本番利用できる MCP 認証とユーザー別 Tableau 権限 delegation の検証
+- `MODEL_PROVIDER=bedrock`
+- `BEDROCK_REGION=us-east-1`
+- `BEDROCK_MODEL_ID=amazon.nova-lite-v1:0`
+- `BEDROCK_MAX_OUTPUT_TOKENS=1200`
+- `BEDROCK_TEMPERATURE=0.2`
 
-### GitHub Actions によるAWSデプロイ
+現時点ではテキスト化した Tableau コンテキストだけを送ります。スクリーンショット画像をBedrockへ渡す処理は次段階です。
 
-`.github/workflows/deploy-aws.yml` と `infra/cloudformation.yaml` で、AWS への自動デプロイ構成を用意しています。
+### 現在できること
 
-ワークフローは GitHub OIDC で AWS ロールを Assume し、バックエンドの Lambda bundle、CloudFormation デプロイ、フロントエンドの S3 配置、CloudFront invalidation を実行します。
+- Tableau Dashboard Extension UI の表示
+- Cognito 認証付き chat API
+- Cognito email を Tableau username とみなす PoC 方針
+- REST / Metadata API による追加コンテキスト取得
+- Lambda 内 stdio による Tableau MCP 呼び出し
+- Bedrock Nova Lite による回答生成
+- DynamoDB へのチャット履歴保存
+- GitHub Actions による AWS 自動デプロイ
 
-ログ露出を抑えるため、AWSアカウントIDを含むARN、S3 bucket名、CloudFront/API URL、Tableau URL、Connected App 情報、Tableau ユーザー名などは GitHub Secrets に置く前提です。Actions 内でも `::add-mask::` と `mask-aws-account-id: true` を使い、CloudFormation Outputs にはURLや物理IDを出さない設計にしています。
+### まだ本番利用できない理由
 
-詳しくは [docs/github-actions-deployment.md](docs/github-actions-deployment.md) を参照してください。
+- Cognito email と Tableau username の一致はPoC前提です。本番ではIdP連携やユーザーマッピングが必要です。
+- MCP tool の許可範囲は、明示的な allowlist でさらに絞る必要があります。
+- スクリーンショット分析は未実装です。
+- 監査ログ、WAF、独自ドメイン、データ最小化ルール、LLM利用ガードレールは追加設計が必要です。
+- Lambda zip に MCP 実行依存を直接含めています。サイズが大きくなる場合は Lambda Layer またはコンテナ化を検討します。
 
-### 今後のMCP統合方針
-
-チャット処理は `TableauContextProvider` だけに依存しています。現在は REST API / Metadata API を直接呼ぶ `DirectTableauApiContextProvider` を用意しています。
-
-`TableauMcpContextProvider` は、バックエンド側の小さな provider として追加済みです。ただし、正確な MCP transport、ホスティング方式、Tableau 認証方式が確定するまでは保守的な stub 実装に留めています。Tableau MCP 側が Connected Apps JWT またはユーザー別 delegation model に対応しているか確認してください。対応していない場合は、REST API / Metadata API の直呼びを継続します。
-
-詳細は [docs/future-mcp-integration.md](docs/future-mcp-integration.md) を参照してください。
+詳しくは [docs/security-notes.md](docs/security-notes.md) と [docs/future-mcp-integration.md](docs/future-mcp-integration.md) を参照してください。

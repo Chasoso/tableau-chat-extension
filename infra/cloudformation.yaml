@@ -78,6 +78,39 @@ Parameters:
   TableauMcpTimeoutMs:
     Type: Number
     Default: 5000
+  TableauMcpCommand:
+    Type: String
+    NoEcho: true
+    Default: ""
+  TableauMcpArgs:
+    Type: String
+    NoEcho: true
+    Default: ""
+  TableauMcpAllowedTools:
+    Type: String
+    NoEcho: true
+    Default: ""
+  TableauMcpMaxToolCalls:
+    Type: Number
+    Default: 3
+  ModelProvider:
+    Type: String
+    Default: "mock"
+    AllowedValues:
+      - mock
+      - bedrock
+  BedrockRegion:
+    Type: String
+    Default: "us-east-1"
+  BedrockModelId:
+    Type: String
+    Default: "amazon.nova-lite-v1:0"
+  BedrockMaxOutputTokens:
+    Type: Number
+    Default: 1200
+  BedrockTemperature:
+    Type: Number
+    Default: 0.2
 
 Resources:
   ChatHistoryTable:
@@ -151,6 +184,14 @@ Resources:
                 Action:
                   - secretsmanager:GetSecretValue
                 Resource: !Ref TableauConnectedAppSecret
+              - Effect: Allow
+                Action:
+                  - bedrock:InvokeModel
+                  - bedrock:InvokeModelWithResponseStream
+                Resource:
+                  - !Sub "arn:${AWS::Partition}:bedrock:${BedrockRegion}::foundation-model/${BedrockModelId}"
+                  - !Sub "arn:${AWS::Partition}:bedrock:${BedrockRegion}:${AWS::AccountId}:inference-profile/${BedrockModelId}"
+                  - !Sub "arn:${AWS::Partition}:bedrock:${BedrockRegion}::inference-profile/${BedrockModelId}"
 
   ChatFunction:
     Type: AWS::Lambda::Function
@@ -183,7 +224,16 @@ Resources:
           TABLEAU_MCP_SERVER_URL: !Ref TableauMcpServerUrl
           TABLEAU_MCP_TRANSPORT: !Ref TableauMcpTransport
           TABLEAU_MCP_AUTH_MODE: !Ref TableauMcpAuthMode
-          TABLEAU_MCP_TIMEOUT_MS: !Ref TableauMcpTimeoutMs
+          TABLEAU_MCP_TIMEOUT_MS: !Sub "${TableauMcpTimeoutMs}"
+          TABLEAU_MCP_COMMAND: !Ref TableauMcpCommand
+          TABLEAU_MCP_ARGS: !Ref TableauMcpArgs
+          TABLEAU_MCP_ALLOWED_TOOLS: !Ref TableauMcpAllowedTools
+          TABLEAU_MCP_MAX_TOOL_CALLS: !Sub "${TableauMcpMaxToolCalls}"
+          MODEL_PROVIDER: !Ref ModelProvider
+          BEDROCK_REGION: !Ref BedrockRegion
+          BEDROCK_MODEL_ID: !Ref BedrockModelId
+          BEDROCK_MAX_OUTPUT_TOKENS: !Sub "${BedrockMaxOutputTokens}"
+          BEDROCK_TEMPERATURE: !Sub "${BedrockTemperature}"
 
   HealthFunction:
     Type: AWS::Lambda::Function

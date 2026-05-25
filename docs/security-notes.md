@@ -4,88 +4,118 @@
 
 ### Secrets
 
-- Do not put `TABLEAU_CONNECTED_APP_SECRET_VALUE` in frontend code, Vite env files, or the `.trex` manifest.
-- Generate Connected Apps JWTs only in the backend.
-- Do not log JWTs or Connected App secret values.
-- Store production secrets in AWS Secrets Manager or SSM Parameter Store, not plain Lambda environment variables when stronger operational controls are required.
+- Do not put Connected App secret values, JWTs, Bedrock credentials, MCP credentials, or access tokens in frontend code, Vite env files, browser storage, or the `.trex` manifest.
+- Generate Tableau Connected Apps JWTs only in the backend.
+- Store production secrets in AWS Secrets Manager or SSM Parameter Store.
+- Do not log JWTs, access tokens, refresh tokens, cookies, authorization headers, or secret values.
 
 ### User Identity
 
-This PoC uses `TABLEAU_DEFAULT_SUBJECT` as the Tableau JWT `sub`. For multi-user production use, introduce an application identity layer such as Cognito and map each authenticated app user to an allowed Tableau user subject.
+When `AUTH_REQUIRED=true`, the backend verifies the Cognito JWT and derives the Tableau subject from the verified Cognito `email` claim.
 
-Do not trust a browser-provided Tableau username as the JWT subject without server-side authorization.
+Do not trust a browser-provided username, email, role, permission, or Tableau subject. Frontend values can be modified by the user and are only useful for display.
 
-When `AUTH_REQUIRED=true`, the backend verifies the Cognito JWT and derives the Tableau subject from the verified Cognito `email` claim. The frontend must not send `userEmail`, Tableau username, roles, or permissions as trusted authorization input. Browser-provided identity values can be forged, replayed, or modified by the user, so they are useful only for display hints.
+For this PoC, Cognito `email` is treated as the Tableau Cloud username. This works only if the email exactly matches the Tableau username. Production should use federated IdP configuration or a server-side user mapping table.
 
-For this PoC, Cognito `email` is treated as the Tableau Cloud username. This only works when the Cognito email exactly matches a valid Tableau Cloud username, usually the Tableau user's email address. Production deployments should use federated IdP configuration or an explicit user mapping table so renamed users, multiple Tableau sites, and account lifecycle events are handled safely.
+### Tableau Permission Boundary
 
-Avoid using a service-account PAT to execute MCP or Tableau API calls on behalf of all users in production. A service account sees data according to the service account's Tableau permissions, not the current user's permissions. If a service account is used temporarily in a PoC, document the difference clearly and restrict the account to the smallest possible Tableau permissions.
+The intended production direction is:
 
-To preserve user permission boundaries, prefer Connected Apps Direct Trust JWT, OAuth, or an MCP authentication model that can execute as the verified Tableau subject. The backend must decide the Tableau subject from verified Cognito claims or a server-side mapping, never from frontend-provided claims.
+1. Verify the application user with Cognito or a federated IdP.
+2. Resolve the Tableau subject on the backend.
+3. Use Connected Apps Direct Trust, OAuth, or another supported Tableau delegation model.
+4. Execute REST API, Metadata API, or MCP calls as that subject.
 
-### CORS
+Avoid using a broad service-account PAT for all users. If a PAT is used temporarily in a PoC, the results reflect the service account's Tableau permissions, not the current user's permissions.
 
-Local development can use permissive CORS. Deployed API Gateway should restrict `Access-Control-Allow-Origin` to the approved frontend / Tableau extension host.
+### MCP
 
-### Dashboard Context
+The Lambda-local MCP provider starts a child process with backend-only environment variables. The provider masks logs and returns safe warnings on failure.
 
-The frontend-provided `dashboardContext` is useful but not authoritative. Treat it as user-provided input:
+For production:
 
-- Validate shape and required fields.
-- Avoid using it to authorize Tableau API access.
-- Prefer backend Tableau REST / Metadata API calls for trusted enrichment.
+- Use `TABLEAU_MCP_ALLOWED_TOOLS` to restrict callable tools.
+- Keep MCP timeouts short.
+- Log tool names and high-level status only.
+- Do not log tool payloads if they may contain business data.
+- Confirm that MCP authentication enforces the same Tableau user permission boundary as direct Tableau API calls.
 
-### LLM Data Minimization
+### Bedrock and LLM Data Minimization
 
-When replacing the mock answer generator with OpenAI, Bedrock, or another LLM provider:
+The PoC uses `MODEL_PROVIDER=bedrock` with `amazon.nova-lite-v1:0` in `us-east-1` when enabled.
 
-- Send only the minimum dashboard metadata needed to answer the question.
-- Avoid row-level data unless explicitly approved and governed.
-- Do not send personal data, secrets, credentials, raw extracts, or confidential business data by default.
-- Consider redaction, allowlisted fields, and audit logging before enabling selected mark or underlying data analysis.
-- Keep MCP / Tableau API enrichment scoped to metadata needed for the user's question, such as workbook, worksheet, datasource, field, filter, and parameter names. Avoid sending full data rows to an LLM unless a reviewed governance policy allows it.
+Before sending data to an LLM:
+
+- Send only metadata needed for the user's question.
+- Prefer workbook, dashboard, worksheet, field, filter, parameter, and datasource names.
+- Avoid row-level data unless governance approval exists.
+- Do not send personal data, secrets, raw extracts, or confidential business data by default.
+- Redact sensitive keys such as token, secret, password, JWT, authorization, credential, and cookie.
+- Add audit logging for what categories of data were sent, without logging the raw prompt.
+
+### CORS and API Protection
+
+- Deployed API Gateway and Lambda CORS should restrict origins to the approved frontend / extension host.
+- `AUTH_REQUIRED=true` rejects missing or invalid `Authorization` headers.
+- Return `401` for unauthenticated requests and `403` for authenticated-but-not-allowed requests.
+- Error messages should be safe and should not expose internal tokens, secrets, or provider payloads.
 
 ## 日本語
 
-### Secrets
+### Secret
 
-- `TABLEAU_CONNECTED_APP_SECRET_VALUE` をフロントエンドコード、Vite env ファイル、`.trex` manifest に置かないでください。
-- Connected Apps JWT はバックエンドでのみ生成してください。
-- JWT や Connected App Secret Value をログ出力しないでください。
-- 本番Secretは、より強い運用管理が必要な場合、単なる Lambda 環境変数ではなく AWS Secrets Manager または SSM Parameter Store に保存してください。
+- Connected App secret、JWT、Bedrock認証情報、MCP認証情報、アクセストークンをフロントエンド、Vite env、ブラウザストレージ、`.trex` に置かないでください。
+- Tableau Connected Apps JWT はバックエンドだけで生成します。
+- 本番 Secret は AWS Secrets Manager または SSM Parameter Store に保存します。
+- JWT、アクセストークン、リフレッシュトークン、Cookie、Authorizationヘッダー、Secret値をログに出しません。
 
 ### ユーザーID
 
-この PoC では Tableau JWT の `sub` として `TABLEAU_DEFAULT_SUBJECT` を使います。複数ユーザーに対応する本番環境では、Cognito などのアプリケーション認証レイヤーを導入し、認証済みアプリユーザーを許可された Tableau user subject に対応付けてください。
+`AUTH_REQUIRED=true` の場合、バックエンドが Cognito JWT を検証し、検証済みの Cognito `email` claim から Tableau subject を決定します。
 
-ブラウザから送られてきた Tableau ユーザー名を、サーバー側の認可なしに JWT subject として信頼しないでください。
+ブラウザから送られた username、email、role、permission、Tableau subject は信用しません。ユーザーが改変できるため、表示上のヒント以上には使わないでください。
 
-`AUTH_REQUIRED=true` の場合、バックエンドは Cognito JWT を検証し、検証済み Cognito `email` claim から Tableau subject を決定します。フロントエンドが送る `userEmail`、Tableau ユーザー名、role、permission は認可判断に使ってはいけません。ブラウザから送られたID情報はユーザーが改変できるため、表示上のヒント以上に扱わないでください。
+このPoCでは Cognito `email` を Tableau Cloud username として扱います。これは email と Tableau username が完全一致する場合だけ成立します。本番では IdP 連携またはサーバー側のユーザーマッピングテーブルを使ってください。
 
-この PoC では Cognito の `email` を Tableau Cloud username として扱います。これは Cognito email が Tableau Cloud の username、通常はメールアドレス、と完全一致する場合だけ成立します。本番では、IdP 連携またはユーザーマッピングテーブルを導入し、ユーザー名変更、複数 Tableau site、アカウントライフサイクルを安全に扱えるようにしてください。
+### Tableau 権限境界
 
-本番で、全ユーザーの代わりにサービスアカウント PAT で MCP や Tableau API を実行する方式は避けてください。サービスアカウントで取得できる情報はサービスアカウントの Tableau 権限に依存し、現在のユーザー本人の権限とは一致しません。PoC で一時的に使う場合でも、その違いを明記し、サービスアカウントの Tableau 権限を最小化してください。
+本番の基本方針は以下です。
 
-ユーザーの権限境界を保つには、Connected Apps Direct Trust JWT、OAuth、または検証済み Tableau subject として実行できる MCP 認証方式を優先してください。Tableau subject は、フロントエンド申告値ではなく、検証済み Cognito claim またはサーバー側マッピングから決定します。
+1. Cognito または federated IdP でアプリユーザーを検証する。
+2. バックエンドで Tableau subject を決定する。
+3. Connected Apps Direct Trust、OAuth、または Tableau がサポートする委任方式を使う。
+4. REST API、Metadata API、MCP をその subject として実行する。
 
-### CORS
+広い権限のサービスアカウントPATですべてのユーザーの処理を代行する方式は避けてください。一時的にPoCで使う場合、取得結果は現在のユーザーではなくサービスアカウントの Tableau 権限に依存します。
 
-ローカル開発では緩い CORS を使えます。本番の API Gateway では `Access-Control-Allow-Origin` を承認済みのフロントエンド / Tableau Extension ホストに制限してください。
+### MCP
 
-### Dashboard Context
+Lambda 内 MCP provider は、バックエンド限定の環境変数を渡して子プロセスを起動します。失敗時は安全な warning を返し、Secret はログに出しません。
 
-フロントエンドから送られる `dashboardContext` は便利ですが、信頼できる情報源ではありません。ユーザー入力として扱ってください。
+本番では以下を守ってください。
 
-- 形状と必須フィールドを検証する。
-- Tableau API アクセスの認可判断には使わない。
-- 信頼できる補足情報は、バックエンドから Tableau REST / Metadata API を呼び出して取得する。
+- `TABLEAU_MCP_ALLOWED_TOOLS` で呼び出し可能 tool を制限する。
+- MCP timeout を短く保つ。
+- ログには tool 名と大まかなステータスだけを出す。
+- business data を含む可能性がある payload はログに出さない。
+- MCP 認証が直接 Tableau API 呼び出しと同じユーザー権限境界を守れることを確認する。
 
-### LLM へ送るデータの最小化
+### Bedrock と LLM へのデータ最小化
 
-モック回答生成を OpenAI、Bedrock、その他LLMに差し替える場合:
+有効化時は `MODEL_PROVIDER=bedrock` とし、`us-east-1` の `amazon.nova-lite-v1:0` を使う方針です。
 
-- 質問に答えるために必要な最小限のダッシュボードメタデータだけを送る。
-- 明示的な承認とガバナンスがない限り、行レベルデータを送らない。
-- 個人情報、Secret、認証情報、生データ抽出、機密性の高い業務データを既定では送らない。
-- 選択マークや underlying data 分析を有効化する前に、マスキング、許可フィールド、監査ログを検討する。
-- MCP / Tableau API から補足取得する情報は、質問回答に必要な workbook、worksheet、datasource、field、filter、parameter 名などのメタデータに絞る。レビュー済みのガバナンスポリシーがない限り、行データ全体を LLM に送らない。
+LLMへ送る前に以下を守ります。
+
+- 質問回答に必要なメタデータだけを送る。
+- workbook、dashboard、worksheet、field、filter、parameter、datasource 名を優先する。
+- ガバナンス承認がない限り行レベルデータを送らない。
+- 個人情報、Secret、生データ抽出、機密業務データをデフォルトで送らない。
+- token、secret、password、JWT、authorization、credential、cookie などのキーを redaction する。
+- 生プロンプトではなく、送信したデータカテゴリを監査ログに残す。
+
+### CORS と API 保護
+
+- デプロイ環境では API Gateway / Lambda CORS を承認済み frontend / extension host に制限します。
+- `AUTH_REQUIRED=true` の場合、Authorizationヘッダーなし、または検証失敗のリクエストを拒否します。
+- 未認証は `401`、認証済みだが許可されない場合は `403` を返します。
+- エラー応答には token、Secret、provider payload を含めません。

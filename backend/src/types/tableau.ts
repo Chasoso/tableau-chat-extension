@@ -50,5 +50,19 @@ export type TableauAdditionalContext = {
   workbook?: unknown;
   datasources?: unknown[];
   metadata?: unknown;
+  mcpTools?: TableauMcpToolSummary[];
+  mcpToolResults?: TableauMcpToolResultSummary[];
   warnings?: string[];
+};
+
+export type TableauMcpToolSummary = {
+  name: string;
+  description?: string;
+};
+
+export type TableauMcpToolResultSummary = {
+  toolName: string;
+  status: "success" | "skipped" | "failed";
+  summary?: string;
+  warning?: string;
 };

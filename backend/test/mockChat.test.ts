@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { InMemoryChatHistoryRepository } from "../src/repositories/chatHistoryRepository";
-import { ChatService } from "../src/services/chatService";
 import { MockAnswerGenerator } from "../src/services/answerGenerator";
+import { ChatService } from "../src/services/chatService";
 import { MockTableauContextProvider } from "../src/tableau/mockTableauContextProvider";
 
 describe("ChatService with mock provider", () => {
-  it("returns a mock answer and saves chat history", async () => {
+  it("returns a context-based answer and saves chat history", async () => {
     const repository = new InMemoryChatHistoryRepository();
     const service = new ChatService(new MockTableauContextProvider(), new MockAnswerGenerator(), repository);
 
@@ -24,7 +24,7 @@ describe("ChatService with mock provider", () => {
       },
     });
 
-    expect(response.answer).toContain("含まれるワークシートは 2 個");
+    expect(response.answer).toContain("含まれるワークシートは 2 個です");
     expect(response.answer).toContain("Sheet 1, Sheet 2");
     expect(response.debug?.usedMock).toBe(true);
     expect(response.debug?.tableauContextProvider).toBe("mock");

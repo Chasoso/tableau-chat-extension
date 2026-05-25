@@ -1,5 +1,9 @@
+import { BedrockRuntimeClient, ConverseCommand } from "@aws-sdk/client-bedrock-runtime";
+import { getConfig } from "../config";
+import { logError, logInfo, safeErrorDetails } from "../logging";
 import type { ChatRequest } from "../types/chat";
 import type { TableauAdditionalContext } from "../types/tableau";
+import { compressDashboardContext } from "./contextCompressor";
 
 export interface AnswerGenerator {
   readonly name: string;
@@ -18,99 +22,104 @@ export class MockAnswerGenerator implements AnswerGenerator {
     prompt: string;
     additionalContext: TableauAdditionalContext;
   }): Promise<string> {
-    const { dashboardContext } = input.request;
-    const worksheetNames = dashboardContext.worksheets.map((worksheet) => worksheet.name);
-    const filters = dashboardContext.filters.map((filter) => {
-      const values = filter.appliedValues?.length ? filter.appliedValues.join(", ") : "値は未取得";
-      return `${filter.worksheetName ? `${filter.worksheetName} / ` : ""}${filter.fieldName}: ${values}`;
-    });
-    const parameters = dashboardContext.parameters.map((parameter) => {
-      const value = parameter.currentValue ?? "値は未取得";
-      return `${parameter.name}: ${String(value)}`;
-    });
-    const frontendDatasourceNames = (dashboardContext.dataSources ?? []).map((datasource) => datasource.name);
-    const additionalDatasourceNames = extractNames(input.additionalContext.datasources);
-    const datasourceNames = unique([...frontendDatasourceNames, ...additionalDatasourceNames]);
-    const metadataSummary = summarizeUnknown(input.additionalContext.metadata);
-    const workbookSummary = summarizeUnknown(input.additionalContext.workbook);
-    const warnings = input.additionalContext.warnings ?? [];
-
-    return [
-      `質問「${input.request.question}」について、取得済みの Tableau コンテキストから分かる範囲で回答します。`,
-      "",
-      `このダッシュボードは「${dashboardContext.dashboardName}」です。${
-        dashboardContext.workbookName ? `ワークブックは「${dashboardContext.workbookName}」です。` : "ワークブック名は取得できていません。"
-      }`,
-      worksheetNames.length
-        ? `含まれるワークシートは ${worksheetNames.length} 個です: ${worksheetNames.join(", ")}。`
-        : "ワークシート情報は取得できていません。",
-      filters.length
-        ? `現在確認できるフィルターは ${filters.join("; ")} です。`
-        : "現在適用されているフィルターは取得できていません。",
-      parameters.length
-        ? `パラメーターは ${parameters.join("; ")} です。`
-        : "パラメーターは取得できていません。",
-      datasourceNames.length
-        ? `関連するデータソース候補は ${datasourceNames.join(", ")} です。`
-        : "関連データソース名は取得できていません。",
-      workbookSummary ? `追加のワークブック情報: ${workbookSummary}` : "",
-      metadataSummary ? `追加メタデータ: ${metadataSummary}` : "",
-      `追加コンテキストは ${input.additionalContext.provider} プロバイダーから取得しました。`,
-      warnings.length ? `注意: ${warnings.join(" ")}` : "",
-      "この回答は、現時点で取得済みのメタデータに基づく要約です。行レベルの詳細、未取得の計算式、権限外の情報、LLMによる推論が必要な内容はこの段階では分かりません。",
-    ]
-      .filter(Boolean)
-      .join("\n");
+    return buildDeterministicAnswer(input.request, input.additionalContext);
   }
 }
 
-function extractNames(values: unknown[] | undefined): string[] {
-  return (values ?? [])
-    .flatMap((value) => findNameValues(value))
-    .filter(Boolean)
-    .slice(0, 12);
-}
+export class BedrockAnswerGenerator implements AnswerGenerator {
+  readonly name = "bedrock";
 
-function findNameValues(value: unknown): string[] {
-  if (!value || typeof value !== "object") {
-    return [];
-  }
+  constructor(
+    private readonly client = new BedrockRuntimeClient({ region: getConfig().model.bedrock.region }),
+  ) {}
 
-  if (Array.isArray(value)) {
-    return value.flatMap((item) => findNameValues(item));
-  }
+  async generate(input: {
+    request: ChatRequest;
+    prompt: string;
+    additionalContext: TableauAdditionalContext;
+  }): Promise<string> {
+    const config = getConfig().model.bedrock;
 
-  const record = value as Record<string, unknown>;
-  const directName = typeof record.name === "string" ? [record.name] : [];
-  return [
-    ...directName,
-    ...Object.values(record)
-      .filter((item) => item && typeof item === "object")
-      .flatMap((item) => findNameValues(item)),
-  ];
-}
+    try {
+      logInfo("answer.bedrock.started", {
+        region: config.region,
+        modelId: config.modelId,
+        promptLength: input.prompt.length,
+      });
 
-function summarizeUnknown(value: unknown): string {
-  if (!value) {
-    return "";
-  }
+      const response = await this.client.send(
+        new ConverseCommand({
+          modelId: config.modelId,
+          messages: [
+            {
+              role: "user",
+              content: [{ text: input.prompt }],
+            },
+          ],
+          inferenceConfig: {
+            maxTokens: config.maxOutputTokens,
+            temperature: config.temperature,
+          },
+        }),
+      );
 
-  if (typeof value === "string") {
-    return value.slice(0, 240);
-  }
+      const answer = response.output?.message?.content
+        ?.map((content) => ("text" in content ? content.text : ""))
+        .filter(Boolean)
+        .join("\n")
+        .trim();
 
-  if (typeof value === "object") {
-    const names = findNameValues(value).slice(0, 8);
-    if (names.length) {
-      return `名称候補: ${unique(names).join(", ")}`;
+      if (!answer) {
+        logInfo("answer.bedrock.empty_response", {
+          region: config.region,
+          modelId: config.modelId,
+        });
+        return buildDeterministicAnswer(input.request, input.additionalContext);
+      }
+
+      logInfo("answer.bedrock.completed", {
+        region: config.region,
+        modelId: config.modelId,
+        answerLength: answer.length,
+      });
+      return answer;
+    } catch (error) {
+      logError("answer.bedrock.failed", safeErrorDetails(error));
+      return [
+        "Bedrockでの回答生成に失敗したため、取得済みのTableauコンテキストだけで回答します。",
+        "",
+        buildDeterministicAnswer(input.request, input.additionalContext),
+      ].join("\n");
     }
-
-    return "構造化メタデータを取得しましたが、このPoC回答では詳細展開していません。";
   }
-
-  return String(value);
 }
 
-function unique(values: string[]): string[] {
-  return Array.from(new Set(values.map((value) => value.trim()).filter(Boolean)));
+function buildDeterministicAnswer(request: ChatRequest, additionalContext: TableauAdditionalContext): string {
+  const context = compressDashboardContext(request, additionalContext);
+
+  return [
+    `質問「${request.question}」について、取得済みのTableauコンテキストから分かる範囲で回答します。`,
+    "",
+    `このダッシュボードは「${context.dashboardName}」です。ワークブックは「${context.workbookName}」です。`,
+    context.worksheets.length
+      ? `含まれるワークシートは ${context.worksheets.length} 個です: ${context.worksheets.join(", ")}。`
+      : "ワークシート情報は取得できていません。",
+    context.filters.length
+      ? `現在確認できるフィルターは ${context.filters.join("; ")} です。`
+      : "現在確認できるフィルターはありません。",
+    context.parameters.length
+      ? `パラメーターは ${context.parameters.join("; ")} です。`
+      : "パラメーター情報は取得できていません。",
+    context.dataSources.length
+      ? `関連するデータソース候補は ${context.dataSources.join(", ")} です。`
+      : "関連するデータソース名は取得できていません。",
+    context.mcpToolResults.length
+      ? `MCPから取得した補足情報: ${context.mcpToolResults.join(" / ")}`
+      : "",
+    `追加コンテキストは ${context.provider} プロバイダーから取得しました。`,
+    context.warnings.length ? `注意: ${context.warnings.join(" ")}` : "",
+    "この回答は取得済みメタデータに基づく要約です。行レベルの詳細、画面上に表示されていない値、未取得の計算式や権限外の情報は断定できません。",
+  ]
+    .filter(Boolean)
+    .join("\n");
 }

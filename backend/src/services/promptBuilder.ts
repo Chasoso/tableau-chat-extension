@@ -1,23 +1,18 @@
 import type { ChatRequest } from "../types/chat";
 import type { TableauAdditionalContext } from "../types/tableau";
+import { compressDashboardContext, renderCompressedContext } from "./contextCompressor";
 
 export function buildPrompt(request: ChatRequest, additionalContext: TableauAdditionalContext): string {
-  const worksheetNames = request.dashboardContext.worksheets.map((worksheet) => worksheet.name).join(", ");
-  const filters = request.dashboardContext.filters
-    .map((filter) => `${filter.fieldName}: ${(filter.appliedValues ?? []).join(", ") || "not specified"}`)
-    .join("; ");
+  const compressedContext = compressDashboardContext(request, additionalContext);
 
   return [
     "You are a Tableau dashboard assistant.",
     "Answer using only the provided dashboard metadata and additional Tableau context.",
     "Do not infer confidential row-level details that were not provided.",
+    "If the answer is not available from the context, say so clearly.",
+    "Respond in the same language as the user's question when practical.",
     `Question: ${request.question}`,
-    `Dashboard: ${request.dashboardContext.dashboardName}`,
-    `Workbook: ${request.dashboardContext.workbookName ?? "not available"}`,
-    `Worksheets: ${worksheetNames || "none"}`,
-    `Filters: ${filters || "none"}`,
-    `Parameters: ${request.dashboardContext.parameters.map((parameter) => parameter.name).join(", ") || "none"}`,
-    `Additional context provider: ${additionalContext.provider}`,
+    "Context:",
+    renderCompressedContext(compressedContext),
   ].join("\n");
 }
-

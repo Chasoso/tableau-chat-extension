@@ -1,43 +1,57 @@
 # AWS Infrastructure Plan
 
+## English
+
 This PoC includes a CloudFormation template at `infra/cloudformation.yaml` and a GitHub Actions workflow at `.github/workflows/deploy-aws.yml`.
 
-The deployed architecture is:
+The deployed architecture includes:
 
 - S3 + CloudFront for the React frontend
-- API Gateway HTTP API for `/chat` and `/health`
+- CloudFront `/api/*` proxy to API Gateway
+- API Gateway HTTP API for `/chat`, `/context`, and `/health`
 - Lambda for backend handlers
-- DynamoDB table for chat history
+- DynamoDB for chat history
 - Secrets Manager for Tableau Connected App values
-- CloudWatch Logs with JWT and secret redaction discipline
+- Optional Lambda-local Tableau MCP over stdio
+- Optional Amazon Bedrock Nova Lite answer generation
+- CloudWatch Logs with secret and token redaction discipline
 
-## Suggested DynamoDB Table
+The template intentionally does not output API Gateway URLs, CloudFront domains, bucket names, distribution IDs, role ARNs, or account-specific identifiers.
 
-Table name: `tableau-chat-history`
+### Key Lambda Environment Variables
 
-Keys:
+- `TABLEAU_CONTEXT_PROVIDER`: `mock`, `direct-api`, or `mcp`
+- `MODEL_PROVIDER`: `mock` or `bedrock`
+- `BEDROCK_REGION`: default `us-east-1`
+- `BEDROCK_MODEL_ID`: default `amazon.nova-lite-v1:0`
+- `TABLEAU_MCP_TRANSPORT`: default `stdio`
+- `TABLEAU_MCP_AUTH_MODE`: default `direct-trust`
+- `TABLEAU_MCP_ALLOWED_TOOLS`: optional allowlist
 
-- Partition key: `pk` string, for example `SESSION#<sessionId>`
-- Sort key: `sk` string, for example `MESSAGE#<timestamp>#<messageId>`
+## 日本語
 
-Optional indexes can be added later for user, dashboard, or workbook lookups.
+このPoCでは `infra/cloudformation.yaml` と `.github/workflows/deploy-aws.yml` を使って AWS にデプロイします。
 
-## Lambda Environment
+構成要素は以下です。
 
-- `TABLEAU_SERVER_URL`
-- `TABLEAU_SITE_CONTENT_URL`
-- `TABLEAU_API_VERSION`
-- `TABLEAU_CONNECTED_APP_SECRET_ARN`
-- `TABLEAU_DEFAULT_SUBJECT`
-- `TABLEAU_SCOPES`
-- `TABLEAU_CONTEXT_PROVIDER`
-- `CHAT_HISTORY_TABLE_NAME`
-- `USE_IN_MEMORY_REPOSITORY=false`
-- `CORS_ALLOWED_ORIGIN`
+- React frontend 用の S3 + CloudFront
+- CloudFront `/api/*` から API Gateway への proxy
+- `/chat`、`/context`、`/health` 用の API Gateway HTTP API
+- backend handler 用 Lambda
+- chat history 用 DynamoDB
+- Tableau Connected App 値を保存する Secrets Manager
+- 任意の Lambda 内 Tableau MCP stdio 実行
+- 任意の Amazon Bedrock Nova Lite 回答生成
+- Secret と token を出さない CloudWatch Logs 運用
 
-## Deployment Notes
+テンプレートは API Gateway URL、CloudFront domain、bucket名、distribution ID、role ARN、AWSアカウント固有IDを Outputs に出しません。
 
-Restrict API Gateway CORS to the CloudFront frontend origin. If Tableau Cloud loads the extension inside a dashboard, ensure the hosted frontend domain is approved in Tableau extension settings and in the Connected App domain allowlist where applicable.
+### 主な Lambda 環境変数
 
-The template intentionally does not output API Gateway URLs, CloudFront domains, bucket names, distribution IDs, role ARNs, or account-specific identifiers. The GitHub Actions workflow retrieves physical resource IDs only when needed and immediately masks them.
-
+- `TABLEAU_CONTEXT_PROVIDER`: `mock`, `direct-api`, `mcp`
+- `MODEL_PROVIDER`: `mock`, `bedrock`
+- `BEDROCK_REGION`: default `us-east-1`
+- `BEDROCK_MODEL_ID`: default `amazon.nova-lite-v1:0`
+- `TABLEAU_MCP_TRANSPORT`: default `stdio`
+- `TABLEAU_MCP_AUTH_MODE`: default `direct-trust`
+- `TABLEAU_MCP_ALLOWED_TOOLS`: 任意の allowlist

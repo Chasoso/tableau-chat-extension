@@ -2,114 +2,126 @@
 
 ## English
 
-The current PoC supports `MockTableauContextProvider`, `DirectTableauApiContextProvider`, and a first `TableauMcpContextProvider` stub. The MCP provider is selected with `TABLEAU_CONTEXT_PROVIDER=mcp` and calls a configured backend-side MCP endpoint when available.
+### Current Direction
 
-### Intended Direction
+The backend now has three `TableauContextProvider` implementations:
 
-`TableauMcpContextProvider` implements:
+- `MockTableauContextProvider`
+- `DirectTableauApiContextProvider`
+- `TableauMcpContextProvider`
 
-```ts
-export interface TableauContextProvider {
-  getAdditionalContext(input: GetAdditionalContextInput): Promise<TableauAdditionalContext>;
-}
-```
+`ChatService` depends only on the provider interface, so it does not need to know whether Tableau context comes from REST API, Metadata API, MCP tools, or mock data.
 
-`ChatService` continues to depend only on this interface. It does not know whether context came from REST API, Metadata API, MCP tools, or mocks.
+### Lambda-local stdio MCP
 
-Current MCP environment variables:
+The first MCP implementation uses stdio transport and launches `@tableau/mcp-server` inside the Lambda invocation. This avoids the baseline cost of always-on ECS or App Runner for a low-usage PoC.
 
-- `TABLEAU_MCP_SERVER_URL`
-- `TABLEAU_MCP_TRANSPORT`
-- `TABLEAU_MCP_AUTH_MODE`
-- `TABLEAU_MCP_TIMEOUT_MS`
+Configuration:
 
-The current implementation intentionally keeps MCP calls small and safe. If the MCP endpoint is not configured or fails, the provider returns warnings and the chat flow continues with frontend dashboard context. TODO: replace the HTTP stub payload with the exact MCP client protocol once the selected Tableau MCP deployment model is confirmed.
-
-### Hosting Options For MCP
-
-Potential AWS hosting models:
-
-- ECS Fargate
-- AWS App Runner
-- Lambda Web Adapter
-
-The right choice depends on the MCP server runtime model, connection lifetime, cold start tolerance, and networking requirements.
-
-If Lambda calls MCP over HTTP, keep timeouts short, avoid long-lived streaming assumptions unless explicitly supported, and do not put MCP tokens in frontend code. For streaming or long-running MCP sessions, ECS Fargate or App Runner may be more predictable than Lambda.
-
-### Authentication Considerations
-
-Confirm whether Tableau MCP supports Connected Apps Direct Trust JWT. If it does, the MCP provider can reuse the backend's Connected App secret handling and subject mapping strategy.
-
-If Tableau MCP does not support Connected Apps JWT, keep REST API / Metadata API direct calls for production Tableau access and use MCP only for capabilities that can be safely authenticated.
-
-The MCP execution identity must not exceed the verified user's Tableau permissions. The backend now passes `authenticatedUser` and `tableauSubject` into the provider input. For this PoC, the Tableau subject is derived from the verified Cognito `email` claim. TODO: confirm whether the selected Tableau MCP server can execute as that subject via Connected Apps JWT, OAuth, or another supported delegation model.
-
-Avoid production designs where a broad service account PAT runs all MCP calls. That pattern breaks per-user permission boundaries unless every MCP operation is separately constrained and audited.
-
-### Provider Selection
-
-Suggested configuration:
-
-- `TABLEAU_CONTEXT_PROVIDER=mock`
-- `TABLEAU_CONTEXT_PROVIDER=direct-api`
 - `TABLEAU_CONTEXT_PROVIDER=mcp`
+- `TABLEAU_MCP_TRANSPORT=stdio`
+- `TABLEAU_MCP_AUTH_MODE=direct-trust`
+- `TABLEAU_MCP_TIMEOUT_MS=5000`
+- `TABLEAU_MCP_ALLOWED_TOOLS`: optional comma-separated tool allowlist
+- `TABLEAU_MCP_MAX_TOOL_CALLS=3`
 
-`mcp` should be used only after the MCP auth and deployment model are verified. `direct` is still accepted as a backward-compatible alias for `direct-api`.
+If `TABLEAU_MCP_COMMAND` and `TABLEAU_MCP_ARGS` are omitted, the backend resolves the installed `@tableau/mcp-server` package and runs it with the Lambda Node.js runtime.
+
+### Cost Considerations
+
+For low traffic, Lambda-local stdio is usually cheaper than running ECS Fargate or App Runner continuously. The tradeoff is cold start and package size. If MCP startup becomes too slow or the deployment package becomes too large, consider:
+
+- Lambda Layer for MCP runtime dependencies
+- Lambda container image
+- App Runner with scale-to-low settings
+- ECS Fargate only when long-lived sessions or predictable warm capacity are required
+
+### Authentication and Permission Boundary
+
+The PoC passes the verified Cognito email as the Tableau subject for Connected Apps Direct Trust. The MCP child process receives:
+
+- `SERVER`
+- `SITE_NAME`
+- `AUTH=direct-trust`
+- `JWT_SUB_CLAIM`
+- Connected App client ID, secret ID, and secret value
+
+These values are backend-only and are not logged.
+
+The goal is that MCP calls execute as the verified Tableau subject, not as a broad service account. Production must verify that the selected Tableau MCP server and Tableau Cloud configuration enforce the same per-user permissions as Tableau itself.
+
+Avoid using a service-account PAT for all users in production. If a PAT is used temporarily, all returned Tableau context reflects the service account's permissions, not the user's permissions.
+
+### Tool Selection
+
+The provider supports an explicit `TABLEAU_MCP_ALLOWED_TOOLS` allowlist. This should be used in production. Without an allowlist, the PoC only attempts a small number of metadata-oriented tools and skips tools whose required arguments cannot be inferred safely.
+
+TODO:
+
+- Decide the exact MCP tools to allow for workbook, dashboard, datasource, and metadata lookup.
+- Add screenshot capture and multimodal prompt construction.
+- Add per-tool audit logging without logging credentials or data payloads.
+- Evaluate package size and cold start after MCP dependencies are included.
 
 ## 日本語
 
-現在の PoC では、`MockTableauContextProvider`、`DirectTableauApiContextProvider`、最初の stub 実装である `TableauMcpContextProvider` を選択できます。MCP provider は `TABLEAU_CONTEXT_PROVIDER=mcp` で選択し、設定済みのバックエンド側 MCP endpoint を呼び出します。
+### 現在の方針
 
-### 目指す方向性
+バックエンドには以下の `TableauContextProvider` があります。
 
-`TableauMcpContextProvider` は以下のインターフェースを実装します。
+- `MockTableauContextProvider`
+- `DirectTableauApiContextProvider`
+- `TableauMcpContextProvider`
 
-```ts
-export interface TableauContextProvider {
-  getAdditionalContext(input: GetAdditionalContextInput): Promise<TableauAdditionalContext>;
-}
-```
+`ChatService` はこのインターフェースだけに依存します。そのため、Tableau 情報の取得元が REST API、Metadata API、MCP、mock のどれであっても、チャット処理側の構造は変えません。
 
-`ChatService` は引き続きこのインターフェースだけに依存します。コンテキスト取得元が REST API、Metadata API、MCP tools、モックのどれかを `ChatService` が意識しない設計です。
+### Lambda 内 stdio MCP
 
-現在の MCP 用環境変数:
+最初の MCP 実装では、Lambda の実行中に `@tableau/mcp-server` を stdio transport で子プロセス起動します。利用頻度が低いPoCでは、常時起動の ECS Fargate や App Runner よりコストを抑えやすい構成です。
 
-- `TABLEAU_MCP_SERVER_URL`
-- `TABLEAU_MCP_TRANSPORT`
-- `TABLEAU_MCP_AUTH_MODE`
-- `TABLEAU_MCP_TIMEOUT_MS`
+主な設定:
 
-現在の実装では、MCP 呼び出しは小さく安全な stub に留めています。MCP endpoint が未設定または失敗した場合、provider は warnings を返し、チャット処理はフロントエンドから得た dashboard context だけで継続します。TODO: 採用する Tableau MCP のデプロイ方式が確定したら、HTTP stub payload を正確な MCP client protocol に置き換えてください。
-
-### MCP のホスティング候補
-
-AWS 上での候補:
-
-- ECS Fargate
-- AWS App Runner
-- Lambda Web Adapter
-
-適切な方式は、MCP server のランタイムモデル、接続時間、コールドスタート許容度、ネットワーク要件によって変わります。
-
-Lambda から MCP を HTTP で呼ぶ場合は、timeout を短く保ち、明示的にサポートされない限り長時間 streaming を前提にしないでください。MCP token はフロントエンドに置きません。streaming や長時間セッションが必要な MCP では、Lambda より ECS Fargate または App Runner の方が予測しやすい場合があります。
-
-### 認証の確認事項
-
-Tableau MCP が Connected Apps Direct Trust JWT に対応しているか確認してください。対応している場合、MCP provider はバックエンドの Connected App Secret 管理と subject mapping 方針を再利用できます。
-
-Tableau MCP が Connected Apps JWT に対応していない場合は、本番の Tableau アクセスでは REST API / Metadata API の直呼びを継続し、安全に認証できる機能に限って MCP を使います。
-
-MCP の実行主体は、検証済みユーザーの Tableau 権限を超えてはいけません。バックエンドは `authenticatedUser` と `tableauSubject` を provider input に渡します。この PoC では、Tableau subject は検証済み Cognito `email` claim から決定します。TODO: 採用する Tableau MCP server が Connected Apps JWT、OAuth、または他の delegation model により、その subject として実行できるか確認してください。
-
-本番で、広い権限を持つサービスアカウント PAT によって全 MCP 呼び出しを実行する設計は避けてください。この方式は、すべての MCP 操作を別途制限・監査しない限り、ユーザーごとの権限境界を壊します。
-
-### Provider の選択
-
-想定設定:
-
-- `TABLEAU_CONTEXT_PROVIDER=mock`
-- `TABLEAU_CONTEXT_PROVIDER=direct-api`
 - `TABLEAU_CONTEXT_PROVIDER=mcp`
+- `TABLEAU_MCP_TRANSPORT=stdio`
+- `TABLEAU_MCP_AUTH_MODE=direct-trust`
+- `TABLEAU_MCP_TIMEOUT_MS=5000`
+- `TABLEAU_MCP_ALLOWED_TOOLS`: 呼び出しを許可する tool 名のカンマ区切り
+- `TABLEAU_MCP_MAX_TOOL_CALLS=3`
 
-`mcp` は、MCP の認証方式とデプロイモデルを検証した後に使ってください。`direct` は後方互換の alias として引き続き `direct-api` と同じ扱いです。
+`TABLEAU_MCP_COMMAND` と `TABLEAU_MCP_ARGS` を省略した場合は、Lambda に同梱された `@tableau/mcp-server` を Node.js ランタイムで起動します。
+
+### コスト観点
+
+低頻度利用では、Lambda 内 stdio MCP がもっとも安価になりやすいです。一方で、コールドスタートとパッケージサイズが課題になります。問題が出た場合は以下を検討します。
+
+- MCP 依存を Lambda Layer に分離する
+- Lambda コンテナイメージにする
+- App Runner の低スケール構成を使う
+- 長時間セッションや常時ウォームが必要な場合のみ ECS Fargate を使う
+
+### 認証と権限境界
+
+PoCでは、検証済み Cognito email を Tableau subject として Connected Apps Direct Trust に使います。MCP 子プロセスには以下を渡します。
+
+- `SERVER`
+- `SITE_NAME`
+- `AUTH=direct-trust`
+- `JWT_SUB_CLAIM`
+- Connected App client ID、secret ID、secret value
+
+これらはバックエンド内だけで扱い、ログには出しません。
+
+目標は、MCP呼び出しが広い権限のサービスアカウントではなく、検証済み Tableau subject の権限で実行されることです。本番では、選択した Tableau MCP サーバーと Tableau Cloud 設定がユーザーごとの Tableau 権限を正しく反映することを検証してください。
+
+サービスアカウント PAT ですべてのユーザーの MCP 呼び出しを代行する方式は、本番では避けます。その場合、取得結果はユーザー本人ではなくサービスアカウントの権限になります。
+
+### Tool 選択
+
+本番では `TABLEAU_MCP_ALLOWED_TOOLS` で明示的に tool を allowlist 化してください。未指定時のPoC実装では、メタデータ系と推測できる tool を少数だけ試し、必要引数を安全に推測できない tool はスキップします。
+
+TODO:
+
+- workbook、dashboard、datasource、metadata 取得に使う正式な MCP tool を決める
+- スクリーンショット取得とマルチモーダルプロンプトを追加する
+- credential や data payload を出さない範囲で tool 実行監査ログを追加する
+- MCP 依存を含めた Lambda サイズとコールドスタートを評価する

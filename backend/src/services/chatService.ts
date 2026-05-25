@@ -9,7 +9,7 @@ import type { TableauContextProvider } from "../tableau/contextProvider";
 import type { AuthenticatedUser } from "../types/auth";
 import type { ChatRequest, ChatResponse, ContextRequest, ContextResponse } from "../types/chat";
 import type { DashboardContext } from "../types/tableau";
-import { MockAnswerGenerator, type AnswerGenerator } from "./answerGenerator";
+import { BedrockAnswerGenerator, MockAnswerGenerator, type AnswerGenerator } from "./answerGenerator";
 import { buildPrompt } from "./promptBuilder";
 
 export class ChatService {
@@ -193,8 +193,19 @@ function extractName(value: unknown): string | undefined {
 export function createChatService(): ChatService {
   const config = getConfig();
   const provider = createContextProvider(config.tableau.contextProvider);
+  const answerGenerator = createAnswerGenerator(config.model.provider);
 
-  return new ChatService(provider, new MockAnswerGenerator(), createChatHistoryRepository());
+  return new ChatService(provider, answerGenerator, createChatHistoryRepository());
+}
+
+function createAnswerGenerator(providerName: ReturnType<typeof getConfig>["model"]["provider"]): AnswerGenerator {
+  switch (providerName) {
+    case "bedrock":
+      return new BedrockAnswerGenerator();
+    case "mock":
+    default:
+      return new MockAnswerGenerator();
+  }
 }
 
 function createContextProvider(providerName: ReturnType<typeof getConfig>["tableau"]["contextProvider"]): TableauContextProvider {
