@@ -23,9 +23,9 @@ export type ChatResponse = {
   answer: string;
   sessionId: string;
   messageId: string;
+  dashboardContextPatch?: Partial<Pick<DashboardContext, "workbookName">>;
   debug?: {
     usedMock?: boolean;
     tableauContextProvider?: string;
   };
 };
-

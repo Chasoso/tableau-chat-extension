@@ -87,12 +87,13 @@ export async function startLogin(): Promise<void> {
   window.location.assign(loginUrl);
 }
 
-export async function startLoginPopup(): Promise<void> {
+export async function startLoginPopup(): Promise<Window> {
   const popup = window.open(getPopupStartUrl(), "tableau-chat-cognito-login", "popup,width=520,height=720");
   if (!popup) {
     throw new Error("Unable to open the sign-in window. Please allow pop-ups for this site.");
   }
   popup.focus();
+  return popup;
 }
 
 export function isAuthRedirect(): boolean {

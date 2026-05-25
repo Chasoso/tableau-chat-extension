@@ -55,7 +55,14 @@ function DashboardExtensionApp() {
 
   const renderPanel = (session?: AuthSession) => (
     <div className="app-shell">
-      <ChatPanel dashboardContext={dashboardContext} authToken={session?.idToken} userEmail={session?.email} />
+      <ChatPanel
+        dashboardContext={dashboardContext}
+        authToken={session?.idToken}
+        userEmail={session?.email}
+        onDashboardContextPatch={(patch) => {
+          setDashboardContext((current) => (current ? { ...current, ...patch } : current));
+        }}
+      />
     </div>
   );
 

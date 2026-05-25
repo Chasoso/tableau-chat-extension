@@ -34,7 +34,7 @@ export class DirectTableauApiContextProvider implements TableauContextProvider {
         restClient.listDatasources(session),
         input.dashboardContext.workbookName
           ? this.metadataClient.getBasicWorkbookMetadata(session, input.dashboardContext.workbookName)
-          : Promise.resolve(null),
+          : this.metadataClient.getBasicDashboardMetadata(session, input.dashboardContext.dashboardName),
       ]);
 
       if (datasourcesResult.status === "rejected") {
@@ -57,6 +57,7 @@ export class DirectTableauApiContextProvider implements TableauContextProvider {
 
       return {
         provider: this.name,
+        workbook: metadataResult.status === "fulfilled" ? extractWorkbookFromMetadata(metadataResult.value) : undefined,
         datasources: datasourcesResult.status === "fulfilled" ? [datasourcesResult.value] : [],
         metadata: metadataResult.status === "fulfilled" ? metadataResult.value : null,
         warnings,
@@ -82,6 +83,37 @@ export class DirectTableauApiContextProvider implements TableauContextProvider {
       }
     }
   }
+}
+
+function extractWorkbookFromMetadata(value: unknown): unknown {
+  const dashboards = findArraysByKey(value, "dashboards").flat();
+  for (const dashboard of dashboards) {
+    if (!dashboard || typeof dashboard !== "object") {
+      continue;
+    }
+
+    const workbook = (dashboard as Record<string, unknown>).workbook;
+    if (workbook && typeof workbook === "object") {
+      return workbook;
+    }
+  }
+
+  const workbooks = findArraysByKey(value, "workbooks").flat();
+  return workbooks.find((workbook) => workbook && typeof workbook === "object");
+}
+
+function findArraysByKey(value: unknown, key: string): unknown[][] {
+  if (!value || typeof value !== "object") {
+    return [];
+  }
+
+  if (Array.isArray(value)) {
+    return value.flatMap((item) => findArraysByKey(item, key));
+  }
+
+  const record = value as Record<string, unknown>;
+  const direct = Array.isArray(record[key]) ? [record[key] as unknown[]] : [];
+  return [...direct, ...Object.values(record).flatMap((item) => findArraysByKey(item, key))];
 }
 
 function buildSafeLookupWarning(error: unknown): string {

@@ -56,6 +56,15 @@ export class ChatService {
       prompt,
       additionalContext,
     });
+    const dashboardContextPatch = buildDashboardContextPatch(request, additionalContext);
+    if (dashboardContextPatch?.workbookName) {
+      logInfo("chat.service.dashboard_context_patch.created", {
+        provider: additionalContext.provider,
+        sessionId,
+        messageId,
+        patchedFields: ["workbookName"],
+      });
+    }
     const createdAt = new Date().toISOString();
 
     await this.repository.save({
@@ -74,12 +83,72 @@ export class ChatService {
       answer,
       sessionId,
       messageId,
+      dashboardContextPatch,
       debug: {
         usedMock: this.answerGenerator.name === "mock",
         tableauContextProvider: additionalContext.provider,
       },
     };
   }
+}
+
+function buildDashboardContextPatch(
+  request: ChatRequest,
+  additionalContext: Awaited<ReturnType<TableauContextProvider["getAdditionalContext"]>>,
+): ChatResponse["dashboardContextPatch"] {
+  if (request.dashboardContext.workbookName) {
+    return undefined;
+  }
+
+  const workbookName = extractName(additionalContext.workbook) ?? extractWorkbookNameFromMetadata(additionalContext.metadata);
+  return workbookName ? { workbookName } : undefined;
+}
+
+function extractWorkbookNameFromMetadata(value: unknown): string | undefined {
+  const dashboards = findArraysByKey(value, "dashboards").flat();
+  for (const dashboard of dashboards) {
+    if (!dashboard || typeof dashboard !== "object") {
+      continue;
+    }
+
+    const workbookName = extractName((dashboard as Record<string, unknown>).workbook);
+    if (workbookName) {
+      return workbookName;
+    }
+  }
+
+  const workbooks = findArraysByKey(value, "workbooks").flat();
+  for (const workbook of workbooks) {
+    const workbookName = extractName(workbook);
+    if (workbookName) {
+      return workbookName;
+    }
+  }
+
+  return undefined;
+}
+
+function findArraysByKey(value: unknown, key: string): unknown[][] {
+  if (!value || typeof value !== "object") {
+    return [];
+  }
+
+  if (Array.isArray(value)) {
+    return value.flatMap((item) => findArraysByKey(item, key));
+  }
+
+  const record = value as Record<string, unknown>;
+  const direct = Array.isArray(record[key]) ? [record[key] as unknown[]] : [];
+  return [...direct, ...Object.values(record).flatMap((item) => findArraysByKey(item, key))];
+}
+
+function extractName(value: unknown): string | undefined {
+  if (!value || typeof value !== "object") {
+    return undefined;
+  }
+
+  const name = (value as Record<string, unknown>).name;
+  return typeof name === "string" && name.trim() ? name.trim() : undefined;
 }
 
 export function createChatService(): ChatService {

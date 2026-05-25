@@ -55,4 +55,26 @@ export class TableauMetadataClient {
     // TODO: Confirm whether the caller will pass workbook name, LUID, or GraphQL ID.
     return this.query(session, query, { name: workbookNameOrId });
   }
+
+  async getBasicDashboardMetadata(session: TableauSession, dashboardName: string): Promise<unknown> {
+    const query = `
+      query BasicDashboardMetadata($name: String!) {
+        dashboards(filter: { name: $name }) {
+          id
+          name
+          workbook {
+            id
+            name
+          }
+          sheets {
+            id
+            name
+          }
+        }
+      }
+    `;
+
+    // TODO: Confirm field availability across Tableau Cloud Metadata API versions.
+    return this.query(session, query, { name: dashboardName });
+  }
 }

@@ -11,9 +11,10 @@ type Props = {
   dashboardContext: DashboardContext;
   authToken?: string;
   userEmail?: string;
+  onDashboardContextPatch?: (patch: Partial<Pick<DashboardContext, "workbookName">>) => void;
 };
 
-export default function ChatPanel({ dashboardContext, authToken, userEmail }: Props) {
+export default function ChatPanel({ dashboardContext, authToken, userEmail, onDashboardContextPatch }: Props) {
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
       id: "welcome",
@@ -55,6 +56,9 @@ export default function ChatPanel({ dashboardContext, authToken, userEmail }: Pr
       }, authToken);
 
       setSessionId(response.sessionId);
+      if (response.dashboardContextPatch) {
+        onDashboardContextPatch?.(response.dashboardContextPatch);
+      }
       setMessages((current) => [
         ...current,
         {

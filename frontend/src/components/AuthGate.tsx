@@ -17,9 +17,21 @@ export default function AuthGate({ children }: Props) {
   const [session, setSession] = useState<AuthSession | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isSigningIn, setIsSigningIn] = useState(false);
 
   useEffect(() => {
     let mounted = true;
+    function acceptStoredSession(): boolean {
+      const storedSession = getStoredSession();
+      if (!storedSession) {
+        return false;
+      }
+
+      setSession(storedSession);
+      setError(null);
+      return true;
+    }
+
     function handleMessage(message: MessageEvent) {
       if (!isAuthCompleteMessage(message)) {
         return;
@@ -35,15 +47,17 @@ export default function AuthGate({ children }: Props) {
         return;
       }
 
-      const storedSession = getStoredSession();
-      if (storedSession) {
-        setSession(storedSession);
-        setError(null);
-      }
+      acceptStoredSession();
+    }
+
+    function handleFocus() {
+      acceptStoredSession();
     }
 
     window.addEventListener("message", handleMessage);
     window.addEventListener("storage", handleStorage);
+    window.addEventListener("focus", handleFocus);
+    document.addEventListener("visibilitychange", handleFocus);
     completeLoginFromRedirect()
       .then((nextSession) => {
         if (mounted) {
@@ -65,8 +79,38 @@ export default function AuthGate({ children }: Props) {
       mounted = false;
       window.removeEventListener("message", handleMessage);
       window.removeEventListener("storage", handleStorage);
+      window.removeEventListener("focus", handleFocus);
+      document.removeEventListener("visibilitychange", handleFocus);
     };
   }, []);
+
+  async function handleSignIn() {
+    setIsSigningIn(true);
+    setError(null);
+
+    try {
+      const popup = await startLoginPopup();
+      const startedAt = Date.now();
+      const timer = window.setInterval(() => {
+        const storedSession = getStoredSession();
+        if (storedSession) {
+          window.clearInterval(timer);
+          setSession(storedSession);
+          setIsSigningIn(false);
+          setError(null);
+          return;
+        }
+
+        if (popup.closed || Date.now() - startedAt > 120_000) {
+          window.clearInterval(timer);
+          setIsSigningIn(false);
+        }
+      }, 500);
+    } catch (unknownError) {
+      setIsSigningIn(false);
+      setError(unknownError instanceof Error ? unknownError.message : "Failed to start sign-in.");
+    }
+  }
 
   if (isLoading) {
     return <div className="app-shell loading-state">Checking sign-in...</div>;
@@ -82,15 +126,8 @@ export default function AuthGate({ children }: Props) {
         <h1>Tableau Assistant</h1>
         <p>Sign in opens in a separate browser window because Cognito cannot be displayed inside Tableau iframe.</p>
         {error ? <div className="error-banner">{error}</div> : null}
-        <button
-          type="button"
-          onClick={() => {
-            startLoginPopup().catch((unknownError) => {
-              setError(unknownError instanceof Error ? unknownError.message : "Failed to start sign-in.");
-            });
-          }}
-        >
-          Sign in with Cognito
+        <button type="button" disabled={isSigningIn} onClick={handleSignIn}>
+          {isSigningIn ? "Waiting for sign-in..." : "Sign in with Cognito"}
         </button>
       </section>
     </div>

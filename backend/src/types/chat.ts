@@ -16,6 +16,7 @@ export type ChatResponse = {
   answer: string;
   sessionId: string;
   messageId: string;
+  dashboardContextPatch?: Partial<Pick<DashboardContext, "workbookName">>;
   debug?: {
     usedMock: boolean;
     tableauContextProvider: TableauAdditionalContext["provider"];
@@ -33,4 +34,3 @@ export type ChatHistoryRecord = {
   createdAt: string;
   source?: string;
 };
-
