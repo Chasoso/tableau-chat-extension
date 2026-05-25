@@ -11,7 +11,7 @@ export type AuthCompleteMessage = {
 };
 
 export function getStoredSession(): AuthSession | null {
-  const raw = sessionStorage.getItem(sessionKey);
+  const raw = localStorage.getItem(sessionKey);
   if (!raw) {
     return null;
   }
@@ -32,7 +32,7 @@ export async function completeLoginFromRedirect(): Promise<AuthSession | null> {
     return getStoredSession();
   }
 
-  const verifier = sessionStorage.getItem(verifierKey);
+  const verifier = localStorage.getItem(verifierKey);
   if (!verifier) {
     throw new Error("Login session expired. Please sign in again.");
   }
@@ -68,8 +68,8 @@ export async function completeLoginFromRedirect(): Promise<AuthSession | null> {
     email: decodeEmail(body.id_token),
   };
 
-  sessionStorage.setItem(sessionKey, JSON.stringify(session));
-  sessionStorage.removeItem(verifierKey);
+  localStorage.setItem(sessionKey, JSON.stringify(session));
+  localStorage.removeItem(verifierKey);
   notifyOpener(session);
   url.searchParams.delete("code");
   url.searchParams.delete("state");
@@ -100,14 +100,14 @@ export function isAuthCompleteMessage(message: MessageEvent): message is Message
 }
 
 export function storeSession(session: AuthSession): void {
-  sessionStorage.setItem(sessionKey, JSON.stringify(session));
+  localStorage.setItem(sessionKey, JSON.stringify(session));
 }
 
 async function createLoginUrl(): Promise<string> {
   assertAuthConfigured();
   const verifier = randomBase64Url(32);
   const challenge = await sha256Base64Url(verifier);
-  sessionStorage.setItem(verifierKey, verifier);
+  localStorage.setItem(verifierKey, verifier);
 
   const authUrl = new URL(`${getCognitoDomain()}/oauth2/authorize`);
   authUrl.searchParams.set("client_id", env.cognito.clientId);
@@ -139,8 +139,8 @@ export function assertAuthConfigured(): void {
 }
 
 function clearSession(): void {
-  sessionStorage.removeItem(sessionKey);
-  sessionStorage.removeItem(verifierKey);
+  localStorage.removeItem(sessionKey);
+  localStorage.removeItem(verifierKey);
 }
 
 function getCognitoDomain(): string {

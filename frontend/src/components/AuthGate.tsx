@@ -65,7 +65,7 @@ export default function AuthGate({ children }: Props) {
     <div className="app-shell auth-state">
       <section className="auth-card">
         <h1>Tableau Assistant</h1>
-        <p>Sign in to ask questions about this dashboard.</p>
+        <p>Sign in opens in a separate browser window because Cognito cannot be displayed inside Tableau iframe.</p>
         {error ? <div className="error-banner">{error}</div> : null}
         <button
           type="button"
@@ -75,7 +75,7 @@ export default function AuthGate({ children }: Props) {
             });
           }}
         >
-          Sign in
+          Sign in with Cognito
         </button>
       </section>
     </div>
