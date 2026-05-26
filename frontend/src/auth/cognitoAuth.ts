@@ -10,6 +10,8 @@ export type AuthCompleteMessage = {
   session: AuthSession;
 };
 
+export { sessionKey };
+
 export function getStoredSession(): AuthSession | null {
   const raw = localStorage.getItem(sessionKey);
   if (!raw) {

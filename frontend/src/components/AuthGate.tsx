@@ -1,9 +1,10 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type React from "react";
 import {
   completeLoginFromRedirect,
   getStoredSession,
   isAuthCompleteMessage,
+  sessionKey,
   startLoginPopup,
   storeSession,
 } from "../auth/cognitoAuth";
@@ -14,23 +15,43 @@ type Props = {
 };
 
 export default function AuthGate({ children }: Props) {
+  const mountedRef = useRef(false);
+  const sessionPollerRef = useRef<number | undefined>(undefined);
   const [session, setSession] = useState<AuthSession | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSigningIn, setIsSigningIn] = useState(false);
 
-  useEffect(() => {
-    let mounted = true;
-    function acceptStoredSession(): boolean {
-      const storedSession = getStoredSession();
-      if (!storedSession) {
-        return false;
-      }
-
-      setSession(storedSession);
-      setError(null);
-      return true;
+  function acceptStoredSession(): boolean {
+    const storedSession = getStoredSession();
+    if (!storedSession) {
+      return false;
     }
+
+    setSession(storedSession);
+    setError(null);
+    setIsSigningIn(false);
+    return true;
+  }
+
+  function startSessionPolling(durationMs = 15_000) {
+    if (sessionPollerRef.current) {
+      window.clearInterval(sessionPollerRef.current);
+    }
+
+    const startedAt = Date.now();
+    sessionPollerRef.current = window.setInterval(() => {
+      if (!mountedRef.current || acceptStoredSession() || Date.now() - startedAt > durationMs) {
+        if (sessionPollerRef.current) {
+          window.clearInterval(sessionPollerRef.current);
+          sessionPollerRef.current = undefined;
+        }
+      }
+    }, 250);
+  }
+
+  useEffect(() => {
+    mountedRef.current = true;
 
     function handleMessage(message: MessageEvent) {
       if (!isAuthCompleteMessage(message)) {
@@ -40,10 +61,11 @@ export default function AuthGate({ children }: Props) {
       storeSession(message.data.session);
       setSession(message.data.session);
       setError(null);
+      setIsSigningIn(false);
     }
 
     function handleStorage(event: StorageEvent) {
-      if (event.key !== "tableau-chat.auth.session") {
+      if (event.key !== sessionKey) {
         return;
       }
 
@@ -52,6 +74,7 @@ export default function AuthGate({ children }: Props) {
 
     function handleFocus() {
       acceptStoredSession();
+      startSessionPolling(5_000);
     }
 
     window.addEventListener("message", handleMessage);
@@ -60,23 +83,26 @@ export default function AuthGate({ children }: Props) {
     document.addEventListener("visibilitychange", handleFocus);
     completeLoginFromRedirect()
       .then((nextSession) => {
-        if (mounted) {
+        if (mountedRef.current) {
           setSession(nextSession);
         }
       })
       .catch((unknownError) => {
-        if (mounted) {
+        if (mountedRef.current) {
           setError(unknownError instanceof Error ? unknownError.message : "Sign-in failed.");
         }
       })
       .finally(() => {
-        if (mounted) {
+        if (mountedRef.current) {
           setIsLoading(false);
         }
       });
 
     return () => {
-      mounted = false;
+      mountedRef.current = false;
+      if (sessionPollerRef.current) {
+        window.clearInterval(sessionPollerRef.current);
+      }
       window.removeEventListener("message", handleMessage);
       window.removeEventListener("storage", handleStorage);
       window.removeEventListener("focus", handleFocus);
@@ -91,6 +117,7 @@ export default function AuthGate({ children }: Props) {
     try {
       const popup = await startLoginPopup();
       const startedAt = Date.now();
+      startSessionPolling(120_000);
       const timer = window.setInterval(() => {
         const storedSession = getStoredSession();
         if (storedSession) {
@@ -103,7 +130,13 @@ export default function AuthGate({ children }: Props) {
 
         if (popup.closed || Date.now() - startedAt > 120_000) {
           window.clearInterval(timer);
-          setIsSigningIn(false);
+          startSessionPolling(8_000);
+          window.setTimeout(() => {
+            const storedSessionAfterClose = getStoredSession();
+            if (!storedSessionAfterClose) {
+              setIsSigningIn(false);
+            }
+          }, 8_500);
         }
       }, 500);
     } catch (unknownError) {
