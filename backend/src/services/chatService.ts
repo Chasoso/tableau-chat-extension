@@ -140,7 +140,25 @@ function buildDashboardContextPatch(
   }
 
   const workbookName = extractName(additionalContext.workbook) ?? extractWorkbookNameFromMetadata(additionalContext.metadata);
-  return workbookName ? { workbookName } : undefined;
+  if (!workbookName || isLikelyDashboardOrWorksheetName(workbookName, request.dashboardContext)) {
+    return undefined;
+  }
+
+  return { workbookName };
+}
+
+function isLikelyDashboardOrWorksheetName(workbookName: string, dashboardContext: DashboardContext): boolean {
+  const normalizedWorkbookName = workbookName.trim().toLowerCase();
+  if (!normalizedWorkbookName) {
+    return true;
+  }
+
+  const knownNonWorkbookNames = [
+    dashboardContext.dashboardName,
+    ...dashboardContext.worksheets.map((worksheet) => worksheet.name),
+  ].map((value) => value.trim().toLowerCase());
+
+  return knownNonWorkbookNames.includes(normalizedWorkbookName);
 }
 
 function extractWorkbookNameFromMetadata(value: unknown): string | undefined {

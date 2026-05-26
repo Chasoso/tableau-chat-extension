@@ -126,16 +126,21 @@ export async function getDashboardContext(
 }
 
 function resolveWorkbookName(dashboard: TableauDashboard, options: DashboardContextOptions): string | null {
+  const urlName = parseWorkbookNameFromUrl(options.referrer);
   const explicitName =
     normalizeName(readStringProperty(dashboard.workbook, "name")) ??
     normalizeName(readStringProperty(options.workbook, "name")) ??
     normalizeName(readStringProperty(options.workbook, "workbookName"));
 
+  if (urlName && (!explicitName || explicitName === dashboard.name)) {
+    return urlName;
+  }
+
   if (explicitName) {
     return explicitName;
   }
 
-  return parseWorkbookNameFromUrl(options.referrer);
+  return urlName;
 }
 
 function parseWorkbookNameFromUrl(value: string | null | undefined): string | null {

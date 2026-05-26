@@ -140,6 +140,11 @@ export class TableauMcpContextProvider implements TableauContextProvider {
       });
       const extractedWorkbook = extractWorkbookFromToolResults(toolResults, input);
       const extractedDatasources = extractDatasourcesFromToolResults(toolResults);
+      logInfo("tableau.mcp.workbook.extracted", {
+        workbookNamePresent: Boolean(extractedWorkbook?.name),
+        workbookNameHash: safeHash(extractedWorkbook?.name),
+        workbookIdHash: safeHash(extractedWorkbook?.id),
+      });
 
       return {
         provider: this.name,
@@ -504,7 +509,7 @@ function extractTextFromToolResult(result: unknown): string {
 function extractBestWorkbookId(result: unknown, preferredName: string | undefined): string | undefined {
   const text = extractTextFromToolResult(result);
   const parsed = tryParseJson(text) ?? result;
-  const workbookCandidate = findWorkbookCandidates(parsed, preferredName)[0];
+  const workbookCandidate = findWorkbookCandidates(parsed, { preferredWorkbookName: preferredName })[0];
   if (workbookCandidate?.id) {
     return workbookCandidate.id;
   }
@@ -521,16 +526,29 @@ function extractWorkbookFromToolResults(
   toolResults: TableauMcpToolResultSummary[],
   input: GetAdditionalContextInput,
 ): { id?: string; name: string } | undefined {
-  const preferredName = input.dashboardContext.workbookName ?? input.dashboardContext.dashboardName;
+  const preferredWorkbookName = input.dashboardContext.workbookName ?? undefined;
   const parsedResults = toolResults
     .filter((result) => result.status === "success" && result.summary)
     .map((result) => tryParseJson(result.summary ?? "") ?? result.summary);
 
-  const candidates = parsedResults.flatMap((result) => findWorkbookCandidates(result, preferredName));
-  const exactName = input.dashboardContext.workbookName?.trim().toLowerCase();
+  const candidates = parsedResults.flatMap((result) =>
+    findWorkbookCandidates(result, {
+      preferredWorkbookName,
+      dashboardName: input.dashboardContext.dashboardName,
+      worksheetNames: input.dashboardContext.worksheets.map((worksheet) => worksheet.name),
+    }),
+  );
+  const exactName = preferredWorkbookName?.trim().toLowerCase();
   const exact = exactName ? candidates.find((candidate) => candidate.name.trim().toLowerCase() === exactName) : undefined;
   const fromView = candidates.find((candidate) => candidate.source === "view-workbook");
-  const selected = exact ?? fromView ?? candidates[0];
+  const selected = exact ?? fromView ?? candidates.find((candidate) => candidate.source === "workbook") ?? candidates[0];
+
+  logInfo("tableau.mcp.workbook.candidates", {
+    candidateCount: candidates.length,
+    selectedSource: selected?.source,
+    selectedNameHash: safeHash(selected?.name),
+    dashboardNameHash: safeHash(input.dashboardContext.dashboardName),
+  });
 
   return selected ? { id: selected.id, name: selected.name } : undefined;
 }
@@ -550,17 +568,23 @@ type WorkbookCandidate = {
   source: "workbook" | "view-workbook" | "workbookName";
 };
 
-function findWorkbookCandidates(value: unknown, preferredName?: string): WorkbookCandidate[] {
+type WorkbookCandidateOptions = {
+  preferredWorkbookName?: string;
+  dashboardName?: string;
+  worksheetNames?: string[];
+};
+
+function findWorkbookCandidates(value: unknown, options: WorkbookCandidateOptions = {}): WorkbookCandidate[] {
   if (!value) {
     return [];
   }
 
   if (typeof value === "string") {
-    return findWorkbookCandidatesInText(value, preferredName);
+    return findWorkbookCandidatesInText(value, options);
   }
 
   if (Array.isArray(value)) {
-    return value.flatMap((item) => findWorkbookCandidates(item, preferredName));
+    return value.flatMap((item) => findWorkbookCandidates(item, options));
   }
 
   if (typeof value !== "object") {
@@ -602,21 +626,35 @@ function findWorkbookCandidates(value: unknown, preferredName?: string): Workboo
     }
   }
 
-  return [...candidates, ...Object.values(record).flatMap((item) => findWorkbookCandidates(item, preferredName))];
+  return [...candidates, ...Object.values(record).flatMap((item) => findWorkbookCandidates(item, options))]
+    .filter((candidate) => !isKnownNonWorkbookName(candidate.name, options));
 }
 
-function findWorkbookCandidatesInText(text: string, preferredName?: string): WorkbookCandidate[] {
+function findWorkbookCandidatesInText(text: string, options: WorkbookCandidateOptions): WorkbookCandidate[] {
   const candidates: WorkbookCandidate[] = [];
   const workbookLine = text.match(/workbook(?:Name)?["'\s:=]+([^\n",}]+)/i);
   if (workbookLine?.[1]) {
     candidates.push({ name: workbookLine[1].trim(), source: "workbookName" });
   }
 
-  if (preferredName && text.includes(preferredName)) {
-    candidates.push({ name: preferredName, source: "workbookName" });
+  if (options.preferredWorkbookName && text.includes(options.preferredWorkbookName)) {
+    candidates.push({ name: options.preferredWorkbookName, source: "workbookName" });
   }
 
-  return candidates;
+  return candidates.filter((candidate) => !isKnownNonWorkbookName(candidate.name, options));
+}
+
+function isKnownNonWorkbookName(name: string, options: WorkbookCandidateOptions): boolean {
+  const normalizedName = name.trim().toLowerCase();
+  if (!normalizedName) {
+    return true;
+  }
+
+  const knownNonWorkbookNames = [options.dashboardName, ...(options.worksheetNames ?? [])]
+    .filter((value): value is string => Boolean(value?.trim()))
+    .map((value) => value.trim().toLowerCase());
+
+  return knownNonWorkbookNames.includes(normalizedName) && normalizedName !== options.preferredWorkbookName?.trim().toLowerCase();
 }
 
 function looksLikeWorkbookRecord(record: Record<string, unknown>): boolean {
