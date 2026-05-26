@@ -34,6 +34,7 @@ export type AppConfig = {
       args: string[];
       allowedTools: string[];
       maxToolCalls: number;
+      debugLogResults: boolean;
     };
   };
 };
@@ -75,6 +76,7 @@ export function getConfig(): AppConfig {
         args: parseCsv(process.env.TABLEAU_MCP_ARGS),
         allowedTools: parseCsv(process.env.TABLEAU_MCP_ALLOWED_TOOLS),
         maxToolCalls: Number(process.env.TABLEAU_MCP_MAX_TOOL_CALLS ?? 3),
+        debugLogResults: process.env.TABLEAU_MCP_DEBUG_LOG_RESULTS === "true",
       },
     },
   };

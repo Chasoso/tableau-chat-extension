@@ -113,6 +113,7 @@ export class TableauMcpContextProvider implements TableauContextProvider {
             status: "success",
             summary: summarizeToolResult(result),
           });
+          logMcpToolResultDebug(selection.tool.name, result, mcpConfig.debugLogResults);
           calledToolNames.add(selection.tool.name);
 
           const followUp = buildFollowUpToolSelection(selection.tool.name, result, tools, calledToolNames, input);
@@ -476,6 +477,55 @@ function toToolSummary(tool: McpTool): TableauMcpToolSummary {
     name: tool.name,
     description: tool.description?.slice(0, 240),
   };
+}
+
+function logMcpToolResultDebug(toolName: string, result: unknown, enabled: boolean): void {
+  if (!enabled) {
+    return;
+  }
+
+  const text = extractTextFromToolResult(result);
+  const parsed = tryParseJson(text);
+  const record = parsed ?? result;
+  logInfo("tableau.mcp.tool.result_debug", {
+    toolName,
+    resultShape: describeValueShape(record),
+    textSnippet: sanitizeDebugText(text || JSON.stringify(result)).slice(0, 1800),
+  });
+}
+
+function describeValueShape(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return {
+      type: "array",
+      length: value.length,
+      first: describeValueShape(value[0]),
+    };
+  }
+
+  if (!value || typeof value !== "object") {
+    return { type: typeof value };
+  }
+
+  const record = value as Record<string, unknown>;
+  return {
+    type: "object",
+    keys: Object.keys(record).slice(0, 30),
+    childShapes: Object.fromEntries(
+      Object.entries(record)
+        .slice(0, 10)
+        .map(([key, child]) => [key, Array.isArray(child) ? `array(${child.length})` : typeof child]),
+    ),
+  };
+}
+
+function sanitizeDebugText(value: string): string {
+  return value
+    .replace(/"token"\s*:\s*"[^"]*"/gi, '"token":"[REDACTED]"')
+    .replace(/"secret[^"]*"\s*:\s*"[^"]*"/gi, '"secret":"[REDACTED]"')
+    .replace(/"password"\s*:\s*"[^"]*"/gi, '"password":"[REDACTED]"')
+    .replace(/"jwt"\s*:\s*"[^"]*"/gi, '"jwt":"[REDACTED]"')
+    .replace(/"authorization"\s*:\s*"[^"]*"/gi, '"authorization":"[REDACTED]"');
 }
 
 function summarizeToolResult(result: unknown): string {

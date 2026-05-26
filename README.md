@@ -123,6 +123,7 @@ For Lambda-local Tableau MCP:
 - `TABLEAU_MCP_TIMEOUT_MS=5000`
 - `TABLEAU_MCP_ALLOWED_TOOLS`: optional comma-separated allowlist of MCP tools to call.
 - `TABLEAU_MCP_MAX_TOOL_CALLS=3`
+- `TABLEAU_MCP_DEBUG_LOG_RESULTS=false`: set to `true` only while diagnosing MCP result shapes in CloudWatch.
 - `TABLEAU_MCP_COMMAND` and `TABLEAU_MCP_ARGS`: optional override. If omitted, Lambda runs the installed `@tableau/mcp-server` package with Node.js.
 
 The MCP child process receives Connected App credentials only through backend environment variables. These values are not logged.
@@ -234,6 +235,7 @@ Lambda 内で Tableau MCP を stdio 起動する場合の主な設定です。
 - `TABLEAU_MCP_TIMEOUT_MS=5000`
 - `TABLEAU_MCP_ALLOWED_TOOLS`: 呼び出しを許可するMCP tool名のカンマ区切り。未指定時は安全に推測できる範囲だけ呼びます。
 - `TABLEAU_MCP_MAX_TOOL_CALLS=3`
+- `TABLEAU_MCP_DEBUG_LOG_RESULTS=false`: MCP の返却構造を CloudWatch で調査するときだけ `true` にします。
 
 MCP 子プロセスには、バックエンドで検証済みの Tableau subject と Secrets Manager から取得した Connected App 情報だけを渡します。SecretやJWTはログに出しません。
 

@@ -93,6 +93,12 @@ Parameters:
   TableauMcpMaxToolCalls:
     Type: Number
     Default: 3
+  TableauMcpDebugLogResults:
+    Type: String
+    Default: "false"
+    AllowedValues:
+      - "true"
+      - "false"
   ModelProvider:
     Type: String
     Default: "mock"
@@ -239,6 +245,7 @@ Resources:
           TABLEAU_MCP_ARGS: !Ref TableauMcpArgs
           TABLEAU_MCP_ALLOWED_TOOLS: !Ref TableauMcpAllowedTools
           TABLEAU_MCP_MAX_TOOL_CALLS: !Sub "${TableauMcpMaxToolCalls}"
+          TABLEAU_MCP_DEBUG_LOG_RESULTS: !Ref TableauMcpDebugLogResults
           MODEL_PROVIDER: !Ref ModelProvider
           BEDROCK_REGION: !Ref BedrockRegion
           BEDROCK_MODEL_ID: !Ref BedrockModelId
