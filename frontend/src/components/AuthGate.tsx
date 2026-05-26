@@ -20,14 +20,34 @@ type Props = {
 
 export default function AuthGate({ children }: Props) {
   const mountedRef = useRef(false);
+  const popupRef = useRef<Window | null>(null);
   const sessionPollerRef = useRef<number | undefined>(undefined);
+  const signInTimerRef = useRef<number | undefined>(undefined);
   const [session, setSession] = useState<AuthSession | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSigningIn, setIsSigningIn] = useState(false);
 
+  function clearSignInTimer(): void {
+    if (signInTimerRef.current) {
+      window.clearInterval(signInTimerRef.current);
+      signInTimerRef.current = undefined;
+    }
+  }
+
+  function stopSignInWaiting(message?: string): void {
+    clearSignInTimer();
+    popupRef.current = null;
+    setIsSigningIn(false);
+    if (message) {
+      setError(message);
+    }
+  }
+
   function acceptSession(nextSession: AuthSession): void {
     storeSession(nextSession);
+    clearSignInTimer();
+    popupRef.current = null;
     setSession(nextSession);
     setError(null);
     setIsSigningIn(false);
@@ -59,6 +79,23 @@ export default function AuthGate({ children }: Props) {
     }, 250);
   }
 
+  function checkClosedPopupAfterFocus(): void {
+    const popup = popupRef.current;
+    if (!popup?.closed) {
+      return;
+    }
+
+    window.setTimeout(() => {
+      if (acceptStoredSession()) {
+        return;
+      }
+
+      if (popupRef.current?.closed) {
+        stopSignInWaiting("サインイン結果を受け取れませんでした。もう一度サインインを押してください。");
+      }
+    }, 1_000);
+  }
+
   useEffect(() => {
     mountedRef.current = true;
 
@@ -81,6 +118,7 @@ export default function AuthGate({ children }: Props) {
     function handleFocus() {
       acceptStoredSession();
       startSessionPolling(5_000);
+      checkClosedPopupAfterFocus();
     }
 
     let channel: BroadcastChannel | undefined;
@@ -119,6 +157,7 @@ export default function AuthGate({ children }: Props) {
       if (sessionPollerRef.current) {
         window.clearInterval(sessionPollerRef.current);
       }
+      clearSignInTimer();
       channel?.close();
       window.removeEventListener("message", handleMessage);
       window.removeEventListener("storage", handleStorage);
@@ -132,27 +171,23 @@ export default function AuthGate({ children }: Props) {
     setError(null);
 
     try {
-      await startLoginPopup();
+      popupRef.current = await startLoginPopup();
       const startedAt = Date.now();
       startSessionPolling(popupWaitTimeoutMs);
 
-      const timer = window.setInterval(() => {
+      signInTimerRef.current = window.setInterval(() => {
         if (acceptStoredSession()) {
-          window.clearInterval(timer);
           return;
         }
 
-        // Cognito may sever the opener relationship while moving between Hosted
-        // UI steps, so popup.closed is not reliable inside Tableau Cloud.
+        // popup.closed can be unreliable while Cognito moves between Hosted UI
+        // steps. A hard timeout is still useful for abandoned sign-in attempts.
         if (Date.now() - startedAt > popupWaitTimeoutMs) {
-          window.clearInterval(timer);
-          setIsSigningIn(false);
-          setError("サインイン結果を受け取れませんでした。もう一度サインインを押してください。");
+          stopSignInWaiting("サインインがタイムアウトしました。もう一度サインインを押してください。");
         }
       }, 500);
     } catch (unknownError) {
-      setIsSigningIn(false);
-      setError(unknownError instanceof Error ? unknownError.message : "サインインを開始できませんでした。");
+      stopSignInWaiting(unknownError instanceof Error ? unknownError.message : "サインインを開始できませんでした。");
     }
   }
 
