@@ -2,11 +2,11 @@ import { useEffect, useState } from "react";
 import { startLogin } from "../auth/cognitoAuth";
 
 export default function AuthPopupStart() {
-  const [message, setMessage] = useState("Opening Cognito sign-in...");
+  const [message, setMessage] = useState("Cognitoサインインを開いています...");
 
   useEffect(() => {
     startLogin().catch(() => {
-      setMessage("Failed to open Cognito sign-in. Please close this window and try again.");
+      setMessage("Cognitoサインインを開けませんでした。このウィンドウを閉じて再度お試しください。");
     });
   }, []);
 
@@ -19,4 +19,3 @@ export default function AuthPopupStart() {
     </div>
   );
 }
-

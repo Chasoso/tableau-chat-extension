@@ -17,17 +17,16 @@ export default function MessageInput({ disabled, onSend }: Props) {
   return (
     <form className="message-input" onSubmit={handleSubmit}>
       <textarea
-        aria-label="Question"
+        aria-label="質問"
         disabled={disabled}
-        placeholder="Ask about filters, worksheets, trends..."
+        placeholder="シート、フィルター、傾向について質問..."
         rows={3}
         value={question}
         onChange={(event) => setQuestion(event.target.value)}
       />
       <button disabled={disabled || !question.trim()} type="submit">
-        Send
+        送信
       </button>
     </form>
   );
 }
-

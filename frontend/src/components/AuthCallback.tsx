@@ -2,21 +2,21 @@ import { useEffect, useState } from "react";
 import { completeLoginFromRedirect } from "../auth/cognitoAuth";
 
 export default function AuthCallback() {
-  const [message, setMessage] = useState("Completing sign-in...");
+  const [message, setMessage] = useState("サインインを完了しています...");
 
   useEffect(() => {
     completeLoginFromRedirect()
       .then((session) => {
         if (!session) {
-          setMessage("No sign-in response was found.");
+          setMessage("サインイン結果が見つかりませんでした。");
           return;
         }
 
-        setMessage("Sign-in completed. You can close this window.");
+        setMessage("サインインが完了しました。このウィンドウは閉じられます。");
         window.setTimeout(() => window.close(), 500);
       })
       .catch(() => {
-        setMessage("Sign-in failed. Please close this window and try again.");
+        setMessage("サインインに失敗しました。このウィンドウを閉じて再度お試しください。");
       });
   }, []);
 
@@ -29,4 +29,3 @@ export default function AuthCallback() {
     </div>
   );
 }
-

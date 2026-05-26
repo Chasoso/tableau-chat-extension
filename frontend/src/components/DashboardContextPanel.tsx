@@ -11,30 +11,30 @@ export default function DashboardContextPanel({ dashboardContext }: Props) {
     <aside className="context-card" aria-label="Dashboard context summary">
       <div className="context-source-row">
         <span className={isMockContext ? "context-source mock" : "context-source live"}>
-          {isMockContext ? "Mock context" : "Tableau context"}
+          {isMockContext ? "モック" : "Tableau"}
         </span>
       </div>
       {dashboardContext.contextWarning ? <div className="context-warning">{dashboardContext.contextWarning}</div> : null}
       <div className="context-row">
-        <span>Dashboard</span>
+        <span>ダッシュボード</span>
         <strong>{dashboardContext.dashboardName}</strong>
       </div>
       <div className="context-row">
-        <span>Workbook</span>
-        <strong>{dashboardContext.workbookName ?? "Not available"}</strong>
+        <span>ワークブック</span>
+        <strong>{dashboardContext.workbookName ?? "未取得"}</strong>
       </div>
       <div className="context-grid">
         <div>
           <strong>{dashboardContext.worksheets.length}</strong>
-          <span>Worksheets</span>
+          <span>シート</span>
         </div>
         <div>
           <strong>{dashboardContext.filters.length}</strong>
-          <span>Filters</span>
+          <span>フィルター</span>
         </div>
         <div>
           <strong>{dashboardContext.parameters.length}</strong>
-          <span>Parameters</span>
+          <span>パラメーター</span>
         </div>
       </div>
     </aside>

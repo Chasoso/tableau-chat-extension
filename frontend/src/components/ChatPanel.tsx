@@ -11,17 +11,17 @@ import MessageList from "./MessageList";
 type Props = {
   dashboardContext: DashboardContext;
   authToken?: string;
-  userEmail?: string;
+  userDisplayName?: string;
   onDashboardContextPatch?: (patch: Partial<Pick<DashboardContext, "workbookName">>) => void;
 };
 
-export default function ChatPanel({ dashboardContext, authToken, userEmail, onDashboardContextPatch }: Props) {
+export default function ChatPanel({ dashboardContext, authToken, userDisplayName, onDashboardContextPatch }: Props) {
   const enrichmentStartedKey = useRef<string | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
       id: "welcome",
       role: "assistant",
-      content: "Ask me what this Tableau dashboard is showing. I can use the available Tableau context to answer.",
+      content: "このダッシュボードについて質問してください。取得できるTableauコンテキストを使って回答します。",
       createdAt: new Date().toISOString(),
     },
   ]);
@@ -114,11 +114,10 @@ export default function ChatPanel({ dashboardContext, authToken, userEmail, onDa
       <header className="chat-header">
         <div>
           <h1>Tableau Assistant</h1>
-          <p>Ask questions about this dashboard</p>
+          <p>ダッシュボードについて質問できます</p>
         </div>
-        <span className="status-pill">PoC</span>
       </header>
-      {userEmail ? <div className="user-strip">Signed in as {userEmail}</div> : null}
+      {userDisplayName ? <div className="user-strip">ログイン中: {userDisplayName}</div> : null}
 
       <DashboardContextPanel dashboardContext={dashboardContext} />
       <MessageList messages={messages} isLoading={isLoading} />

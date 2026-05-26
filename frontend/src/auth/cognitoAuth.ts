@@ -36,12 +36,12 @@ export async function completeLoginFromRedirect(): Promise<AuthSession | null> {
   }
 
   if (!state) {
-    throw new Error("Login state is missing. Please sign in again.");
+    throw new Error("サインイン状態を確認できませんでした。再度サインインしてください。");
   }
 
   const verifier = localStorage.getItem(getVerifierKey(state));
   if (!verifier) {
-    throw new Error("Login session expired. Please sign in again.");
+    throw new Error("サインインセッションの有効期限が切れました。再度サインインしてください。");
   }
 
   const tokenResponse = await fetch(`${getCognitoDomain()}/oauth2/token`, {
@@ -59,7 +59,7 @@ export async function completeLoginFromRedirect(): Promise<AuthSession | null> {
   });
 
   if (!tokenResponse.ok) {
-    throw new Error("Cognito sign-in failed.");
+    throw new Error("Cognitoサインインに失敗しました。");
   }
 
   const body = (await tokenResponse.json()) as {
@@ -72,7 +72,7 @@ export async function completeLoginFromRedirect(): Promise<AuthSession | null> {
     accessToken: body.access_token,
     idToken: body.id_token,
     expiresAt: Date.now() + body.expires_in * 1000,
-    email: decodeEmail(body.id_token),
+    ...decodeClaims(body.id_token),
   };
 
   localStorage.setItem(sessionKey, JSON.stringify(session));
@@ -147,7 +147,7 @@ export function signOut(): void {
 
 export function assertAuthConfigured(): void {
   if (!env.cognito.clientId || !env.cognito.domain) {
-    throw new Error("Cognito Hosted UI is not configured.");
+    throw new Error("Cognito Hosted UIが設定されていません。");
   }
 }
 
@@ -217,18 +217,21 @@ function base64Url(bytes: Uint8Array): string {
     .replaceAll("=", "");
 }
 
-function decodeEmail(token: string): string | undefined {
+function decodeClaims(token: string): Pick<AuthSession, "email" | "nickname"> {
   const [, payload] = token.split(".");
   if (!payload) {
-    return undefined;
+    return {};
   }
 
   try {
     const normalized = addBase64Padding(payload.replaceAll("-", "+").replaceAll("_", "/"));
-    const decoded = JSON.parse(atob(normalized)) as { email?: string };
-    return decoded.email;
+    const decoded = JSON.parse(atob(normalized)) as { email?: string; nickname?: string };
+    return {
+      email: decoded.email,
+      nickname: decoded.nickname,
+    };
   } catch {
-    return undefined;
+    return {};
   }
 }
 

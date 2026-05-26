@@ -3,5 +3,5 @@ export type AuthSession = {
   idToken: string;
   expiresAt: number;
   email?: string;
+  nickname?: string;
 };
-

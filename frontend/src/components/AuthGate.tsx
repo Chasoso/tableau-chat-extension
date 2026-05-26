@@ -89,7 +89,7 @@ export default function AuthGate({ children }: Props) {
       })
       .catch((unknownError) => {
         if (mountedRef.current) {
-          setError(unknownError instanceof Error ? unknownError.message : "Sign-in failed.");
+          setError(unknownError instanceof Error ? unknownError.message : "サインインに失敗しました。");
         }
       })
       .finally(() => {
@@ -141,12 +141,12 @@ export default function AuthGate({ children }: Props) {
       }, 500);
     } catch (unknownError) {
       setIsSigningIn(false);
-      setError(unknownError instanceof Error ? unknownError.message : "Failed to start sign-in.");
+      setError(unknownError instanceof Error ? unknownError.message : "サインインを開始できませんでした。");
     }
   }
 
   if (isLoading) {
-    return <div className="app-shell loading-state">Checking sign-in...</div>;
+    return <div className="app-shell loading-state">サインイン状態を確認しています...</div>;
   }
 
   if (session) {
@@ -157,10 +157,10 @@ export default function AuthGate({ children }: Props) {
     <div className="app-shell auth-state">
       <section className="auth-card">
         <h1>Tableau Assistant</h1>
-        <p>Sign in opens in a separate browser window because Cognito cannot be displayed inside Tableau iframe.</p>
+        <p>Tableau内ではCognitoを表示できないため、別ウィンドウでサインインします。</p>
         {error ? <div className="error-banner">{error}</div> : null}
         <button type="button" disabled={isSigningIn} onClick={handleSignIn}>
-          {isSigningIn ? "Waiting for sign-in..." : "Sign in with Cognito"}
+          {isSigningIn ? "サインインを待機中..." : "Cognitoでサインイン"}
         </button>
       </section>
     </div>

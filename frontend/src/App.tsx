@@ -50,7 +50,7 @@ function DashboardExtensionApp() {
   }
 
   if (!dashboardContext) {
-    return <div className="app-shell loading-state">Loading dashboard context...</div>;
+    return <div className="app-shell loading-state">ダッシュボード情報を読み込んでいます...</div>;
   }
 
   const renderPanel = (session?: AuthSession) => (
@@ -58,7 +58,7 @@ function DashboardExtensionApp() {
       <ChatPanel
         dashboardContext={dashboardContext}
         authToken={session?.idToken}
-        userEmail={session?.email}
+        userDisplayName={session?.nickname}
         onDashboardContextPatch={(patch) => {
           setDashboardContext((current) => (current ? { ...current, ...patch } : current));
         }}

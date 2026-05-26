@@ -34,7 +34,7 @@ type TableauWorksheet = {
   getDataSourcesAsync?: () => Promise<unknown[]>;
 };
 
-export function createMockDashboardContext(contextWarning = "Using mock dashboard context."): DashboardContext {
+export function createMockDashboardContext(contextWarning = "モックのダッシュボード情報を使用しています。"): DashboardContext {
   return {
     dashboardName: "Mock Executive Sales Dashboard",
     workbookName: "Mock Sales Workbook",
