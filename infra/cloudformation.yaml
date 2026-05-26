@@ -71,10 +71,10 @@ Parameters:
     Default: ""
   TableauMcpTransport:
     Type: String
-    Default: "http"
+    Default: "stdio"
   TableauMcpAuthMode:
     Type: String
-    Default: "none"
+    Default: "direct-trust"
   TableauMcpTimeoutMs:
     Type: Number
     Default: 5000

@@ -80,12 +80,22 @@ export class TableauMcpContextProvider implements TableauContextProvider {
       const toolsResponse = await client.listTools(undefined, { timeout: mcpConfig.timeoutMs });
       const tools = toolsResponse.tools as McpTool[];
       const toolSummaries = tools.map(toToolSummary);
-      const selectedTools = selectTools(tools, mcpConfig.allowedTools, mcpConfig.maxToolCalls, input);
+      const toolQueue = selectInitialTools(tools, mcpConfig.allowedTools, input);
       const toolResults: TableauMcpToolResultSummary[] = [];
+      const calledToolNames = new Set<string>();
 
-      for (const selection of selectedTools) {
+      while (toolQueue.length > 0 && toolResults.length < Math.max(mcpConfig.maxToolCalls, 0)) {
+        const selection = toolQueue.shift();
+        if (!selection) {
+          break;
+        }
+
         if (selection.status === "skipped") {
           toolResults.push(selection);
+          continue;
+        }
+
+        if (calledToolNames.has(selection.tool.name)) {
           continue;
         }
 
@@ -103,6 +113,12 @@ export class TableauMcpContextProvider implements TableauContextProvider {
             status: "success",
             summary: summarizeToolResult(result),
           });
+          calledToolNames.add(selection.tool.name);
+
+          const followUp = buildFollowUpToolSelection(selection.tool.name, result, tools, calledToolNames, input);
+          if (followUp) {
+            toolQueue.unshift(followUp);
+          }
         } catch (error) {
           logWarn("tableau.mcp.tool.failed", {
             toolName: selection.tool.name,
@@ -120,6 +136,7 @@ export class TableauMcpContextProvider implements TableauContextProvider {
         toolCount: toolSummaries.length,
         calledToolCount: toolResults.filter((result) => result.status === "success").length,
         failedToolCount: toolResults.filter((result) => result.status === "failed").length,
+        selectedTools: toolResults.map((result) => result.toolName),
       });
 
       return {
@@ -260,17 +277,20 @@ type SelectedTool =
       warning: string;
     };
 
-function selectTools(
+function selectInitialTools(
   tools: McpTool[],
   allowedTools: string[],
-  maxToolCalls: number,
   input: GetAdditionalContextInput,
 ): SelectedTool[] {
-  const candidates = allowedTools.length
-    ? tools.filter((tool) => allowedTools.includes(tool.name))
-    : tools.filter((tool) => /workbook|datasource|metadata|view|search|content/i.test(tool.name));
+  const candidates = allowedTools.length ? tools.filter((tool) => allowedTools.includes(tool.name)) : getDefaultToolCandidates(tools);
 
-  return candidates.slice(0, Math.max(maxToolCalls, 0)).map((tool) => {
+  logInfo("tableau.mcp.tools.selected", {
+    availableToolCount: tools.length,
+    selectedTools: candidates.map((tool) => tool.name),
+    allowedToolsConfigured: allowedTools.length > 0,
+  });
+
+  return candidates.map((tool) => {
     const args = inferToolArguments(tool, input);
     if (!args) {
       return {
@@ -288,7 +308,76 @@ function selectTools(
   });
 }
 
+function getDefaultToolCandidates(tools: McpTool[]): McpTool[] {
+  const preferredNames = ["list-workbooks", "list-views", "list-datasources", "search-content"];
+  const byName = new Map(tools.map((tool) => [tool.name, tool]));
+  const preferred = preferredNames.flatMap((name) => {
+    const tool = byName.get(name);
+    return tool ? [tool] : [];
+  });
+
+  if (preferred.length) {
+    return preferred;
+  }
+
+  return tools
+    .filter((tool) => /list.*workbook|list.*view|list.*datasource|search.*content/i.test(tool.name))
+    .sort((left, right) => getToolPriority(left.name) - getToolPriority(right.name));
+}
+
+function getToolPriority(toolName: string): number {
+  if (toolName === "list-workbooks") {
+    return 10;
+  }
+  if (toolName === "get-workbook") {
+    return 20;
+  }
+  if (toolName === "list-views") {
+    return 30;
+  }
+  if (toolName === "list-datasources") {
+    return 40;
+  }
+  if (toolName === "search-content") {
+    return 50;
+  }
+  return 100;
+}
+
+function buildFollowUpToolSelection(
+  completedToolName: string,
+  result: unknown,
+  tools: McpTool[],
+  calledToolNames: Set<string>,
+  input: GetAdditionalContextInput,
+): SelectedTool | undefined {
+  if (completedToolName !== "list-workbooks" || calledToolNames.has("get-workbook")) {
+    return undefined;
+  }
+
+  const getWorkbookTool = tools.find((tool) => tool.name === "get-workbook");
+  if (!getWorkbookTool) {
+    return undefined;
+  }
+
+  const workbookId = extractBestWorkbookId(result, input.dashboardContext.workbookName ?? input.dashboardContext.dashboardName);
+  if (!workbookId) {
+    return undefined;
+  }
+
+  return {
+    status: "ready",
+    tool: getWorkbookTool,
+    arguments: { workbookId },
+  };
+}
+
 function inferToolArguments(tool: McpTool, input: GetAdditionalContextInput): Record<string, unknown> | undefined {
+  const knownArguments = inferKnownToolArguments(tool.name, input);
+  if (knownArguments) {
+    return knownArguments;
+  }
+
   const required = tool.inputSchema?.required ?? [];
   const properties = tool.inputSchema?.properties ?? {};
   const args: Record<string, unknown> = {};
@@ -318,6 +407,30 @@ function inferToolArguments(tool: McpTool, input: GetAdditionalContextInput): Re
   }
 
   return args;
+}
+
+function inferKnownToolArguments(toolName: string, input: GetAdditionalContextInput): Record<string, unknown> | undefined {
+  const dashboardName = input.dashboardContext.dashboardName;
+  const workbookName = input.dashboardContext.workbookName ?? undefined;
+
+  switch (toolName) {
+    case "list-workbooks":
+      return workbookName ? { filter: `name:eq:${escapeFilterValue(workbookName)}`, limit: 10 } : { limit: 10 };
+    case "list-views":
+      return workbookName
+        ? { filter: `workbookName:eq:${escapeFilterValue(workbookName)}`, limit: 25 }
+        : { filter: `name:eq:${escapeFilterValue(dashboardName)}`, limit: 25 };
+    case "list-datasources":
+      return { limit: 20 };
+    case "search-content":
+      return {
+        terms: workbookName ?? dashboardName,
+        filter: { contentTypes: ["workbook", "view", "datasource"] },
+        limit: 10,
+      };
+    default:
+      return undefined;
+  }
 }
 
 function inferValueForProperty(propertyName: string, input: GetAdditionalContextInput): unknown {
@@ -379,6 +492,60 @@ function extractTextFromToolResult(result: unknown): string {
   }
 
   return "";
+}
+
+function extractBestWorkbookId(result: unknown, preferredName: string | undefined): string | undefined {
+  const text = extractTextFromToolResult(result);
+  const parsed = tryParseJson(text) ?? result;
+  const candidates = findObjectsWithId(parsed);
+  const normalizedPreferredName = preferredName?.trim().toLowerCase();
+  const matched = normalizedPreferredName
+    ? candidates.find((candidate) => candidate.name?.trim().toLowerCase() === normalizedPreferredName)
+    : undefined;
+  return matched?.id ?? candidates[0]?.id ?? findFirstUuid(text);
+}
+
+function tryParseJson(text: string): unknown {
+  if (!text.trim()) {
+    return undefined;
+  }
+
+  try {
+    return JSON.parse(text);
+  } catch {
+    return undefined;
+  }
+}
+
+function findObjectsWithId(value: unknown): Array<{ id: string; name?: string }> {
+  if (!value || typeof value !== "object") {
+    return [];
+  }
+
+  if (Array.isArray(value)) {
+    return value.flatMap(findObjectsWithId);
+  }
+
+  const record = value as Record<string, unknown>;
+  const direct =
+    typeof record.id === "string"
+      ? [
+          {
+            id: record.id,
+            name: typeof record.name === "string" ? record.name : undefined,
+          },
+        ]
+      : [];
+
+  return [...direct, ...Object.values(record).flatMap(findObjectsWithId)];
+}
+
+function findFirstUuid(text: string): string | undefined {
+  return text.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i)?.[0];
+}
+
+function escapeFilterValue(value: string): string {
+  return value.replace(/[,&]/g, " ").trim();
 }
 
 function sanitizeDashboardContext(input: GetAdditionalContextInput["dashboardContext"]) {
