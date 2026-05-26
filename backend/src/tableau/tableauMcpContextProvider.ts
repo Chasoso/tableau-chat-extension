@@ -138,13 +138,18 @@ export class TableauMcpContextProvider implements TableauContextProvider {
         failedToolCount: toolResults.filter((result) => result.status === "failed").length,
         selectedTools: toolResults.map((result) => result.toolName),
       });
+      const extractedWorkbook = extractWorkbookFromToolResults(toolResults, input);
+      const extractedDatasources = extractDatasourcesFromToolResults(toolResults);
 
       return {
         provider: this.name,
+        workbook: extractedWorkbook,
+        datasources: extractedDatasources,
         metadata: {
           transport: "stdio",
           toolCount: toolSummaries.length,
           calledTools: toolResults.map((result) => result.toolName),
+          workbookExtracted: Boolean(extractedWorkbook),
         },
         mcpTools: toolSummaries,
         mcpToolResults: toolResults,
@@ -282,7 +287,7 @@ function selectInitialTools(
   allowedTools: string[],
   input: GetAdditionalContextInput,
 ): SelectedTool[] {
-  const candidates = allowedTools.length ? tools.filter((tool) => allowedTools.includes(tool.name)) : getDefaultToolCandidates(tools);
+  const candidates = allowedTools.length ? tools.filter((tool) => allowedTools.includes(tool.name)) : getDefaultToolCandidates(tools, input);
 
   logInfo("tableau.mcp.tools.selected", {
     availableToolCount: tools.length,
@@ -308,8 +313,10 @@ function selectInitialTools(
   });
 }
 
-function getDefaultToolCandidates(tools: McpTool[]): McpTool[] {
-  const preferredNames = ["list-workbooks", "list-views", "list-datasources", "search-content"];
+function getDefaultToolCandidates(tools: McpTool[], input: GetAdditionalContextInput): McpTool[] {
+  const preferredNames = input.dashboardContext.workbookName
+    ? ["list-workbooks", "get-workbook", "list-views", "list-datasources", "search-content"]
+    : ["list-views", "search-content", "list-workbooks", "list-datasources"];
   const byName = new Map(tools.map((tool) => [tool.name, tool]));
   const preferred = preferredNames.flatMap((name) => {
     const tool = byName.get(name);
@@ -351,7 +358,7 @@ function buildFollowUpToolSelection(
   calledToolNames: Set<string>,
   input: GetAdditionalContextInput,
 ): SelectedTool | undefined {
-  if (completedToolName !== "list-workbooks" || calledToolNames.has("get-workbook")) {
+  if (!["list-workbooks", "list-views", "search-content"].includes(completedToolName) || calledToolNames.has("get-workbook")) {
     return undefined;
   }
 
@@ -415,7 +422,7 @@ function inferKnownToolArguments(toolName: string, input: GetAdditionalContextIn
 
   switch (toolName) {
     case "list-workbooks":
-      return workbookName ? { filter: `name:eq:${escapeFilterValue(workbookName)}`, limit: 10 } : { limit: 10 };
+      return workbookName ? { filter: `name:eq:${escapeFilterValue(workbookName)}`, limit: 10 } : { limit: 25 };
     case "list-views":
       return workbookName
         ? { filter: `workbookName:eq:${escapeFilterValue(workbookName)}`, limit: 25 }
@@ -497,12 +504,148 @@ function extractTextFromToolResult(result: unknown): string {
 function extractBestWorkbookId(result: unknown, preferredName: string | undefined): string | undefined {
   const text = extractTextFromToolResult(result);
   const parsed = tryParseJson(text) ?? result;
+  const workbookCandidate = findWorkbookCandidates(parsed, preferredName)[0];
+  if (workbookCandidate?.id) {
+    return workbookCandidate.id;
+  }
+
   const candidates = findObjectsWithId(parsed);
   const normalizedPreferredName = preferredName?.trim().toLowerCase();
   const matched = normalizedPreferredName
     ? candidates.find((candidate) => candidate.name?.trim().toLowerCase() === normalizedPreferredName)
     : undefined;
   return matched?.id ?? candidates[0]?.id ?? findFirstUuid(text);
+}
+
+function extractWorkbookFromToolResults(
+  toolResults: TableauMcpToolResultSummary[],
+  input: GetAdditionalContextInput,
+): { id?: string; name: string } | undefined {
+  const preferredName = input.dashboardContext.workbookName ?? input.dashboardContext.dashboardName;
+  const parsedResults = toolResults
+    .filter((result) => result.status === "success" && result.summary)
+    .map((result) => tryParseJson(result.summary ?? "") ?? result.summary);
+
+  const candidates = parsedResults.flatMap((result) => findWorkbookCandidates(result, preferredName));
+  const exactName = input.dashboardContext.workbookName?.trim().toLowerCase();
+  const exact = exactName ? candidates.find((candidate) => candidate.name.trim().toLowerCase() === exactName) : undefined;
+  const fromView = candidates.find((candidate) => candidate.source === "view-workbook");
+  const selected = exact ?? fromView ?? candidates[0];
+
+  return selected ? { id: selected.id, name: selected.name } : undefined;
+}
+
+function extractDatasourcesFromToolResults(toolResults: TableauMcpToolResultSummary[]): unknown[] {
+  return toolResults
+    .filter((result) => result.status === "success" && result.summary && result.toolName === "list-datasources")
+    .flatMap((result) => {
+      const parsed = tryParseJson(result.summary ?? "");
+      return parsed ? findDataSourceObjects(parsed) : [];
+    });
+}
+
+type WorkbookCandidate = {
+  id?: string;
+  name: string;
+  source: "workbook" | "view-workbook" | "workbookName";
+};
+
+function findWorkbookCandidates(value: unknown, preferredName?: string): WorkbookCandidate[] {
+  if (!value) {
+    return [];
+  }
+
+  if (typeof value === "string") {
+    return findWorkbookCandidatesInText(value, preferredName);
+  }
+
+  if (Array.isArray(value)) {
+    return value.flatMap((item) => findWorkbookCandidates(item, preferredName));
+  }
+
+  if (typeof value !== "object") {
+    return [];
+  }
+
+  const record = value as Record<string, unknown>;
+  const candidates: WorkbookCandidate[] = [];
+  const workbook = record.workbook;
+  if (workbook && typeof workbook === "object") {
+    const workbookRecord = workbook as Record<string, unknown>;
+    const name = readString(workbookRecord.name) ?? readString(workbookRecord.workbookName);
+    if (name) {
+      candidates.push({
+        id: readString(workbookRecord.id),
+        name,
+        source: "view-workbook",
+      });
+    }
+  }
+
+  const workbookName = readString(record.workbookName);
+  if (workbookName) {
+    candidates.push({
+      id: readString(record.workbookId),
+      name: workbookName,
+      source: "workbookName",
+    });
+  }
+
+  if (looksLikeWorkbookRecord(record)) {
+    const name = readString(record.name);
+    if (name) {
+      candidates.push({
+        id: readString(record.id),
+        name,
+        source: "workbook",
+      });
+    }
+  }
+
+  return [...candidates, ...Object.values(record).flatMap((item) => findWorkbookCandidates(item, preferredName))];
+}
+
+function findWorkbookCandidatesInText(text: string, preferredName?: string): WorkbookCandidate[] {
+  const candidates: WorkbookCandidate[] = [];
+  const workbookLine = text.match(/workbook(?:Name)?["'\s:=]+([^\n",}]+)/i);
+  if (workbookLine?.[1]) {
+    candidates.push({ name: workbookLine[1].trim(), source: "workbookName" });
+  }
+
+  if (preferredName && text.includes(preferredName)) {
+    candidates.push({ name: preferredName, source: "workbookName" });
+  }
+
+  return candidates;
+}
+
+function looksLikeWorkbookRecord(record: Record<string, unknown>): boolean {
+  return (
+    typeof record.name === "string" &&
+    (Array.isArray(record.views) ||
+      Boolean(record.project) ||
+      typeof record.contentUrl === "string" ||
+      typeof record.sheetCount === "number" ||
+      typeof record.displayTabs === "boolean")
+  );
+}
+
+function findDataSourceObjects(value: unknown): unknown[] {
+  if (!value || typeof value !== "object") {
+    return [];
+  }
+
+  if (Array.isArray(value)) {
+    return value.flatMap(findDataSourceObjects);
+  }
+
+  const record = value as Record<string, unknown>;
+  const direct = typeof record.name === "string" && (record.id || record.contentUrl || record.project) ? [record] : [];
+  return [...direct, ...Object.values(record).flatMap(findDataSourceObjects)];
+}
+
+function readString(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
 
 function tryParseJson(text: string): unknown {
