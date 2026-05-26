@@ -6,7 +6,7 @@ export default function AuthPopupStart() {
 
   useEffect(() => {
     startLogin().catch(() => {
-      setMessage("Cognitoサインインを開けませんでした。このウィンドウを閉じて再度お試しください。");
+      setMessage("Cognitoサインインを開けませんでした。このウィンドウを閉じて、もう一度お試しください。");
     });
   }, []);
 

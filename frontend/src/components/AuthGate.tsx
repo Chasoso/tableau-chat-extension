@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import type React from "react";
 import {
+  authBroadcastChannelName,
   completeLoginFromRedirect,
   getStoredSession,
   isAuthCompleteMessage,
+  isAuthCompletePayload,
   sessionKey,
   startLoginPopup,
   storeSession,
@@ -22,15 +24,20 @@ export default function AuthGate({ children }: Props) {
   const [isLoading, setIsLoading] = useState(true);
   const [isSigningIn, setIsSigningIn] = useState(false);
 
+  function acceptSession(nextSession: AuthSession): void {
+    storeSession(nextSession);
+    setSession(nextSession);
+    setError(null);
+    setIsSigningIn(false);
+  }
+
   function acceptStoredSession(): boolean {
     const storedSession = getStoredSession();
     if (!storedSession) {
       return false;
     }
 
-    setSession(storedSession);
-    setError(null);
-    setIsSigningIn(false);
+    acceptSession(storedSession);
     return true;
   }
 
@@ -58,10 +65,7 @@ export default function AuthGate({ children }: Props) {
         return;
       }
 
-      storeSession(message.data.session);
-      setSession(message.data.session);
-      setError(null);
-      setIsSigningIn(false);
+      acceptSession(message.data.session);
     }
 
     function handleStorage(event: StorageEvent) {
@@ -77,14 +81,24 @@ export default function AuthGate({ children }: Props) {
       startSessionPolling(5_000);
     }
 
+    let channel: BroadcastChannel | undefined;
+    if (typeof BroadcastChannel !== "undefined") {
+      channel = new BroadcastChannel(authBroadcastChannelName);
+      channel.addEventListener("message", (event: MessageEvent) => {
+        if (isAuthCompletePayload(event.data)) {
+          acceptSession(event.data.session);
+        }
+      });
+    }
+
     window.addEventListener("message", handleMessage);
     window.addEventListener("storage", handleStorage);
     window.addEventListener("focus", handleFocus);
     document.addEventListener("visibilitychange", handleFocus);
     completeLoginFromRedirect()
       .then((nextSession) => {
-        if (mountedRef.current) {
-          setSession(nextSession);
+        if (mountedRef.current && nextSession) {
+          acceptSession(nextSession);
         }
       })
       .catch((unknownError) => {
@@ -103,6 +117,7 @@ export default function AuthGate({ children }: Props) {
       if (sessionPollerRef.current) {
         window.clearInterval(sessionPollerRef.current);
       }
+      channel?.close();
       window.removeEventListener("message", handleMessage);
       window.removeEventListener("storage", handleStorage);
       window.removeEventListener("focus", handleFocus);
@@ -119,12 +134,8 @@ export default function AuthGate({ children }: Props) {
       const startedAt = Date.now();
       startSessionPolling(120_000);
       const timer = window.setInterval(() => {
-        const storedSession = getStoredSession();
-        if (storedSession) {
+        if (acceptStoredSession()) {
           window.clearInterval(timer);
-          setSession(storedSession);
-          setIsSigningIn(false);
-          setError(null);
           return;
         }
 
@@ -132,9 +143,9 @@ export default function AuthGate({ children }: Props) {
           window.clearInterval(timer);
           startSessionPolling(8_000);
           window.setTimeout(() => {
-            const storedSessionAfterClose = getStoredSession();
-            if (!storedSessionAfterClose) {
+            if (!getStoredSession()) {
               setIsSigningIn(false);
+              setError("サインイン結果を受け取れませんでした。もう一度サインインを押してください。");
             }
           }, 8_500);
         }
@@ -157,7 +168,7 @@ export default function AuthGate({ children }: Props) {
     <div className="app-shell auth-state">
       <section className="auth-card">
         <h1>Tableau Assistant</h1>
-        <p>Tableau内ではCognitoを表示できないため、別ウィンドウでサインインします。</p>
+        <p>Tableau 内では Cognito を直接表示できないため、別ウィンドウでサインインします。</p>
         {error ? <div className="error-banner">{error}</div> : null}
         <button type="button" disabled={isSigningIn} onClick={handleSignIn}>
           {isSigningIn ? "サインインを待機中..." : "Cognitoでサインイン"}

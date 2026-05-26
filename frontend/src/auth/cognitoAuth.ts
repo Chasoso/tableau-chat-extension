@@ -4,13 +4,14 @@ import type { AuthSession } from "../types/auth";
 const sessionKey = "tableau-chat.auth.session";
 const verifierKeyPrefix = "tableau-chat.auth.pkce.verifier.";
 const authMessageType = "tableau-chat.auth.complete";
+const authBroadcastChannelName = "tableau-chat.auth";
 
 export type AuthCompleteMessage = {
   type: typeof authMessageType;
   session: AuthSession;
 };
 
-export { sessionKey };
+export { authBroadcastChannelName, authMessageType, sessionKey };
 
 export function getStoredSession(): AuthSession | null {
   const raw = localStorage.getItem(sessionKey);
@@ -36,12 +37,12 @@ export async function completeLoginFromRedirect(): Promise<AuthSession | null> {
   }
 
   if (!state) {
-    throw new Error("サインイン状態を確認できませんでした。再度サインインしてください。");
+    throw new Error("サインイン状態を確認できませんでした。もう一度サインインしてください。");
   }
 
   const verifier = localStorage.getItem(getVerifierKey(state));
   if (!verifier) {
-    throw new Error("サインインセッションの有効期限が切れました。再度サインインしてください。");
+    throw new Error("サインインセッションの有効期限が切れました。もう一度サインインしてください。");
   }
 
   const tokenResponse = await fetch(`${getCognitoDomain()}/oauth2/token`, {
@@ -75,9 +76,9 @@ export async function completeLoginFromRedirect(): Promise<AuthSession | null> {
     ...decodeClaims(body.id_token),
   };
 
-  localStorage.setItem(sessionKey, JSON.stringify(session));
+  storeSession(session);
   localStorage.removeItem(getVerifierKey(state));
-  notifyOpener(session);
+  publishAuthSession(session);
   url.searchParams.delete("code");
   url.searchParams.delete("state");
   window.history.replaceState({}, document.title, url.toString());
@@ -92,7 +93,7 @@ export async function startLogin(): Promise<void> {
 export async function startLoginPopup(): Promise<Window> {
   const popup = window.open(getPopupStartUrl(), "tableau-chat-cognito-login", "popup,width=520,height=720");
   if (!popup) {
-    throw new Error("Unable to open the sign-in window. Please allow pop-ups for this site.");
+    throw new Error("サインインウィンドウを開けませんでした。このサイトのポップアップを許可してください。");
   }
   popup.focus();
   return popup;
@@ -107,11 +108,27 @@ export function isAuthPopupStart(): boolean {
 }
 
 export function isAuthCompleteMessage(message: MessageEvent): message is MessageEvent<AuthCompleteMessage> {
-  return message.origin === window.location.origin && message.data?.type === authMessageType && Boolean(message.data.session);
+  return message.origin === window.location.origin && isAuthCompletePayload(message.data);
+}
+
+export function isAuthCompletePayload(payload: unknown): payload is AuthCompleteMessage {
+  return (
+    typeof payload === "object" &&
+    payload !== null &&
+    "type" in payload &&
+    "session" in payload &&
+    (payload as AuthCompleteMessage).type === authMessageType &&
+    Boolean((payload as AuthCompleteMessage).session)
+  );
 }
 
 export function storeSession(session: AuthSession): void {
   localStorage.setItem(sessionKey, JSON.stringify(session));
+}
+
+export function publishAuthSession(session: AuthSession): void {
+  notifyOpener(session);
+  notifyBroadcastChannel(session);
 }
 
 async function createLoginUrl(): Promise<string> {
@@ -194,6 +211,19 @@ function notifyOpener(session: AuthSession): void {
     } satisfies AuthCompleteMessage,
     window.location.origin,
   );
+}
+
+function notifyBroadcastChannel(session: AuthSession): void {
+  if (typeof BroadcastChannel === "undefined") {
+    return;
+  }
+
+  const channel = new BroadcastChannel(authBroadcastChannelName);
+  channel.postMessage({
+    type: authMessageType,
+    session,
+  } satisfies AuthCompleteMessage);
+  channel.close();
 }
 
 function getVerifierKey(state: string): string {
