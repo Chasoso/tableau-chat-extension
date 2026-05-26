@@ -12,6 +12,8 @@ import {
 } from "../auth/cognitoAuth";
 import type { AuthSession } from "../types/auth";
 
+const popupWaitTimeoutMs = 5 * 60 * 1000;
+
 type Props = {
   children: (session: AuthSession) => React.ReactNode;
 };
@@ -130,24 +132,22 @@ export default function AuthGate({ children }: Props) {
     setError(null);
 
     try {
-      const popup = await startLoginPopup();
+      await startLoginPopup();
       const startedAt = Date.now();
-      startSessionPolling(120_000);
+      startSessionPolling(popupWaitTimeoutMs);
+
       const timer = window.setInterval(() => {
         if (acceptStoredSession()) {
           window.clearInterval(timer);
           return;
         }
 
-        if (popup.closed || Date.now() - startedAt > 120_000) {
+        // Cognito may sever the opener relationship while moving between Hosted
+        // UI steps, so popup.closed is not reliable inside Tableau Cloud.
+        if (Date.now() - startedAt > popupWaitTimeoutMs) {
           window.clearInterval(timer);
-          startSessionPolling(8_000);
-          window.setTimeout(() => {
-            if (!getStoredSession()) {
-              setIsSigningIn(false);
-              setError("サインイン結果を受け取れませんでした。もう一度サインインを押してください。");
-            }
-          }, 8_500);
+          setIsSigningIn(false);
+          setError("サインイン結果を受け取れませんでした。もう一度サインインを押してください。");
         }
       }, 500);
     } catch (unknownError) {
@@ -171,7 +171,7 @@ export default function AuthGate({ children }: Props) {
         <p>Tableau 内では Cognito を直接表示できないため、別ウィンドウでサインインします。</p>
         {error ? <div className="error-banner">{error}</div> : null}
         <button type="button" disabled={isSigningIn} onClick={handleSignIn}>
-          {isSigningIn ? "サインインを待機中..." : "Cognitoでサインイン"}
+          {isSigningIn ? "サインイン完了を待機中..." : "Cognitoでサインイン"}
         </button>
       </section>
     </div>
