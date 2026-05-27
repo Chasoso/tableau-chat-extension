@@ -1,3 +1,5 @@
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import type { ChatMessage } from "../types/chat";
 
 type Props = {
@@ -11,7 +13,13 @@ export default function MessageList({ messages, isLoading }: Props) {
       {messages.map((message) => (
         <article key={message.id} className={`message-bubble ${message.role}`}>
           <span>{message.role === "user" ? "あなた" : "アシスタント"}</span>
-          <p>{message.content}</p>
+          {message.role === "assistant" ? (
+            <div className="markdown-content">
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>{message.content}</ReactMarkdown>
+            </div>
+          ) : (
+            <p>{message.content}</p>
+          )}
         </article>
       ))}
       {isLoading ? (
