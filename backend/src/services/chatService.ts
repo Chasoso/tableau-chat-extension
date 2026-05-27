@@ -20,9 +20,16 @@ export class ChatService {
   ) {}
 
   async generateAnswer(request: ChatRequest, authenticatedUser?: AuthenticatedUser): Promise<ChatResponse> {
+    const config = getConfig();
     const sessionId = request.sessionId || randomUUID();
     const messageId = randomUUID();
     const tableauSubject = resolveTableauSubject(authenticatedUser);
+    const ownerUserId = authenticatedUser?.userId;
+    const recentHistory = await this.repository.listRecentBySession({
+      sessionId,
+      ownerUserId,
+      limit: config.chatMemoryMessageLimit,
+    });
     logInfo("chat.service.context_lookup.started", {
       provider: this.contextProvider.name,
       sessionId,
@@ -35,6 +42,7 @@ export class ChatService {
       authTokenUse: authenticatedUser?.tokenUse,
       hasAuthenticatedEmail: Boolean(authenticatedUser?.email),
       tableauSubjectHash: safeHash(tableauSubject),
+      historyCount: recentHistory.length,
     });
     const additionalContext = await this.contextProvider.getAdditionalContext({
       dashboardContext: request.dashboardContext,
@@ -51,7 +59,7 @@ export class ChatService {
       hasMetadata: Boolean(additionalContext.metadata),
       warningCount: additionalContext.warnings?.length ?? 0,
     });
-    const prompt = buildPrompt(request, additionalContext);
+    const prompt = buildPrompt(request, additionalContext, recentHistory);
     const answer = await this.answerGenerator.generate({
       request,
       prompt,
@@ -71,6 +79,7 @@ export class ChatService {
     await this.repository.save({
       sessionId,
       messageId,
+      ownerUserId: ownerUserId ?? null,
       question: request.question,
       answer,
       dashboardName: request.dashboardContext.dashboardName,

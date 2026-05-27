@@ -74,6 +74,7 @@ These can be repository Variables if acceptable:
 | `BEDROCK_FOUNDATION_MODEL_ID` | `amazon.nova-2-lite-v1:0` | Foundation model ID that backs the inference profile. |
 | `BEDROCK_MAX_OUTPUT_TOKENS` | `2400` | Max generated tokens. |
 | `BEDROCK_TEMPERATURE` | `0.2` | Generation temperature. |
+| `CHAT_MEMORY_MESSAGE_LIMIT` | `10` | Number of recent same-session messages injected into the prompt for the same authenticated user. |
 
 ### CloudFormation Execution Role Additions
 
@@ -196,6 +197,7 @@ Actionsログには AWSアカウントID、ARN、バケット名、CloudFront/AP
 | `BEDROCK_FOUNDATION_MODEL_ID` | `amazon.nova-2-lite-v1:0` | inference profile の背後にある foundation model ID |
 | `BEDROCK_MAX_OUTPUT_TOKENS` | `2400` | 最大生成token数 |
 | `BEDROCK_TEMPERATURE` | `0.2` | temperature |
+| `CHAT_MEMORY_MESSAGE_LIMIT` | `10` | 同一認証ユーザーの同一セッションからプロンプトへ注入する直近会話件数 |
 
 ### CloudFormation Execution Role の追加権限
 

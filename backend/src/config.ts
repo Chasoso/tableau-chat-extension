@@ -1,6 +1,7 @@
 export type AppConfig = {
   chatHistoryTableName?: string;
   useInMemoryRepository: boolean;
+  chatMemoryMessageLimit: number;
   corsAllowedOrigin: string;
   model: {
     provider: "mock" | "bedrock";
@@ -45,6 +46,7 @@ export function getConfig(): AppConfig {
   return {
     chatHistoryTableName: process.env.CHAT_HISTORY_TABLE_NAME,
     useInMemoryRepository: process.env.USE_IN_MEMORY_REPOSITORY !== "false",
+    chatMemoryMessageLimit: Number(process.env.CHAT_MEMORY_MESSAGE_LIMIT ?? 10),
     corsAllowedOrigin: process.env.CORS_ALLOWED_ORIGIN ?? "*",
     model: {
       provider: parseModelProvider(process.env.MODEL_PROVIDER),

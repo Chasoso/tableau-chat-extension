@@ -40,6 +40,7 @@ export type ContextResponse = {
 export type ChatHistoryRecord = {
   sessionId: string;
   messageId: string;
+  ownerUserId?: string | null;
   question: string;
   answer: string;
   dashboardName: string;

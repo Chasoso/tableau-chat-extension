@@ -129,6 +129,9 @@ Parameters:
   BedrockTemperature:
     Type: Number
     Default: 0.2
+  ChatMemoryMessageLimit:
+    Type: Number
+    Default: 10
 
 Resources:
   ChatHistoryTable:
@@ -187,6 +190,7 @@ Resources:
               - Effect: Allow
                 Action:
                   - dynamodb:PutItem
+                  - dynamodb:Query
                 Resource: !GetAtt ChatHistoryTable.Arn
               - Effect: Allow
                 Action:
@@ -250,6 +254,7 @@ Resources:
           BEDROCK_MODEL_ID: !Ref BedrockModelId
           BEDROCK_MAX_OUTPUT_TOKENS: !Sub "${BedrockMaxOutputTokens}"
           BEDROCK_TEMPERATURE: !Sub "${BedrockTemperature}"
+          CHAT_MEMORY_MESSAGE_LIMIT: !Sub "${ChatMemoryMessageLimit}"
 
   HealthFunction:
     Type: AWS::Lambda::Function
