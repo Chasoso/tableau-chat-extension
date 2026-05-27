@@ -556,9 +556,14 @@ function extractTextFromToolResult(result: unknown): string {
   return "";
 }
 
-function extractBestWorkbookId(result: unknown, preferredName: string | undefined): string | undefined {
+export function extractBestWorkbookId(result: unknown, preferredName: string | undefined): string | undefined {
   const text = extractTextFromToolResult(result);
   const parsed = tryParseJson(text) ?? result;
+  const workbookIdFromView = findWorkbookIdFromViewRecords(parsed, preferredName);
+  if (workbookIdFromView) {
+    return workbookIdFromView;
+  }
+
   const workbookCandidate = findWorkbookCandidates(parsed, { preferredWorkbookName: preferredName })[0];
   if (workbookCandidate?.id) {
     return workbookCandidate.id;
@@ -572,7 +577,7 @@ function extractBestWorkbookId(result: unknown, preferredName: string | undefine
   return matched?.id ?? candidates[0]?.id ?? findFirstUuid(text);
 }
 
-function extractWorkbookFromToolResults(
+export function extractWorkbookFromToolResults(
   toolResults: TableauMcpToolResultSummary[],
   input: GetAdditionalContextInput,
 ): { id?: string; name: string } | undefined {
@@ -615,7 +620,7 @@ function extractDatasourcesFromToolResults(toolResults: TableauMcpToolResultSumm
 type WorkbookCandidate = {
   id?: string;
   name: string;
-  source: "workbook" | "view-workbook" | "workbookName";
+  source: "workbook" | "view-workbook" | "workbookName" | "parentWorkbookName";
 };
 
 type WorkbookCandidateOptions = {
@@ -665,6 +670,15 @@ function findWorkbookCandidates(value: unknown, options: WorkbookCandidateOption
     });
   }
 
+  const parentWorkbookName = readString(record.parentWorkbookName);
+  if (parentWorkbookName) {
+    candidates.push({
+      id: readString(record.parentWorkbookId) ?? readString(record.workbookId),
+      name: parentWorkbookName,
+      source: "parentWorkbookName",
+    });
+  }
+
   if (looksLikeWorkbookRecord(record)) {
     const name = readString(record.name);
     if (name) {
@@ -678,6 +692,47 @@ function findWorkbookCandidates(value: unknown, options: WorkbookCandidateOption
 
   return [...candidates, ...Object.values(record).flatMap((item) => findWorkbookCandidates(item, options))]
     .filter((candidate) => !isKnownNonWorkbookName(candidate.name, options));
+}
+
+function findWorkbookIdFromViewRecords(value: unknown, preferredViewName: string | undefined): string | undefined {
+  const candidates = findWorkbookIdCandidatesFromViewRecords(value, preferredViewName);
+  return candidates.find((candidate) => candidate.matchedPreferredView)?.id ?? candidates[0]?.id;
+}
+
+function findWorkbookIdCandidatesFromViewRecords(
+  value: unknown,
+  preferredViewName: string | undefined,
+): Array<{ id: string; matchedPreferredView: boolean }> {
+  if (!value || typeof value !== "object") {
+    return [];
+  }
+
+  if (Array.isArray(value)) {
+    return value.flatMap((item) => findWorkbookIdCandidatesFromViewRecords(item, preferredViewName));
+  }
+
+  const record = value as Record<string, unknown>;
+  const workbook = record.workbook;
+  const direct =
+    workbook && typeof workbook === "object"
+      ? [
+          {
+            id: readString((workbook as Record<string, unknown>).id),
+            matchedPreferredView: matchesPreferredViewName(record, preferredViewName),
+          },
+        ].filter((candidate): candidate is { id: string; matchedPreferredView: boolean } => Boolean(candidate.id))
+      : [];
+
+  return [...direct, ...Object.values(record).flatMap((item) => findWorkbookIdCandidatesFromViewRecords(item, preferredViewName))];
+}
+
+function matchesPreferredViewName(record: Record<string, unknown>, preferredViewName: string | undefined): boolean {
+  if (!preferredViewName) {
+    return false;
+  }
+
+  const normalizedPreferred = preferredViewName.trim().toLowerCase();
+  return [record.name, record.title].some((value) => readString(value)?.trim().toLowerCase() === normalizedPreferred);
 }
 
 function findWorkbookCandidatesInText(text: string, options: WorkbookCandidateOptions): WorkbookCandidate[] {
