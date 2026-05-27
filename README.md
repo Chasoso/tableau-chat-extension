@@ -122,11 +122,15 @@ For Lambda-local Tableau MCP:
 - `TABLEAU_MCP_AUTH_MODE=direct-trust`
 - `TABLEAU_MCP_TIMEOUT_MS=5000`
 - `TABLEAU_MCP_ALLOWED_TOOLS`: optional comma-separated allowlist of MCP tools to call.
-- `TABLEAU_MCP_MAX_TOOL_CALLS=3`
+- `TABLEAU_MCP_MAX_TOOL_CALLS=3`: increase to `5`-`8` when tool planning is enabled and datasource metadata/query tools are needed.
 - `TABLEAU_MCP_DEBUG_LOG_RESULTS=false`: set to `true` only while diagnosing MCP result shapes in CloudWatch.
+- `TABLEAU_MCP_TOOL_PLANNING_ENABLED=false`: set to `true` to let Bedrock create a small JSON MCP tool plan before tool execution.
+- `TABLEAU_MCP_PLANNER_MAX_OUTPUT_TOKENS=600`: token cap for the planning call.
 - `TABLEAU_MCP_COMMAND` and `TABLEAU_MCP_ARGS`: optional override. If omitted, Lambda runs the installed `@tableau/mcp-server` package with Node.js.
 
 The MCP child process receives Connected App credentials only through backend environment variables. These values are not logged.
+
+When MCP tool planning is enabled, the backend asks Bedrock to choose the smallest useful MCP tool set, validates it against an allowlist and schema checks, executes only approved tools, and then sends the resulting context to the final answer generator. Data-oriented questions may trigger one follow-up planning pass after datasource metadata is observed. Keep planner output small and avoid broad raw-data queries.
 
 ### Bedrock Settings
 
@@ -272,3 +276,9 @@ MCP 子プロセスには、バックエンドで検証済みの Tableau subject
 - Lambda zip に MCP 実行依存を直接含めています。サイズが大きくなる場合は Lambda Layer またはコンテナ化を検討します。
 
 詳しくは [docs/security-notes.md](docs/security-notes.md) と [docs/future-mcp-integration.md](docs/future-mcp-integration.md) を参照してください。
+
+### 日本語追記: MCP Tool Planning
+
+`TABLEAU_MCP_TOOL_PLANNING_ENABLED=true` にすると、チャット質問ごとに Bedrock が MCP tool の実行計画を JSON で作成します。バックエンドは、その計画をそのまま信用せず、`TABLEAU_MCP_ALLOWED_TOOLS` と引数検証を通過した tool だけを実行します。
+
+データソースの中身や集計値を答えたい場合は、`TABLEAU_MCP_MAX_TOOL_CALLS` を `5` から `8` 程度に増やすことを推奨します。データ系の質問では datasource metadata 取得後に最大1回だけ再計画するため、計画用の Bedrock 呼び出しが増える場合があります。`TABLEAU_MCP_PLANNER_MAX_OUTPUT_TOKENS=600` 程度に抑え、広範な行レベルデータ取得は避けてください。

@@ -24,6 +24,8 @@ Configuration:
 - `TABLEAU_MCP_TIMEOUT_MS=5000`
 - `TABLEAU_MCP_ALLOWED_TOOLS`: optional comma-separated tool allowlist
 - `TABLEAU_MCP_MAX_TOOL_CALLS=3`
+- `TABLEAU_MCP_TOOL_PLANNING_ENABLED=false`: set to `true` to let Bedrock plan MCP tool calls from the user's question.
+- `TABLEAU_MCP_PLANNER_MAX_OUTPUT_TOKENS=600`
 
 If `TABLEAU_MCP_COMMAND` and `TABLEAU_MCP_ARGS` are omitted, the backend resolves the installed `@tableau/mcp-server` package and runs it with the Lambda Node.js runtime.
 
@@ -56,6 +58,14 @@ Avoid using a service-account PAT for all users in production. If a PAT is used 
 
 The provider supports an explicit `TABLEAU_MCP_ALLOWED_TOOLS` allowlist. This should be used in production. Without an allowlist, the PoC only attempts a small number of metadata-oriented tools and skips tools whose required arguments cannot be inferred safely.
 
+### LLM-Planned Tool Execution
+
+The next MCP step is now implemented behind `TABLEAU_MCP_TOOL_PLANNING_ENABLED=true`. In this mode, the backend asks Bedrock for a compact JSON plan such as `list-datasources`, `get-datasource-metadata`, or `query-datasource` before it executes MCP tools.
+
+The plan is treated as untrusted input. The backend intersects requested tools with `TABLEAU_MCP_ALLOWED_TOOLS` or the built-in PoC allowlist, validates required arguments, blocks unsafe `query-datasource` calls, and logs only tool names, counts, and sanitized diagnostics.
+
+Cost note: tool planning adds a Bedrock planning call, and data-oriented questions may use one follow-up planning pass after datasource metadata is observed. Keep planner responses short with `TABLEAU_MCP_PLANNER_MAX_OUTPUT_TOKENS`, use aggregate queries, and raise `TABLEAU_MCP_MAX_TOOL_CALLS` only when the question genuinely requires datasource metadata or query execution.
+
 TODO:
 
 - Decide the exact MCP tools to allow for workbook, dashboard, datasource, and metadata lookup.
@@ -87,6 +97,8 @@ TODO:
 - `TABLEAU_MCP_TIMEOUT_MS=5000`
 - `TABLEAU_MCP_ALLOWED_TOOLS`: 呼び出しを許可する tool 名のカンマ区切り
 - `TABLEAU_MCP_MAX_TOOL_CALLS=3`
+- `TABLEAU_MCP_TOOL_PLANNING_ENABLED=false`: `true` にすると、Bedrock がユーザー質問から MCP tool 実行計画を作ります。
+- `TABLEAU_MCP_PLANNER_MAX_OUTPUT_TOKENS=600`
 
 `TABLEAU_MCP_COMMAND` と `TABLEAU_MCP_ARGS` を省略した場合は、Lambda に同梱された `@tableau/mcp-server` を Node.js ランタイムで起動します。
 
@@ -118,6 +130,12 @@ PoCでは、検証済み Cognito email を Tableau subject として Connected A
 ### Tool 選択
 
 本番では `TABLEAU_MCP_ALLOWED_TOOLS` で明示的に tool を allowlist 化してください。未指定時のPoC実装では、メタデータ系と推測できる tool を少数だけ試し、必要引数を安全に推測できない tool はスキップします。
+
+### LLM による Tool 実行計画
+
+`TABLEAU_MCP_TOOL_PLANNING_ENABLED=true` の場合、バックエンドは Bedrock に MCP tool の実行計画 JSON を作らせます。たとえば、質問がデータ値・ランキング・月次推移に関する場合は `list-datasources`、`get-datasource-metadata`、`query-datasource` などが候補になります。
+
+LLMの計画は信用しすぎず、バックエンド側で allowlist、必須引数、`query-datasource` の集計・limit 条件を検証します。コスト面では、初回 planning に加えて、データ系質問では datasource metadata 取得後に最大1回だけ再計画する場合があります。planner の token 上限を小さくし、必要な場合だけ `TABLEAU_MCP_MAX_TOOL_CALLS` を `5` から `8` 程度に増やしてください。
 
 TODO:
 

@@ -35,6 +35,8 @@ export type AppConfig = {
       allowedTools: string[];
       maxToolCalls: number;
       debugLogResults: boolean;
+      toolPlanningEnabled: boolean;
+      plannerMaxOutputTokens: number;
     };
   };
 };
@@ -77,6 +79,8 @@ export function getConfig(): AppConfig {
         allowedTools: parseCsv(process.env.TABLEAU_MCP_ALLOWED_TOOLS),
         maxToolCalls: Number(process.env.TABLEAU_MCP_MAX_TOOL_CALLS ?? 3),
         debugLogResults: process.env.TABLEAU_MCP_DEBUG_LOG_RESULTS === "true",
+        toolPlanningEnabled: process.env.TABLEAU_MCP_TOOL_PLANNING_ENABLED === "true",
+        plannerMaxOutputTokens: Number(process.env.TABLEAU_MCP_PLANNER_MAX_OUTPUT_TOKENS ?? 600),
       },
     },
   };

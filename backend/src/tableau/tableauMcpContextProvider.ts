@@ -4,6 +4,7 @@ import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
 import { getTableauConnectedAppSecrets } from "../aws/secrets";
 import { getConfig } from "../config";
 import { logError, logInfo, logWarn, safeErrorDetails, safeHash } from "../logging";
+import { resolveAllowedToolNames, TableauMcpToolPlanner, type PlannedMcpToolCall } from "../services/tableauMcpToolPlanner";
 import type { TableauAdditionalContext, TableauMcpToolResultSummary, TableauMcpToolSummary } from "../types/tableau";
 import type { GetAdditionalContextInput, TableauContextProvider } from "./contextProvider";
 
@@ -80,11 +81,33 @@ export class TableauMcpContextProvider implements TableauContextProvider {
       const toolsResponse = await client.listTools(undefined, { timeout: mcpConfig.timeoutMs });
       const tools = toolsResponse.tools as McpTool[];
       const toolSummaries = tools.map(toToolSummary);
-      const toolQueue = selectInitialTools(tools, mcpConfig.allowedTools, input);
+      const toolQueue = await selectInitialTools(tools, mcpConfig.allowedTools, input);
       const toolResults: TableauMcpToolResultSummary[] = [];
       const calledToolNames = new Set<string>();
+      let dataReplanAttempted = false;
 
-      while (toolQueue.length > 0 && toolResults.length < Math.max(mcpConfig.maxToolCalls, 0)) {
+      while (toolResults.length < Math.max(mcpConfig.maxToolCalls, 0)) {
+        if (!toolQueue.length) {
+          if (
+            !dataReplanAttempted &&
+            shouldReplanForDatasourceQuery(input, toolResults, calledToolNames) &&
+            toolResults.length < Math.max(mcpConfig.maxToolCalls, 0)
+          ) {
+            dataReplanAttempted = true;
+            const replannedTools = await selectPlannedTools(tools, mcpConfig.allowedTools, input, {
+              observations: toolResults,
+              calledToolNames,
+            });
+            const readyReplannedTools = replannedTools.filter((selection) => selection.status === "ready");
+            if (readyReplannedTools.length) {
+              toolQueue.push(...readyReplannedTools);
+              continue;
+            }
+          }
+
+          break;
+        }
+
         const selection = toolQueue.shift();
         if (!selection) {
           break;
@@ -156,6 +179,7 @@ export class TableauMcpContextProvider implements TableauContextProvider {
           toolCount: toolSummaries.length,
           calledTools: toolResults.map((result) => result.toolName),
           workbookExtracted: Boolean(extractedWorkbook),
+          toolPlanningEnabled: mcpConfig.toolPlanningEnabled,
         },
         mcpTools: toolSummaries,
         mcpToolResults: toolResults,
@@ -281,6 +305,7 @@ type SelectedTool =
       status: "ready";
       tool: McpTool;
       arguments: Record<string, unknown>;
+      reason?: string;
     }
   | {
       status: "skipped";
@@ -288,11 +313,16 @@ type SelectedTool =
       warning: string;
     };
 
-function selectInitialTools(
+async function selectInitialTools(
   tools: McpTool[],
   allowedTools: string[],
   input: GetAdditionalContextInput,
-): SelectedTool[] {
+): Promise<SelectedTool[]> {
+  const plannedSelections = await selectPlannedTools(tools, allowedTools, input);
+  if (plannedSelections.some((selection) => selection.status === "ready")) {
+    return plannedSelections;
+  }
+
   const candidates = allowedTools.length ? tools.filter((tool) => allowedTools.includes(tool.name)) : getDefaultToolCandidates(tools, input);
 
   logInfo("tableau.mcp.tools.selected", {
@@ -317,6 +347,188 @@ function selectInitialTools(
       arguments: args,
     };
   });
+}
+
+async function selectPlannedTools(
+  tools: McpTool[],
+  allowedTools: string[],
+  input: GetAdditionalContextInput,
+  options: {
+    observations?: TableauMcpToolResultSummary[];
+    calledToolNames?: Set<string>;
+  } = {},
+): Promise<SelectedTool[]> {
+  const config = getConfig();
+  if (!config.tableau.mcp.toolPlanningEnabled) {
+    return [];
+  }
+
+  const planner = new TableauMcpToolPlanner();
+  const allowedToolNames = resolveAllowedToolNames(tools, allowedTools);
+  const plan = await planner.plan({
+    question: input.question,
+    dashboardContext: input.dashboardContext,
+    tools,
+    maxToolCalls: config.tableau.mcp.maxToolCalls,
+    allowedToolNames,
+    observations: options.observations,
+    previouslyCalledToolNames: [...(options.calledToolNames ?? [])],
+  });
+
+  if (!plan?.toolCalls.length) {
+    return [];
+  }
+
+  const selections = plan.toolCalls.map((call) =>
+    buildSelectionFromPlannedCall(call, tools, allowedToolNames, input, options.calledToolNames ?? new Set<string>()),
+  );
+  logInfo("tableau.mcp.tools.planned", {
+    availableToolCount: tools.length,
+    selectedTools: selections.map(getSelectionToolName),
+    allowedToolsConfigured: allowedTools.length > 0,
+    readyToolCount: selections.filter((selection) => selection.status === "ready").length,
+    skippedToolCount: selections.filter((selection) => selection.status === "skipped").length,
+  });
+
+  return selections;
+}
+
+function buildSelectionFromPlannedCall(
+  call: PlannedMcpToolCall,
+  tools: McpTool[],
+  allowedToolNames: string[],
+  input: GetAdditionalContextInput,
+  calledToolNames: Set<string>,
+): SelectedTool {
+  const tool = tools.find((candidate) => candidate.name === call.toolName);
+  if (!tool) {
+    return {
+      status: "skipped",
+      toolName: call.toolName,
+      warning: "Planned tool is not available from the MCP server.",
+    };
+  }
+
+  if (!allowedToolNames.includes(tool.name)) {
+    return {
+      status: "skipped",
+      toolName: tool.name,
+      warning: "Planned tool is not allowlisted.",
+    };
+  }
+
+  if (calledToolNames.has(tool.name)) {
+    return {
+      status: "skipped",
+      toolName: tool.name,
+      warning: "Planned tool was already called.",
+    };
+  }
+
+  const args = inferPlannedToolArguments(tool, call.arguments, input);
+  if (!args) {
+    return {
+      status: "skipped",
+      toolName: tool.name,
+      warning: "Planned tool arguments could not be validated safely.",
+    };
+  }
+
+  return {
+    status: "ready",
+    tool,
+    arguments: args,
+    reason: call.reason,
+  };
+}
+
+function getSelectionToolName(selection: SelectedTool): string {
+  return selection.status === "ready" ? selection.tool.name : selection.toolName;
+}
+
+function inferPlannedToolArguments(
+  tool: McpTool,
+  plannedArguments: Record<string, unknown> | undefined,
+  input: GetAdditionalContextInput,
+): Record<string, unknown> | undefined {
+  const knownArguments = inferKnownToolArguments(tool.name, input);
+  const merged = {
+    ...(knownArguments ?? {}),
+    ...(plannedArguments ?? {}),
+  };
+
+  if (tool.name === "query-datasource") {
+    return validateQueryDatasourceArguments(merged);
+  }
+
+  const required = tool.inputSchema?.required ?? [];
+  for (const propertyName of required) {
+    if (merged[propertyName] === undefined || merged[propertyName] === null || merged[propertyName] === "") {
+      const inferred = inferValueForProperty(propertyName, input);
+      if (inferred === undefined) {
+        return undefined;
+      }
+
+      merged[propertyName] = inferred;
+    }
+  }
+
+  return validateArgumentsAgainstSchema(merged, tool.inputSchema?.properties ?? {});
+}
+
+function validateArgumentsAgainstSchema(
+  args: Record<string, unknown>,
+  properties: Record<string, unknown>,
+): Record<string, unknown> | undefined {
+  const validKeys = Object.keys(properties);
+  if (!validKeys.length) {
+    return args;
+  }
+
+  const sanitized = Object.fromEntries(
+    Object.entries(args).filter(([key, value]) => validKeys.includes(key) && isSafeToolArgumentValue(value, 0)),
+  );
+  return sanitized;
+}
+
+function validateQueryDatasourceArguments(args: Record<string, unknown>): Record<string, unknown> | undefined {
+  const datasourceLuid = readString(args.datasourceLuid) ?? readString(args.datasourceId);
+  const query = args.query;
+  if (!datasourceLuid || !query || typeof query !== "object" || Array.isArray(query)) {
+    return undefined;
+  }
+
+  const queryRecord = query as Record<string, unknown>;
+  if (!Array.isArray(queryRecord.fields) || queryRecord.fields.length === 0 || queryRecord.fields.length > 8) {
+    return undefined;
+  }
+
+  const limit = typeof args.limit === "number" ? Math.min(Math.max(Math.floor(args.limit), 1), 100) : 50;
+  return {
+    datasourceLuid,
+    query: queryRecord,
+    limit,
+  };
+}
+
+function isSafeToolArgumentValue(value: unknown, depth: number): boolean {
+  if (depth > 5) {
+    return false;
+  }
+
+  if (value === null || ["string", "number", "boolean"].includes(typeof value)) {
+    return true;
+  }
+
+  if (Array.isArray(value)) {
+    return value.length <= 50 && value.every((item) => isSafeToolArgumentValue(item, depth + 1));
+  }
+
+  if (typeof value === "object") {
+    return Object.values(value as Record<string, unknown>).every((item) => isSafeToolArgumentValue(item, depth + 1));
+  }
+
+  return false;
 }
 
 function getDefaultToolCandidates(tools: McpTool[], input: GetAdditionalContextInput): McpTool[] {
@@ -357,6 +569,32 @@ function getToolPriority(toolName: string): number {
   return 100;
 }
 
+function shouldReplanForDatasourceQuery(
+  input: GetAdditionalContextInput,
+  toolResults: TableauMcpToolResultSummary[],
+  calledToolNames: Set<string>,
+): boolean {
+  if (!getConfig().tableau.mcp.toolPlanningEnabled || calledToolNames.has("query-datasource")) {
+    return false;
+  }
+
+  if (!isDataQuestion(input.question)) {
+    return false;
+  }
+
+  return toolResults.some(
+    (result) =>
+      result.status === "success" &&
+      ["list-datasources", "get-datasource-metadata", "query-datasource"].includes(result.toolName),
+  );
+}
+
+function isDataQuestion(question: string): boolean {
+  return /view|views|count|sum|average|avg|rank|ranking|top|bottom|trend|month|week|day|date|record|row|data|datasource|データ|件数|合計|平均|ランキング|上位|下位|推移|月|週|日|ビュー|最も|多い|少ない/i.test(
+    question,
+  );
+}
+
 function buildFollowUpToolSelection(
   completedToolName: string,
   result: unknown,
@@ -364,6 +602,22 @@ function buildFollowUpToolSelection(
   calledToolNames: Set<string>,
   input: GetAdditionalContextInput,
 ): SelectedTool | undefined {
+  if (completedToolName === "list-datasources" && !calledToolNames.has("get-datasource-metadata")) {
+    const getDatasourceMetadataTool = tools.find((tool) => tool.name === "get-datasource-metadata");
+    const datasourceLuid = extractBestDatasourceId(result, input);
+    if (getDatasourceMetadataTool && datasourceLuid) {
+      const args = inferPlannedToolArguments(getDatasourceMetadataTool, { datasourceLuid }, input);
+      if (args) {
+        return {
+          status: "ready",
+          tool: getDatasourceMetadataTool,
+          arguments: args,
+          reason: "Inspect datasource fields before deciding whether an aggregate query is safe.",
+        };
+      }
+    }
+  }
+
   if (!["list-workbooks", "list-views", "search-content"].includes(completedToolName) || calledToolNames.has("get-workbook")) {
     return undefined;
   }
@@ -383,6 +637,31 @@ function buildFollowUpToolSelection(
     tool: getWorkbookTool,
     arguments: { workbookId },
   };
+}
+
+function extractBestDatasourceId(result: unknown, input: GetAdditionalContextInput): string | undefined {
+  const text = extractTextFromToolResult(result);
+  const parsed = tryParseJson(text) ?? result;
+  const datasourceCandidates = findDataSourceObjects(parsed).flatMap((datasource) => {
+    if (!datasource || typeof datasource !== "object") {
+      return [];
+    }
+
+    const record = datasource as Record<string, unknown>;
+    const name = readString(record.name);
+    const id = readString(record.id) ?? readString(record.luid);
+    return id ? [{ id, name }] : [];
+  });
+
+  if (!datasourceCandidates.length) {
+    return input.dashboardContext.dataSources?.find((datasource) => datasource.id)?.id ?? undefined;
+  }
+
+  const knownDatasourceNames = new Set(
+    input.dashboardContext.dataSources?.map((datasource) => datasource.name.trim().toLowerCase()).filter(Boolean) ?? [],
+  );
+  const matched = datasourceCandidates.find((candidate) => candidate.name && knownDatasourceNames.has(candidate.name.trim().toLowerCase()));
+  return matched?.id ?? datasourceCandidates[0]?.id;
 }
 
 function inferToolArguments(tool: McpTool, input: GetAdditionalContextInput): Record<string, unknown> | undefined {

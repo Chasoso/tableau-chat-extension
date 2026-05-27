@@ -99,6 +99,15 @@ Parameters:
     AllowedValues:
       - "true"
       - "false"
+  TableauMcpToolPlanningEnabled:
+    Type: String
+    Default: "false"
+    AllowedValues:
+      - "true"
+      - "false"
+  TableauMcpPlannerMaxOutputTokens:
+    Type: Number
+    Default: 600
   ModelProvider:
     Type: String
     Default: "mock"
@@ -234,6 +243,8 @@ Resources:
           TABLEAU_MCP_ALLOWED_TOOLS: !Ref TableauMcpAllowedTools
           TABLEAU_MCP_MAX_TOOL_CALLS: !Sub "${TableauMcpMaxToolCalls}"
           TABLEAU_MCP_DEBUG_LOG_RESULTS: !Ref TableauMcpDebugLogResults
+          TABLEAU_MCP_TOOL_PLANNING_ENABLED: !Ref TableauMcpToolPlanningEnabled
+          TABLEAU_MCP_PLANNER_MAX_OUTPUT_TOKENS: !Sub "${TableauMcpPlannerMaxOutputTokens}"
           MODEL_PROVIDER: !Ref ModelProvider
           BEDROCK_REGION: !Ref BedrockRegion
           BEDROCK_MODEL_ID: !Ref BedrockModelId

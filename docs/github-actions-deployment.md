@@ -66,6 +66,8 @@ These can be repository Variables if acceptable:
 | `TABLEAU_MCP_ALLOWED_TOOLS` | empty | Optional comma-separated MCP tool allowlist. |
 | `TABLEAU_MCP_MAX_TOOL_CALLS` | `3` | Maximum MCP tool calls per request. |
 | `TABLEAU_MCP_DEBUG_LOG_RESULTS` | `false` | Temporarily set to `true` to log sanitized MCP tool result shapes and short snippets to CloudWatch. Disable after diagnosis. |
+| `TABLEAU_MCP_TOOL_PLANNING_ENABLED` | `false` | Enables Bedrock-based JSON planning for MCP tool calls. |
+| `TABLEAU_MCP_PLANNER_MAX_OUTPUT_TOKENS` | `600` | Max output tokens for the planning call. |
 | `MODEL_PROVIDER` | `mock` | `mock` or `bedrock`. |
 | `BEDROCK_REGION` | `us-east-1` | Bedrock model region. |
 | `BEDROCK_MODEL_ID` | `us.amazon.nova-2-lite-v1:0` | Bedrock model ID or inference profile ID. |
@@ -186,6 +188,8 @@ Actionsログには AWSアカウントID、ARN、バケット名、CloudFront/AP
 | `TABLEAU_MCP_ALLOWED_TOOLS` | 空 | MCP tool allowlist |
 | `TABLEAU_MCP_MAX_TOOL_CALLS` | `3` | 1リクエストあたりの最大MCP tool呼び出し数 |
 | `TABLEAU_MCP_DEBUG_LOG_RESULTS` | `false` | 一時的に `true` にすると、MCP tool の返却構造と短いスニペットを CloudWatch に出します。調査後は `false` に戻してください。 |
+| `TABLEAU_MCP_TOOL_PLANNING_ENABLED` | `false` | Bedrock による MCP tool 実行計画 JSON を有効化します。 |
+| `TABLEAU_MCP_PLANNER_MAX_OUTPUT_TOKENS` | `600` | planning 呼び出しの最大出力 token 数 |
 | `MODEL_PROVIDER` | `mock` | `mock` または `bedrock` |
 | `BEDROCK_REGION` | `us-east-1` | Bedrock model region |
 | `BEDROCK_MODEL_ID` | `us.amazon.nova-2-lite-v1:0` | Bedrock model ID または inference profile ID |

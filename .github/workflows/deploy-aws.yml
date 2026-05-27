@@ -59,6 +59,8 @@ jobs:
       TABLEAU_MCP_ALLOWED_TOOLS: ${{ vars.TABLEAU_MCP_ALLOWED_TOOLS || '' }}
       TABLEAU_MCP_MAX_TOOL_CALLS: ${{ vars.TABLEAU_MCP_MAX_TOOL_CALLS || '3' }}
       TABLEAU_MCP_DEBUG_LOG_RESULTS: ${{ vars.TABLEAU_MCP_DEBUG_LOG_RESULTS || 'false' }}
+      TABLEAU_MCP_TOOL_PLANNING_ENABLED: ${{ vars.TABLEAU_MCP_TOOL_PLANNING_ENABLED || 'false' }}
+      TABLEAU_MCP_PLANNER_MAX_OUTPUT_TOKENS: ${{ vars.TABLEAU_MCP_PLANNER_MAX_OUTPUT_TOKENS || '600' }}
       MODEL_PROVIDER: ${{ vars.MODEL_PROVIDER || 'mock' }}
       BEDROCK_REGION: ${{ vars.BEDROCK_REGION || 'us-east-1' }}
       BEDROCK_MODEL_ID: ${{ vars.BEDROCK_MODEL_ID || 'us.amazon.nova-2-lite-v1:0' }}
@@ -107,6 +109,8 @@ jobs:
             "$TABLEAU_MCP_ALLOWED_TOOLS" \
             "$TABLEAU_MCP_MAX_TOOL_CALLS" \
             "$TABLEAU_MCP_DEBUG_LOG_RESULTS" \
+            "$TABLEAU_MCP_TOOL_PLANNING_ENABLED" \
+            "$TABLEAU_MCP_PLANNER_MAX_OUTPUT_TOKENS" \
             "$MODEL_PROVIDER" \
             "$BEDROCK_REGION" \
             "$BEDROCK_MODEL_ID" \
@@ -291,6 +295,8 @@ jobs:
               TableauMcpAllowedTools="$TABLEAU_MCP_ALLOWED_TOOLS" \
               TableauMcpMaxToolCalls="$TABLEAU_MCP_MAX_TOOL_CALLS" \
               TableauMcpDebugLogResults="$TABLEAU_MCP_DEBUG_LOG_RESULTS" \
+              TableauMcpToolPlanningEnabled="$TABLEAU_MCP_TOOL_PLANNING_ENABLED" \
+              TableauMcpPlannerMaxOutputTokens="$TABLEAU_MCP_PLANNER_MAX_OUTPUT_TOKENS" \
               ModelProvider="$MODEL_PROVIDER" \
               BedrockRegion="$BEDROCK_REGION" \
               BedrockModelId="$BEDROCK_MODEL_ID" \
