@@ -140,7 +140,7 @@ For the selected PoC model:
 - `BEDROCK_REGION=us-east-1`
 - `BEDROCK_MODEL_ID=us.amazon.nova-2-lite-v1:0`
 - `BEDROCK_FOUNDATION_MODEL_ID=amazon.nova-2-lite-v1:0`
-- `BEDROCK_MAX_OUTPUT_TOKENS=1200`
+- `BEDROCK_MAX_OUTPUT_TOKENS=2400`
 - `BEDROCK_TEMPERATURE=0.2`
 
 The current implementation sends text context to Bedrock. Screenshot/image input is the next step because Nova 2 Lite supports multimodal use cases, but the first implementation keeps data minimized.
@@ -251,7 +251,7 @@ MCP 子プロセスには、バックエンドで検証済みの Tableau subject
 - `BEDROCK_REGION=us-east-1`
 - `BEDROCK_MODEL_ID=us.amazon.nova-2-lite-v1:0`
 - `BEDROCK_FOUNDATION_MODEL_ID=amazon.nova-2-lite-v1:0`
-- `BEDROCK_MAX_OUTPUT_TOKENS=1200`
+- `BEDROCK_MAX_OUTPUT_TOKENS=2400`
 - `BEDROCK_TEMPERATURE=0.2`
 
 現時点ではテキスト化した Tableau コンテキストだけを送ります。スクリーンショット画像をBedrockへ渡す処理は次段階です。

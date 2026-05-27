@@ -1,6 +1,6 @@
 import { BedrockRuntimeClient, ConverseCommand } from "@aws-sdk/client-bedrock-runtime";
 import { getConfig } from "../config";
-import { logError, logInfo, safeErrorDetails } from "../logging";
+import { logError, logInfo, logWarn, safeErrorDetails } from "../logging";
 import type { ChatRequest } from "../types/chat";
 import type { TableauAdditionalContext } from "../types/tableau";
 import { compressDashboardContext } from "./contextCompressor";
@@ -77,12 +77,31 @@ export class BedrockAnswerGenerator implements AnswerGenerator {
         return buildDeterministicAnswer(input.request, input.additionalContext);
       }
 
+      const finalAnswer =
+        response.stopReason === "max_tokens"
+          ? appendTruncationNotice(answer)
+          : answer;
+
+      if (response.stopReason === "max_tokens") {
+        logWarn("answer.bedrock.truncated", {
+          region: config.region,
+          modelId: config.modelId,
+          maxOutputTokens: config.maxOutputTokens,
+          answerLength: answer.length,
+          outputTokens: response.usage?.outputTokens,
+        });
+      }
+
       logInfo("answer.bedrock.completed", {
         region: config.region,
         modelId: config.modelId,
-        answerLength: answer.length,
+        answerLength: finalAnswer.length,
+        stopReason: response.stopReason,
+        inputTokens: response.usage?.inputTokens,
+        outputTokens: response.usage?.outputTokens,
+        totalTokens: response.usage?.totalTokens,
       });
-      return answer;
+      return finalAnswer;
     } catch (error) {
       logError("answer.bedrock.failed", safeErrorDetails(error));
       return [
@@ -92,6 +111,14 @@ export class BedrockAnswerGenerator implements AnswerGenerator {
       ].join("\n");
     }
   }
+}
+
+function appendTruncationNotice(answer: string): string {
+  return [
+    answer.trimEnd(),
+    "",
+    "（回答が長くなったため、ここで一度区切りました。続きを確認したい場合は「続き」と入力してください。）",
+  ].join("\n");
 }
 
 function buildDeterministicAnswer(request: ChatRequest, additionalContext: TableauAdditionalContext): string {

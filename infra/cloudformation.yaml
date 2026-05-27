@@ -125,7 +125,7 @@ Parameters:
     Default: "amazon.nova-2-lite-v1:0"
   BedrockMaxOutputTokens:
     Type: Number
-    Default: 1200
+    Default: 2400
   BedrockTemperature:
     Type: Number
     Default: 0.2

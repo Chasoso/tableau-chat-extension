@@ -72,7 +72,7 @@ These can be repository Variables if acceptable:
 | `BEDROCK_REGION` | `us-east-1` | Bedrock model region. |
 | `BEDROCK_MODEL_ID` | `us.amazon.nova-2-lite-v1:0` | Bedrock model ID or inference profile ID. |
 | `BEDROCK_FOUNDATION_MODEL_ID` | `amazon.nova-2-lite-v1:0` | Foundation model ID that backs the inference profile. |
-| `BEDROCK_MAX_OUTPUT_TOKENS` | `1200` | Max generated tokens. |
+| `BEDROCK_MAX_OUTPUT_TOKENS` | `2400` | Max generated tokens. |
 | `BEDROCK_TEMPERATURE` | `0.2` | Generation temperature. |
 
 ### CloudFormation Execution Role Additions
@@ -194,7 +194,7 @@ Actionsログには AWSアカウントID、ARN、バケット名、CloudFront/AP
 | `BEDROCK_REGION` | `us-east-1` | Bedrock model region |
 | `BEDROCK_MODEL_ID` | `us.amazon.nova-2-lite-v1:0` | Bedrock model ID または inference profile ID |
 | `BEDROCK_FOUNDATION_MODEL_ID` | `amazon.nova-2-lite-v1:0` | inference profile の背後にある foundation model ID |
-| `BEDROCK_MAX_OUTPUT_TOKENS` | `1200` | 最大生成token数 |
+| `BEDROCK_MAX_OUTPUT_TOKENS` | `2400` | 最大生成token数 |
 | `BEDROCK_TEMPERATURE` | `0.2` | temperature |
 
 ### CloudFormation Execution Role の追加権限
