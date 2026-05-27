@@ -111,7 +111,7 @@ The backend needs these values. Never put them in frontend code:
 - `TABLEAU_DEFAULT_SUBJECT`
 - `TABLEAU_SCOPES`
 
-In AWS, the CloudFormation template stores Connected App values in Secrets Manager and gives Lambda read access.
+In the low-cost AWS PoC deployment, the CloudFormation template passes Connected App values directly to Lambda environment variables. This avoids Secrets Manager fixed monthly cost, but anyone with permission to read Lambda function configuration may be able to view these values. For production, prefer SSM Parameter Store SecureString or Secrets Manager.
 
 ### MCP Settings
 
@@ -237,7 +237,7 @@ Lambda 内で Tableau MCP を stdio 起動する場合の主な設定です。
 - `TABLEAU_MCP_MAX_TOOL_CALLS=3`
 - `TABLEAU_MCP_DEBUG_LOG_RESULTS=false`: MCP の返却構造を CloudWatch で調査するときだけ `true` にします。
 
-MCP 子プロセスには、バックエンドで検証済みの Tableau subject と Secrets Manager から取得した Connected App 情報だけを渡します。SecretやJWTはログに出しません。
+MCP 子プロセスには、バックエンドで検証済みの Tableau subject と Lambda 環境変数から取得した Connected App 情報だけを渡します。SecretやJWTはログに出しません。本番では SSM Parameter Store SecureString または Secrets Manager への移行を検討してください。
 
 ### Bedrock
 

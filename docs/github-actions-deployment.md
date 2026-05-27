@@ -75,7 +75,7 @@ These can be repository Variables if acceptable:
 
 ### CloudFormation Execution Role Additions
 
-The CloudFormation execution role needs the existing permissions for Lambda, API Gateway, CloudFront, S3, DynamoDB, Logs, IAM, and Secrets Manager.
+The CloudFormation execution role needs the existing permissions for Lambda, API Gateway, CloudFront, S3, DynamoDB, Logs, and IAM. Secrets Manager permissions are not required for the low-cost PoC deployment because Connected App values are passed directly to Lambda environment variables.
 
 For Bedrock, add:
 
@@ -102,7 +102,9 @@ When `BEDROCK_MODEL_ID=us.amazon.nova-2-lite-v1:0`, Bedrock can route requests t
 
 This permission is attached by the CloudFormation template to the Lambda backend role. The CloudFormation execution role must also be allowed to create/update that inline IAM policy.
 
-The CloudFormation execution role also needs `secretsmanager:GetSecretValue` for the managed Connected App secret because CloudFormation may read secret values during updates and rollback.
+Connected App values are still stored as GitHub Secrets and passed as `NoEcho` CloudFormation parameters. They are then set as Lambda environment variables. This avoids Secrets Manager monthly fixed cost, but users with permission to read Lambda function configuration may be able to view the values. For production, consider SSM Parameter Store SecureString or Secrets Manager.
+
+One-time migration note: if the stack was previously deployed with the managed `TableauConnectedAppSecret` resource, the CloudFormation execution role may need temporary `secretsmanager:DeleteSecret` and `secretsmanager:DescribeSecret` permissions for `arn:aws:secretsmanager:<region>:<account-id>:secret:<stack-name>/tableau-connected-app-*` so CloudFormation can remove the old secret. Remove those permissions after the update succeeds.
 
 ### Artifact Size Note
 
@@ -193,13 +195,15 @@ Actionsログには AWSアカウントID、ARN、バケット名、CloudFront/AP
 
 ### CloudFormation Execution Role の追加権限
 
-CloudFormation execution role には、既存の Lambda、API Gateway、CloudFront、S3、DynamoDB、Logs、IAM、Secrets Manager 権限が必要です。
+CloudFormation execution role には、既存の Lambda、API Gateway、CloudFront、S3、DynamoDB、Logs、IAM 権限が必要です。低コストPoCでは Connected App 値を Lambda 環境変数に直接設定するため、Secrets Manager 権限は不要です。
 
 Bedrock利用のため、Lambda backend role に `bedrock:InvokeModel` と `bedrock:InvokeModelWithResponseStream` を付与します。CloudFormation execution role は、その inline IAM policy を作成・更新できる必要があります。
 
 `BEDROCK_MODEL_ID=us.amazon.nova-2-lite-v1:0` の場合、Bedrock は US の destination Region、たとえば `us-east-1`、`us-east-2`、`us-west-2` にリクエストをルーティングできます。そのため、Lambda実行ロールには source Region の inference profile だけでなく、destination Region の foundation model ARN も許可する必要があります。
 
-また、Connected App secret の更新や rollback 時に CloudFormation が secret value を読むことがあるため、CloudFormation execution role には対象 Secret への `secretsmanager:GetSecretValue` も必要です。
+Connected App 値は GitHub Secrets に保存し、`NoEcho` CloudFormation パラメーターとして渡した後、Lambda 環境変数に設定します。これにより Secrets Manager の月額固定費を避けられます。ただし、Lambda 関数設定を読める IAM 権限を持つユーザーには値が見え得るため、本番では SSM Parameter Store SecureString または Secrets Manager を検討してください。
+
+移行時の注意: 以前のテンプレートで `TableauConnectedAppSecret` が作成済みの場合、今回の更新で CloudFormation が古い Secret を削除します。その1回だけ、CloudFormation execution role に `arn:aws:secretsmanager:<region>:<account-id>:secret:<stack-name>/tableau-connected-app-*` への `secretsmanager:DeleteSecret` と `secretsmanager:DescribeSecret` を一時的に付与してください。更新成功後は削除できます。
 
 ### Artifact サイズ
 

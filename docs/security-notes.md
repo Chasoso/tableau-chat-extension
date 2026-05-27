@@ -1,5 +1,9 @@
 # Security Notes / セキュリティメモ
 
+## 日本語補足: 低コスト Secret 管理
+
+低コストPoCでは、Secrets Manager の月額固定費を避けるため、Connected App の値を Lambda の暗号化済み環境変数に保存します。Lambda 関数設定を読める IAM 権限は機密権限として扱ってください。本番では SSM Parameter Store SecureString または Secrets Manager を検討してください。
+
 ## English
 
 ### Secrets
@@ -7,6 +11,7 @@
 - Do not put Connected App secret values, JWTs, Bedrock credentials, MCP credentials, or access tokens in frontend code, Vite env files, browser storage, or the `.trex` manifest.
 - Generate Tableau Connected Apps JWTs only in the backend.
 - Store production secrets in AWS Secrets Manager or SSM Parameter Store.
+- This low-cost PoC stores Connected App values in Lambda encrypted environment variables to avoid Secrets Manager fixed monthly cost. Treat Lambda function configuration read access as sensitive.
 - Do not log JWTs, access tokens, refresh tokens, cookies, authorization headers, or secret values.
 
 ### User Identity

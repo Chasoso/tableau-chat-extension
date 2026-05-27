@@ -18,7 +18,7 @@ flowchart TD
   J --> L
   G --> M[Bedrock Nova Lite]
   G --> N[DynamoDB Chat History]
-  E --> O[Secrets Manager]
+  E --> O[Lambda encrypted environment variables]
   O --> J
   O --> K
 ```
@@ -59,7 +59,7 @@ flowchart TD
   J --> L
   G --> M[Bedrock Nova Lite]
   G --> N[DynamoDB Chat History]
-  E --> O[Secrets Manager]
+  E --> O[Lambda encrypted environment variables]
   O --> J
   O --> K
 ```

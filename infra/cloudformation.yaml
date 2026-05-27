@@ -140,16 +140,6 @@ Resources:
       SSESpecification:
         SSEEnabled: true
 
-  TableauConnectedAppSecret:
-    Type: AWS::SecretsManager::Secret
-    Properties:
-      Name: !Sub "${AWS::StackName}/tableau-connected-app"
-      SecretString: !Sub
-        - '{"clientId":"${ClientId}","secretId":"${SecretId}","secretValue":"${SecretValue}"}'
-        - ClientId: !Ref TableauConnectedAppClientId
-          SecretId: !Ref TableauConnectedAppSecretId
-          SecretValue: !Ref TableauConnectedAppSecretValue
-
   ChatFunctionLogGroup:
     Type: AWS::Logs::LogGroup
     Properties:
@@ -191,10 +181,6 @@ Resources:
                 Resource: !GetAtt ChatHistoryTable.Arn
               - Effect: Allow
                 Action:
-                  - secretsmanager:GetSecretValue
-                Resource: !Ref TableauConnectedAppSecret
-              - Effect: Allow
-                Action:
                   - bedrock:InvokeModel
                   - bedrock:InvokeModelWithResponseStream
                 Resource:
@@ -229,7 +215,9 @@ Resources:
           TABLEAU_SERVER_URL: !Ref TableauServerUrl
           TABLEAU_SITE_CONTENT_URL: !Ref TableauSiteContentUrl
           TABLEAU_API_VERSION: !Ref TableauApiVersion
-          TABLEAU_CONNECTED_APP_SECRET_ARN: !Ref TableauConnectedAppSecret
+          TABLEAU_CONNECTED_APP_CLIENT_ID: !Ref TableauConnectedAppClientId
+          TABLEAU_CONNECTED_APP_SECRET_ID: !Ref TableauConnectedAppSecretId
+          TABLEAU_CONNECTED_APP_SECRET_VALUE: !Ref TableauConnectedAppSecretValue
           TABLEAU_DEFAULT_SUBJECT: !Ref TableauDefaultSubject
           TABLEAU_SCOPES: !Ref TableauScopes
           TABLEAU_CONTEXT_PROVIDER: !Ref TableauContextProvider
