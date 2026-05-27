@@ -2,8 +2,11 @@ import { useEffect, useRef, useState } from "react";
 import type React from "react";
 import {
   authBroadcastChannelName,
+  completeLoginFromUrl,
   completeLoginFromRedirect,
   getStoredSession,
+  isAuthCodeMessage,
+  isAuthCodePayload,
   isAuthCompleteMessage,
   isAuthCompletePayload,
   sessionKey,
@@ -23,6 +26,7 @@ export default function AuthGate({ children }: Props) {
   const popupRef = useRef<Window | null>(null);
   const sessionPollerRef = useRef<number | undefined>(undefined);
   const signInTimerRef = useRef<number | undefined>(undefined);
+  const authCodeExchangeRef = useRef(false);
   const [session, setSession] = useState<AuthSession | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -85,10 +89,29 @@ export default function AuthGate({ children }: Props) {
       return false;
     }
 
-    // The popup callback page owns the authorization-code exchange. In Tableau
-    // Cloud iframes, having the parent read and exchange the popup URL is less
-    // reliable and can race with the popup. The parent only observes storage.
-    return acceptStoredSession();
+    return acceptAuthCodeUrl(popupUrl);
+  }
+
+  async function acceptAuthCodeUrl(urlValue: string): Promise<boolean> {
+    if (authCodeExchangeRef.current) {
+      return false;
+    }
+
+    authCodeExchangeRef.current = true;
+    try {
+      const nextSession = await completeLoginFromUrl(urlValue);
+      if (!nextSession) {
+        return acceptStoredSession();
+      }
+
+      popupRef.current?.close();
+      acceptSession(nextSession);
+      return true;
+    } catch {
+      return acceptStoredSession();
+    } finally {
+      authCodeExchangeRef.current = false;
+    }
   }
 
   function startSessionPolling(durationMs = 15_000): void {
@@ -129,11 +152,14 @@ export default function AuthGate({ children }: Props) {
     mountedRef.current = true;
 
     function handleMessage(message: MessageEvent) {
-      if (!isAuthCompleteMessage(message)) {
+      if (isAuthCompleteMessage(message)) {
+        acceptSession(message.data.session);
         return;
       }
 
-      acceptSession(message.data.session);
+      if (isAuthCodeMessage(message)) {
+        void acceptAuthCodeUrl(message.data.url);
+      }
     }
 
     function handleStorage(event: StorageEvent) {
@@ -156,6 +182,11 @@ export default function AuthGate({ children }: Props) {
       channel.addEventListener("message", (event: MessageEvent) => {
         if (isAuthCompletePayload(event.data)) {
           acceptSession(event.data.session);
+          return;
+        }
+
+        if (isAuthCodePayload(event.data)) {
+          void acceptAuthCodeUrl(event.data.url);
         }
       });
     }

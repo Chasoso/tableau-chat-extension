@@ -4,12 +4,18 @@ import type { AuthSession } from "../types/auth";
 const sessionKey = "tableau-chat.auth.session";
 const verifierKeyPrefix = "tableau-chat.auth.pkce.verifier.";
 const authMessageType = "tableau-chat.auth.complete";
+const authCodeMessageType = "tableau-chat.auth.code";
 const authBroadcastChannelName = "tableau-chat.auth";
 const parentHandledStatePrefix = "parent.";
 
 export type AuthCompleteMessage = {
   type: typeof authMessageType;
   session: AuthSession;
+};
+
+export type AuthCodeMessage = {
+  type: typeof authCodeMessageType;
+  url: string;
 };
 
 export { authBroadcastChannelName, authMessageType, sessionKey };
@@ -136,6 +142,21 @@ export function isAuthCompletePayload(payload: unknown): payload is AuthComplete
   );
 }
 
+export function isAuthCodeMessage(message: MessageEvent): message is MessageEvent<AuthCodeMessage> {
+  return message.origin === window.location.origin && isAuthCodePayload(message.data);
+}
+
+export function isAuthCodePayload(payload: unknown): payload is AuthCodeMessage {
+  return (
+    typeof payload === "object" &&
+    payload !== null &&
+    "type" in payload &&
+    "url" in payload &&
+    (payload as AuthCodeMessage).type === authCodeMessageType &&
+    typeof (payload as AuthCodeMessage).url === "string"
+  );
+}
+
 export function storeSession(session: AuthSession): void {
   localStorage.setItem(sessionKey, JSON.stringify(session));
 }
@@ -143,6 +164,17 @@ export function storeSession(session: AuthSession): void {
 export function publishAuthSession(session: AuthSession): void {
   notifyOpener(session);
   notifyBroadcastChannel(session);
+}
+
+export function isParentHandledAuthRedirect(urlValue = window.location.href): boolean {
+  const url = new URL(urlValue);
+  const state = url.searchParams.get("state");
+  return Boolean(url.searchParams.get("code") && state?.startsWith(parentHandledStatePrefix));
+}
+
+export function publishAuthCode(urlValue = window.location.href): void {
+  notifyOpenerAuthCode(urlValue);
+  notifyBroadcastChannelAuthCode(urlValue);
 }
 
 async function createLoginUrl(flow: "redirect" | "popup"): Promise<string> {
@@ -227,6 +259,20 @@ function notifyOpener(session: AuthSession): void {
   );
 }
 
+function notifyOpenerAuthCode(urlValue: string): void {
+  if (!window.opener) {
+    return;
+  }
+
+  window.opener.postMessage(
+    {
+      type: authCodeMessageType,
+      url: urlValue,
+    } satisfies AuthCodeMessage,
+    window.location.origin,
+  );
+}
+
 function notifyBroadcastChannel(session: AuthSession): void {
   if (typeof BroadcastChannel === "undefined") {
     return;
@@ -237,6 +283,19 @@ function notifyBroadcastChannel(session: AuthSession): void {
     type: authMessageType,
     session,
   } satisfies AuthCompleteMessage);
+  channel.close();
+}
+
+function notifyBroadcastChannelAuthCode(urlValue: string): void {
+  if (typeof BroadcastChannel === "undefined") {
+    return;
+  }
+
+  const channel = new BroadcastChannel(authBroadcastChannelName);
+  channel.postMessage({
+    type: authCodeMessageType,
+    url: urlValue,
+  } satisfies AuthCodeMessage);
   channel.close();
 }
 
