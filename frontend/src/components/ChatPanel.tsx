@@ -4,7 +4,6 @@ import { sendChatQuestion } from "../api/chatApi";
 import { enrichDashboardContext } from "../api/contextApi";
 import type { ChatMessage } from "../types/chat";
 import type { DashboardContext } from "../types/tableau";
-import DashboardContextPanel from "./DashboardContextPanel";
 import MessageInput from "./MessageInput";
 import MessageList from "./MessageList";
 
@@ -15,16 +14,11 @@ type Props = {
   onDashboardContextPatch?: (patch: Partial<Pick<DashboardContext, "workbookName">>) => void;
 };
 
+const exampleQuestions = ["概要を教えて", "傾向を教えて", "この数値の意味は？", "さらに見るべき観点は？"];
+
 export default function ChatPanel({ dashboardContext, authToken, userDisplayName, onDashboardContextPatch }: Props) {
   const enrichmentStartedKey = useRef<string | null>(null);
-  const [messages, setMessages] = useState<ChatMessage[]>([
-    {
-      id: "welcome",
-      role: "assistant",
-      content: "このダッシュボードについて質問してください。取得できるTableauコンテキストを使って回答します。",
-      createdAt: new Date().toISOString(),
-    },
-  ]);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [sessionId, setSessionId] = useState<string | undefined>();
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -57,7 +51,7 @@ export default function ChatPanel({ dashboardContext, authToken, userDisplayName
         }
       })
       .catch(() => {
-        // Keep the UI usable; chat responses can still explain missing context.
+        // Keep the UI focused on asking questions. Missing enrichment is handled in chat answers.
       });
   }, [authToken, dashboardContext, onDashboardContextPatch]);
 
@@ -103,28 +97,48 @@ export default function ChatPanel({ dashboardContext, authToken, userDisplayName
         },
       ]);
     } catch (unknownError) {
-      setError(unknownError instanceof Error ? unknownError.message : "Failed to send the question.");
+      setError(unknownError instanceof Error ? unknownError.message : "質問の送信に失敗しました。");
     } finally {
       setIsLoading(false);
     }
   }
 
   return (
-    <section className="chat-panel" aria-label="Tableau Assistant chat panel">
+    <section className="chat-panel" aria-label="ダッシュボード質問パネル">
       <header className="chat-header">
         <div>
-          <h1>Tableau Assistant</h1>
-          <p>ダッシュボードについて質問できます</p>
+          <h1>質問</h1>
+          <p>表示中のダッシュボードについて聞けます</p>
         </div>
+        {userDisplayName ? <span className="user-pill">{userDisplayName}</span> : null}
       </header>
-      {userDisplayName ? <div className="user-strip">ログイン中: {userDisplayName}</div> : null}
 
-      <DashboardContextPanel dashboardContext={dashboardContext} />
-      <MessageList messages={messages} isLoading={isLoading} />
+      <div className={messages.length === 0 ? "chat-body has-starters" : "chat-body no-starters"}>
+        {messages.length === 0 ? (
+          <section className="question-starters" aria-label="質問例">
+            <p>たとえば、こんな質問ができます。</p>
+            <div className="starter-chip-row">
+              {exampleQuestions.map((question) => (
+                <button
+                  key={question}
+                  disabled={isLoading}
+                  type="button"
+                  onClick={() => void handleSend(question)}
+                >
+                  {question}
+                </button>
+              ))}
+            </div>
+          </section>
+        ) : null}
 
-      {error ? <div className="error-banner">{error}</div> : null}
+        <MessageList messages={messages} isLoading={isLoading} />
+      </div>
 
-      <MessageInput disabled={isLoading} onSend={handleSend} />
+      <div className="chat-footer">
+        {error ? <div className="error-banner">{error}</div> : null}
+        <MessageInput disabled={isLoading} onSend={handleSend} />
+      </div>
     </section>
   );
 }

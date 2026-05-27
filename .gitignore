@@ -11,6 +11,7 @@ coverage/
 .aws-sam/
 .DS_Store
 frontend/.vite/
+frontend/playwright-report/
+frontend/test-results/
 backend/.serverless/
 backend/cdk.out/
-

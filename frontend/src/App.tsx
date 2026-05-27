@@ -36,7 +36,7 @@ function DashboardExtensionApp() {
       })
       .catch((unknownError) => {
         if (isMounted) {
-          setError(unknownError instanceof Error ? unknownError.message : "Failed to initialize Tableau extension.");
+          setError(unknownError instanceof Error ? unknownError.message : "Tableau 拡張機能の初期化に失敗しました。");
         }
       });
 
