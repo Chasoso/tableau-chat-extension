@@ -5,6 +5,7 @@ const sessionKey = "tableau-chat.auth.session";
 const verifierKeyPrefix = "tableau-chat.auth.pkce.verifier.";
 const authMessageType = "tableau-chat.auth.complete";
 const authBroadcastChannelName = "tableau-chat.auth";
+const parentHandledStatePrefix = "parent.";
 
 export type AuthCompleteMessage = {
   type: typeof authMessageType;
@@ -29,7 +30,16 @@ export function getStoredSession(): AuthSession | null {
 }
 
 export async function completeLoginFromRedirect(): Promise<AuthSession | null> {
+  const session = await completeLoginFromUrl(window.location.href);
   const url = new URL(window.location.href);
+  url.searchParams.delete("code");
+  url.searchParams.delete("state");
+  window.history.replaceState({}, document.title, url.toString());
+  return session;
+}
+
+export async function completeLoginFromUrl(urlValue: string): Promise<AuthSession | null> {
+  const url = new URL(urlValue);
   const code = url.searchParams.get("code");
   const state = url.searchParams.get("state");
   if (!code) {
@@ -79,23 +89,27 @@ export async function completeLoginFromRedirect(): Promise<AuthSession | null> {
   storeSession(session);
   localStorage.removeItem(getVerifierKey(state));
   publishAuthSession(session);
-  url.searchParams.delete("code");
-  url.searchParams.delete("state");
-  window.history.replaceState({}, document.title, url.toString());
   return session;
 }
 
 export async function startLogin(): Promise<void> {
-  const loginUrl = await createLoginUrl();
+  const loginUrl = await createLoginUrl("redirect");
   window.location.assign(loginUrl);
 }
 
 export async function startLoginPopup(): Promise<Window> {
-  const popup = window.open(getPopupStartUrl(), "tableau-chat-cognito-login", "popup,width=520,height=720");
+  const popup = window.open("about:blank", "tableau-chat-cognito-login", "popup,width=520,height=720");
   if (!popup) {
     throw new Error("サインインウィンドウを開けませんでした。このサイトのポップアップを許可してください。");
   }
   popup.focus();
+  try {
+    const loginUrl = await createLoginUrl("popup");
+    popup.location.assign(loginUrl);
+  } catch (error) {
+    popup.close();
+    throw error;
+  }
   return popup;
 }
 
@@ -122,6 +136,12 @@ export function isAuthCompletePayload(payload: unknown): payload is AuthComplete
   );
 }
 
+export function isParentHandledAuthRedirect(): boolean {
+  const url = new URL(window.location.href);
+  const state = url.searchParams.get("state");
+  return Boolean(url.searchParams.get("code") && state?.startsWith(parentHandledStatePrefix));
+}
+
 export function storeSession(session: AuthSession): void {
   localStorage.setItem(sessionKey, JSON.stringify(session));
 }
@@ -131,10 +151,10 @@ export function publishAuthSession(session: AuthSession): void {
   notifyBroadcastChannel(session);
 }
 
-async function createLoginUrl(): Promise<string> {
+async function createLoginUrl(flow: "redirect" | "popup"): Promise<string> {
   assertAuthConfigured();
   const verifier = randomBase64Url(32);
-  const state = randomBase64Url(16);
+  const state = `${flow === "popup" ? parentHandledStatePrefix : ""}${randomBase64Url(16)}`;
   const challenge = await sha256Base64Url(verifier);
   localStorage.setItem(getVerifierKey(state), verifier);
 

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { completeLoginFromRedirect, publishAuthSession } from "../auth/cognitoAuth";
+import { completeLoginFromRedirect, isParentHandledAuthRedirect, publishAuthSession } from "../auth/cognitoAuth";
 
 export default function AuthCallback() {
   const [message, setMessage] = useState("サインインを完了しています...");
@@ -7,6 +7,11 @@ export default function AuthCallback() {
   useEffect(() => {
     let interval: number | undefined;
     let closeTimer: number | undefined;
+
+    if (isParentHandledAuthRedirect()) {
+      setMessage("サインイン結果を元の画面へ渡しています。このウィンドウは自動で閉じます。");
+      return;
+    }
 
     completeLoginFromRedirect()
       .then((session) => {

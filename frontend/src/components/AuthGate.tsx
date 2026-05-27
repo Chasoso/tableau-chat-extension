@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import type React from "react";
 import {
   authBroadcastChannelName,
+  completeLoginFromUrl,
   completeLoginFromRedirect,
   getStoredSession,
   isAuthCompleteMessage,
@@ -23,6 +24,7 @@ export default function AuthGate({ children }: Props) {
   const popupRef = useRef<Window | null>(null);
   const sessionPollerRef = useRef<number | undefined>(undefined);
   const signInTimerRef = useRef<number | undefined>(undefined);
+  const popupCompletionRef = useRef(false);
   const [session, setSession] = useState<AuthSession | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -63,6 +65,46 @@ export default function AuthGate({ children }: Props) {
     return true;
   }
 
+  async function acceptPopupRedirectSession(): Promise<boolean> {
+    const popup = popupRef.current;
+    if (!popup || popup.closed || popupCompletionRef.current) {
+      return false;
+    }
+
+    let popupUrl: string;
+    try {
+      popupUrl = popup.location.href;
+    } catch {
+      return false;
+    }
+
+    if (!popupUrl.startsWith(window.location.origin)) {
+      return false;
+    }
+
+    const url = new URL(popupUrl);
+    if (!url.searchParams.has("code")) {
+      return false;
+    }
+
+    popupCompletionRef.current = true;
+    try {
+      const nextSession = await completeLoginFromUrl(popupUrl);
+      if (!nextSession) {
+        return false;
+      }
+
+      acceptSession(nextSession);
+      popup.close();
+      return true;
+    } catch {
+      stopSignInWaiting("サインイン結果を処理できませんでした。もう一度サインインを押してください。");
+      return false;
+    } finally {
+      popupCompletionRef.current = false;
+    }
+  }
+
   function startSessionPolling(durationMs = 15_000) {
     if (sessionPollerRef.current) {
       window.clearInterval(sessionPollerRef.current);
@@ -70,6 +112,7 @@ export default function AuthGate({ children }: Props) {
 
     const startedAt = Date.now();
     sessionPollerRef.current = window.setInterval(() => {
+      void acceptPopupRedirectSession();
       if (!mountedRef.current || acceptStoredSession() || Date.now() - startedAt > durationMs) {
         if (sessionPollerRef.current) {
           window.clearInterval(sessionPollerRef.current);
@@ -179,6 +222,8 @@ export default function AuthGate({ children }: Props) {
         if (acceptStoredSession()) {
           return;
         }
+
+        void acceptPopupRedirectSession();
 
         // popup.closed can be unreliable while Cognito moves between Hosted UI
         // steps. A hard timeout is still useful for abandoned sign-in attempts.
