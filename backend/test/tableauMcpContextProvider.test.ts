@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   extractBestWorkbookId,
+  extractDatasourcesFromRawToolResults,
   extractWorkbookFromToolResults,
 } from "../src/tableau/tableauMcpContextProvider";
 import type { TableauMcpToolResultSummary } from "../src/types/tableau";
@@ -59,5 +60,50 @@ describe("TableauMcpContextProvider extraction helpers", () => {
     };
 
     expect(extractBestWorkbookId(result, "Statistics")).toBe("d351b42d-7545-4cbd-bd76-e23410275f1b");
+  });
+
+  it("extracts structured datasource records from untruncated list-datasources results", () => {
+    const input: GetAdditionalContextInput = {
+      ...baseInput,
+      dashboardContext: {
+        ...baseInput.dashboardContext,
+        dataSources: [{ name: "Tableau Public Per Day(2025/04-)" }],
+      },
+    };
+    const result = {
+      content: [
+        {
+          text: JSON.stringify([
+            {
+              id: "not-used",
+              name: "Other Datasource",
+              project: { id: "project-1", name: "Sandbox" },
+              tags: {},
+            },
+            {
+              id: "datasource-luid",
+              name: "Tableau Public Per Day(2025/04-)",
+              description: "Daily Tableau Public activity data.",
+              project: { id: "project-1", name: "Sandbox" },
+              tags: {},
+            },
+          ]),
+        },
+      ],
+    };
+
+    expect(extractDatasourcesFromRawToolResults([{ toolName: "list-datasources", result }], input)).toEqual([
+      {
+        id: "datasource-luid",
+        name: "Tableau Public Per Day(2025/04-)",
+        contentUrl: undefined,
+        description: "Daily Tableau Public activity data.",
+        webpageUrl: undefined,
+        project: {
+          id: "project-1",
+          name: "Sandbox",
+        },
+      },
+    ]);
   });
 });

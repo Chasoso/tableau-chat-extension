@@ -18,6 +18,13 @@ type McpTool = {
   };
 };
 
+export type RawMcpToolResult = {
+  toolName: string;
+  result: unknown;
+};
+
+const TOOL_RESULT_SUMMARY_LIMIT = 5_000;
+
 export class TableauMcpContextProvider implements TableauContextProvider {
   readonly name = "tableau-mcp" as const;
 
@@ -83,6 +90,7 @@ export class TableauMcpContextProvider implements TableauContextProvider {
       const toolSummaries = tools.map(toToolSummary);
       const toolQueue = await selectInitialTools(tools, mcpConfig.allowedTools, input);
       const toolResults: TableauMcpToolResultSummary[] = [];
+      const rawToolResults: RawMcpToolResult[] = [];
       const calledToolNames = new Set<string>();
       let dataReplanAttempted = false;
 
@@ -136,6 +144,10 @@ export class TableauMcpContextProvider implements TableauContextProvider {
             status: "success",
             summary: summarizeToolResult(result),
           });
+          rawToolResults.push({
+            toolName: selection.tool.name,
+            result,
+          });
           logMcpToolResultDebug(selection.tool.name, result, mcpConfig.debugLogResults);
           calledToolNames.add(selection.tool.name);
 
@@ -163,7 +175,11 @@ export class TableauMcpContextProvider implements TableauContextProvider {
         selectedTools: toolResults.map((result) => result.toolName),
       });
       const extractedWorkbook = extractWorkbookFromToolResults(toolResults, input);
-      const extractedDatasources = extractDatasourcesFromToolResults(toolResults);
+      const extractedDatasources = extractDatasourcesFromRawToolResults(rawToolResults, input);
+      logInfo("tableau.mcp.datasources.extracted", {
+        datasourceCount: extractedDatasources.length,
+        matchedKnownDatasource: hasDatasourceMatchingDashboardContext(extractedDatasources, input),
+      });
       logInfo("tableau.mcp.workbook.extracted", {
         workbookNamePresent: Boolean(extractedWorkbook?.name),
         workbookNameHash: safeHash(extractedWorkbook?.name),
@@ -532,9 +548,11 @@ function isSafeToolArgumentValue(value: unknown, depth: number): boolean {
 }
 
 function getDefaultToolCandidates(tools: McpTool[], input: GetAdditionalContextInput): McpTool[] {
-  const preferredNames = input.dashboardContext.workbookName
-    ? ["list-workbooks", "get-workbook", "list-views", "list-datasources", "search-content"]
-    : ["list-views", "search-content", "list-workbooks", "list-datasources"];
+  const preferredNames = isDatasourceAnalysisQuestion(input.question)
+    ? ["list-datasources"]
+    : input.dashboardContext.workbookName
+      ? ["list-workbooks", "get-workbook", "list-views", "list-datasources", "search-content"]
+      : ["list-views", "search-content", "list-workbooks", "list-datasources"];
   const byName = new Map(tools.map((tool) => [tool.name, tool]));
   const preferred = preferredNames.flatMap((name) => {
     const tool = byName.get(name);
@@ -578,7 +596,7 @@ function shouldReplanForDatasourceQuery(
     return false;
   }
 
-  if (!isDataQuestion(input.question)) {
+  if (!isDatasourceAnalysisQuestion(input.question)) {
     return false;
   }
 
@@ -592,6 +610,15 @@ function shouldReplanForDatasourceQuery(
 function isDataQuestion(question: string): boolean {
   return /view|views|count|sum|average|avg|rank|ranking|top|bottom|trend|month|week|day|date|record|row|data|datasource|データ|件数|合計|平均|ランキング|上位|下位|推移|月|週|日|ビュー|最も|多い|少ない/i.test(
     question,
+  );
+}
+
+function isDatasourceAnalysisQuestion(question: string): boolean {
+  return (
+    isDataQuestion(question) ||
+    /データ|分析|集計|件数|合計|平均|ランキング|上位|下位|傾向|推移|月|週|日|ビュー|閲覧|最も|多い|少ない/i.test(
+      question,
+    )
   );
 }
 
@@ -712,8 +739,10 @@ function inferKnownToolArguments(toolName: string, input: GetAdditionalContextIn
       return workbookName
         ? { filter: `workbookName:eq:${escapeFilterValue(workbookName)}`, limit: 25 }
         : { filter: `name:eq:${escapeFilterValue(dashboardName)}`, limit: 25 };
-    case "list-datasources":
-      return { limit: 20 };
+    case "list-datasources": {
+      const datasourceName = chooseKnownDatasourceName(input);
+      return datasourceName ? { filter: `name:eq:${escapeFilterValue(datasourceName)}`, limit: 10 } : { limit: 100 };
+    }
     case "search-content":
       return {
         terms: workbookName ?? dashboardName,
@@ -749,6 +778,23 @@ function inferValueForProperty(propertyName: string, input: GetAdditionalContext
   }
 
   return undefined;
+}
+
+function chooseKnownDatasourceName(input: GetAdditionalContextInput): string | undefined {
+  const datasourceNames =
+    input.dashboardContext.dataSources
+      ?.map((datasource) => datasource.name.trim())
+      .filter(Boolean) ?? [];
+
+  if (!datasourceNames.length) {
+    return undefined;
+  }
+
+  const normalizedQuestion = input.question.toLowerCase();
+  return (
+    datasourceNames.find((name) => normalizedQuestion.includes(name.toLowerCase())) ??
+    (datasourceNames.length === 1 ? datasourceNames[0] : undefined)
+  );
 }
 
 function toToolSummary(tool: McpTool): TableauMcpToolSummary {
@@ -809,7 +855,7 @@ function sanitizeDebugText(value: string): string {
 
 function summarizeToolResult(result: unknown): string {
   const text = extractTextFromToolResult(result) || JSON.stringify(result);
-  return text.length > 1200 ? `${text.slice(0, 1200)}...` : text;
+  return text.length > TOOL_RESULT_SUMMARY_LIMIT ? `${text.slice(0, TOOL_RESULT_SUMMARY_LIMIT)}...` : text;
 }
 
 function extractTextFromToolResult(result: unknown): string {
@@ -887,13 +933,27 @@ export function extractWorkbookFromToolResults(
   return selected ? { id: selected.id, name: selected.name } : undefined;
 }
 
-function extractDatasourcesFromToolResults(toolResults: TableauMcpToolResultSummary[]): unknown[] {
-  return toolResults
-    .filter((result) => result.status === "success" && result.summary && result.toolName === "list-datasources")
-    .flatMap((result) => {
-      const parsed = tryParseJson(result.summary ?? "");
-      return parsed ? findDataSourceObjects(parsed) : [];
-    });
+export function extractDatasourcesFromRawToolResults(
+  rawToolResults: RawMcpToolResult[],
+  input: GetAdditionalContextInput,
+): unknown[] {
+  const parsedDatasourceResults = rawToolResults
+    .filter((result) => result.toolName === "list-datasources")
+    .flatMap((result) => parseToolResultPayloads(result.result));
+  const structuredDatasources = parsedDatasourceResults.flatMap(findDataSourceObjects).map(normalizeDatasourceObject).filter(Boolean);
+  const uniqueDatasources = dedupeDatasourceObjects(structuredDatasources);
+  const knownNames = getKnownDatasourceNames(input);
+
+  if (!knownNames.size) {
+    return uniqueDatasources;
+  }
+
+  const matchingDatasources = uniqueDatasources.filter((datasource) => {
+    const name = readString((datasource as Record<string, unknown>).name);
+    return Boolean(name && knownNames.has(name.trim().toLowerCase()));
+  });
+
+  return matchingDatasources.length ? matchingDatasources : uniqueDatasources;
 }
 
 type WorkbookCandidate = {
@@ -1062,8 +1122,103 @@ function findDataSourceObjects(value: unknown): unknown[] {
   }
 
   const record = value as Record<string, unknown>;
-  const direct = typeof record.name === "string" && (record.id || record.contentUrl || record.project) ? [record] : [];
+  const direct = looksLikeDatasourceRecord(record) ? [record] : [];
   return [...direct, ...Object.values(record).flatMap(findDataSourceObjects)];
+}
+
+function parseToolResultPayloads(result: unknown): unknown[] {
+  const text = extractTextFromToolResult(result);
+  const parsedText = tryParseJson(text);
+  if (parsedText !== undefined) {
+    return [parsedText];
+  }
+
+  return [result];
+}
+
+function looksLikeDatasourceRecord(record: Record<string, unknown>): boolean {
+  return (
+    typeof record.name === "string" &&
+    (typeof record.id === "string" || typeof record.luid === "string") &&
+    (Boolean(record.project) ||
+      Boolean(record.tags) ||
+      typeof record.contentUrl === "string" ||
+      typeof record.description === "string" ||
+      typeof record.webpageUrl === "string")
+  );
+}
+
+function normalizeDatasourceObject(value: unknown): Record<string, unknown> | undefined {
+  if (!value || typeof value !== "object") {
+    return undefined;
+  }
+
+  const record = value as Record<string, unknown>;
+  const id = readString(record.id) ?? readString(record.luid);
+  const name = readString(record.name);
+  if (!id || !name) {
+    return undefined;
+  }
+
+  const project =
+    record.project && typeof record.project === "object"
+      ? {
+          id: readString((record.project as Record<string, unknown>).id),
+          name: readString((record.project as Record<string, unknown>).name),
+        }
+      : undefined;
+
+  return {
+    id,
+    name,
+    contentUrl: readString(record.contentUrl),
+    description: readString(record.description),
+    webpageUrl: readString(record.webpageUrl),
+    project,
+  };
+}
+
+function dedupeDatasourceObjects(datasources: Array<Record<string, unknown> | undefined>): Record<string, unknown>[] {
+  const seen = new Set<string>();
+  return datasources.filter((datasource): datasource is Record<string, unknown> => {
+    if (!datasource) {
+      return false;
+    }
+
+    const id = readString(datasource.id);
+    const name = readString(datasource.name);
+    const key = id ?? name;
+    if (!key || seen.has(key)) {
+      return false;
+    }
+
+    seen.add(key);
+    return true;
+  });
+}
+
+function getKnownDatasourceNames(input: GetAdditionalContextInput): Set<string> {
+  return new Set(
+    input.dashboardContext.dataSources
+      ?.map((datasource) => datasource.name.trim().toLowerCase())
+      .filter(Boolean) ?? [],
+  );
+}
+
+function hasDatasourceMatchingDashboardContext(datasources: unknown[], input: GetAdditionalContextInput): boolean {
+  const knownNames = getKnownDatasourceNames(input);
+  if (!knownNames.size) {
+    return false;
+  }
+
+  return datasources.some((datasource) => {
+    if (!datasource || typeof datasource !== "object") {
+      return false;
+    }
+
+    const name = readString((datasource as Record<string, unknown>).name);
+    return Boolean(name && knownNames.has(name.trim().toLowerCase()));
+  });
 }
 
 function readString(value: unknown): string | undefined {
