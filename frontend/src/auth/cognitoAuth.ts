@@ -136,12 +136,6 @@ export function isAuthCompletePayload(payload: unknown): payload is AuthComplete
   );
 }
 
-export function isParentHandledAuthRedirect(): boolean {
-  const url = new URL(window.location.href);
-  const state = url.searchParams.get("state");
-  return Boolean(url.searchParams.get("code") && state?.startsWith(parentHandledStatePrefix));
-}
-
 export function storeSession(session: AuthSession): void {
   localStorage.setItem(sessionKey, JSON.stringify(session));
 }

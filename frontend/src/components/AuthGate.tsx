@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from "react";
 import type React from "react";
 import {
   authBroadcastChannelName,
-  completeLoginFromUrl,
   completeLoginFromRedirect,
   getStoredSession,
   isAuthCompleteMessage,
@@ -24,7 +23,6 @@ export default function AuthGate({ children }: Props) {
   const popupRef = useRef<Window | null>(null);
   const sessionPollerRef = useRef<number | undefined>(undefined);
   const signInTimerRef = useRef<number | undefined>(undefined);
-  const popupCompletionRef = useRef(false);
   const [session, setSession] = useState<AuthSession | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -67,7 +65,7 @@ export default function AuthGate({ children }: Props) {
 
   async function acceptPopupRedirectSession(): Promise<boolean> {
     const popup = popupRef.current;
-    if (!popup || popup.closed || popupCompletionRef.current) {
+    if (!popup || popup.closed) {
       return false;
     }
 
@@ -87,25 +85,13 @@ export default function AuthGate({ children }: Props) {
       return false;
     }
 
-    popupCompletionRef.current = true;
-    try {
-      const nextSession = await completeLoginFromUrl(popupUrl);
-      if (!nextSession) {
-        return false;
-      }
-
-      acceptSession(nextSession);
-      popup.close();
-      return true;
-    } catch {
-      stopSignInWaiting("サインイン結果を処理できませんでした。もう一度サインインを押してください。");
-      return false;
-    } finally {
-      popupCompletionRef.current = false;
-    }
+    // The popup callback page owns the authorization-code exchange. In Tableau
+    // Cloud iframes, having the parent read and exchange the popup URL is less
+    // reliable and can race with the popup. The parent only observes storage.
+    return acceptStoredSession();
   }
 
-  function startSessionPolling(durationMs = 15_000) {
+  function startSessionPolling(durationMs = 15_000): void {
     if (sessionPollerRef.current) {
       window.clearInterval(sessionPollerRef.current);
     }
@@ -136,7 +122,7 @@ export default function AuthGate({ children }: Props) {
       if (popupRef.current?.closed) {
         stopSignInWaiting("サインイン結果を受け取れませんでした。もう一度サインインを押してください。");
       }
-    }, 1_000);
+    }, 3_000);
   }
 
   useEffect(() => {

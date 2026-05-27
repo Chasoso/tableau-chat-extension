@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { completeLoginFromRedirect, isParentHandledAuthRedirect, publishAuthSession } from "../auth/cognitoAuth";
+import { completeLoginFromRedirect, publishAuthSession } from "../auth/cognitoAuth";
 
 export default function AuthCallback() {
   const [message, setMessage] = useState("サインインを完了しています...");
@@ -8,11 +8,6 @@ export default function AuthCallback() {
     let interval: number | undefined;
     let closeTimer: number | undefined;
 
-    if (isParentHandledAuthRedirect()) {
-      setMessage("サインイン結果を元の画面へ渡しています。このウィンドウは自動で閉じます。");
-      return;
-    }
-
     completeLoginFromRedirect()
       .then((session) => {
         if (!session) {
@@ -20,7 +15,7 @@ export default function AuthCallback() {
           return;
         }
 
-        setMessage("サインインが完了しました。元の画面に戻ります...");
+        setMessage("サインイン結果を元の画面へ渡しています。このウィンドウは自動で閉じます。");
 
         // Tableau Cloud iframe can miss a one-shot popup message, so repeat the
         // same-origin handoff briefly before closing the popup.
