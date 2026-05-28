@@ -97,6 +97,12 @@ export class ChatService {
       debug: {
         usedMock: this.answerGenerator.name === "mock",
         tableauContextProvider: additionalContext.provider,
+        ...(config.tableau.mcp.debugLogResults
+          ? {
+              mcpExecutionDebug: additionalContext.mcpExecutionDebug,
+              mcpObservations: additionalContext.mcpObservations,
+            }
+          : {}),
       },
     };
   }

@@ -1,11 +1,23 @@
-import { createRequire } from "node:module";
+﻿import { createRequire } from "node:module";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { getTableauConnectedAppSecrets } from "../aws/secrets";
 import { getConfig } from "../config";
 import { logError, logInfo, logWarn, safeErrorDetails, safeHash } from "../logging";
-import { resolveAllowedToolNames, TableauMcpToolPlanner, type PlannedMcpToolCall } from "../services/tableauMcpToolPlanner";
-import type { TableauAdditionalContext, TableauMcpToolResultSummary, TableauMcpToolSummary } from "../types/tableau";
+import {
+  classifyQuestionIntent,
+  resolveAllowedToolNames,
+  TableauMcpToolPlanner,
+  type ClassifiedQuestionIntent,
+  type PlannedMcpToolCall,
+} from "../services/tableauMcpToolPlanner";
+import type {
+  McpExecutionDebug,
+  McpObservation,
+  TableauAdditionalContext,
+  TableauMcpToolResultSummary,
+  TableauMcpToolSummary,
+} from "../types/tableau";
 import type { GetAdditionalContextInput, TableauContextProvider } from "./contextProvider";
 
 type McpTool = {
@@ -23,7 +35,16 @@ export type RawMcpToolResult = {
   result: unknown;
 };
 
-const TOOL_RESULT_SUMMARY_LIMIT = 5_000;
+const TOOL_RESULT_SUMMARY_LIMIT = 1_800;
+const TOOL_RESULT_PREVIEW_LIMIT = 360;
+const TOOL_CACHE_KEY_MAX_LENGTH = 1200;
+
+type CacheEntry = {
+  expiresAt: number;
+  result: unknown;
+};
+
+const metadataToolCache = new Map<string, CacheEntry>();
 
 export class TableauMcpContextProvider implements TableauContextProvider {
   readonly name = "tableau-mcp" as const;
@@ -87,26 +108,51 @@ export class TableauMcpContextProvider implements TableauContextProvider {
       await client.connect(transport);
       const toolsResponse = await client.listTools(undefined, { timeout: mcpConfig.timeoutMs });
       const tools = toolsResponse.tools as McpTool[];
+      const allowedToolNames = resolveAllowedToolNames(tools, mcpConfig.allowedTools);
+      const intent = classifyQuestionIntent(input.question, input.dashboardContext, allowedToolNames);
+      const effectiveMaxToolCalls = Math.max(0, Math.min(mcpConfig.maxToolCalls, intent.maxToolCalls));
       const toolSummaries = tools.map(toToolSummary);
-      const toolQueue = await selectInitialTools(tools, mcpConfig.allowedTools, input);
+      const initialToolSelection = await selectInitialTools(tools, mcpConfig.allowedTools, input, intent, effectiveMaxToolCalls);
+      const toolQueue = [...initialToolSelection.selections];
       const toolResults: TableauMcpToolResultSummary[] = [];
       const rawToolResults: RawMcpToolResult[] = [];
+      const observations: McpObservation[] = [];
       const calledToolNames = new Set<string>();
+      let executedToolCallCount = 0;
       let dataReplanAttempted = false;
+      let planningTimeMs = initialToolSelection.planningTimeMs;
+      const executionStartedAt = Date.now();
+      const blockedToolNames = [...initialToolSelection.blockedTools];
+      let fallbackReason: string | undefined;
 
-      while (toolResults.length < Math.max(mcpConfig.maxToolCalls, 0)) {
+      logInfo("tableau.mcp.intent.classified", {
+        intent: intent.intent,
+        confidence: intent.confidence,
+        needsMcp: intent.needsMcp,
+        answerableFromDashboardContext: intent.answerableFromDashboardContext,
+        maxToolCalls: effectiveMaxToolCalls,
+      });
+
+      if (!intent.needsMcp || effectiveMaxToolCalls === 0) {
+        fallbackReason = "Intent indicates dashboard context is sufficient or question is unsupported.";
+      }
+
+      while (intent.needsMcp && executedToolCallCount < effectiveMaxToolCalls) {
         if (!toolQueue.length) {
           if (
             !dataReplanAttempted &&
-            shouldReplanForDatasourceQuery(input, toolResults, calledToolNames) &&
-            toolResults.length < Math.max(mcpConfig.maxToolCalls, 0)
+            shouldReplanForDatasourceQuery(intent, toolResults, calledToolNames) &&
+            executedToolCallCount < effectiveMaxToolCalls
           ) {
             dataReplanAttempted = true;
-            const replannedTools = await selectPlannedTools(tools, mcpConfig.allowedTools, input, {
+            const replanStartedAt = Date.now();
+            const replannedTools = await selectPlannedTools(tools, mcpConfig.allowedTools, input, intent, effectiveMaxToolCalls, {
               observations: toolResults,
               calledToolNames,
             });
-            const readyReplannedTools = replannedTools.filter((selection) => selection.status === "ready");
+            planningTimeMs += Date.now() - replanStartedAt;
+            blockedToolNames.push(...replannedTools.blockedTools);
+            const readyReplannedTools = replannedTools.selections.filter((selection) => selection.status === "ready");
             if (readyReplannedTools.length) {
               toolQueue.push(...readyReplannedTools);
               continue;
@@ -123,6 +169,14 @@ export class TableauMcpContextProvider implements TableauContextProvider {
 
         if (selection.status === "skipped") {
           toolResults.push(selection);
+          observations.push({
+            tool: selection.toolName,
+            purpose: "Skipped before execution",
+            argsSummary: {},
+            success: false,
+            resultSummary: "",
+            errorMessage: selection.warning,
+          });
           continue;
         }
 
@@ -130,32 +184,49 @@ export class TableauMcpContextProvider implements TableauContextProvider {
           continue;
         }
 
+        const toolStartedAt = Date.now();
         try {
-          const result = await client.callTool(
-            {
-              name: selection.tool.name,
-              arguments: selection.arguments,
-            },
-            undefined,
-            { timeout: mcpConfig.timeoutMs },
-          );
+          const execution = await executeToolWithCache({
+            client,
+            toolName: selection.tool.name,
+            args: selection.arguments,
+            tableauSubject: input.tableauSubject,
+            timeoutMs: mcpConfig.timeoutMs,
+          });
+          const result = execution.result;
+          const resultSummary = summarizeToolResult(result);
           toolResults.push({
             toolName: selection.tool.name,
             status: "success",
-            summary: summarizeToolResult(result),
+            summary: resultSummary,
           });
           rawToolResults.push({
             toolName: selection.tool.name,
             result,
           });
+          observations.push({
+            tool: selection.tool.name,
+            purpose: selection.reason ?? "Collect Tableau Cloud context",
+            argsSummary: summarizeToolArguments(selection.arguments),
+            success: true,
+            resultSummary,
+            rawResultPreview: summarizeToolResultPreview(result),
+          });
           logMcpToolResultDebug(selection.tool.name, result, mcpConfig.debugLogResults);
           calledToolNames.add(selection.tool.name);
+          executedToolCallCount += 1;
+          logInfo("tableau.mcp.tool.completed", {
+            toolName: selection.tool.name,
+            durationMs: Date.now() - toolStartedAt,
+            cacheHit: execution.cacheHit,
+          });
 
           const followUp = buildFollowUpToolSelection(selection.tool.name, result, tools, calledToolNames, input);
           if (followUp) {
             toolQueue.unshift(followUp);
           }
         } catch (error) {
+          const errorMessage = summarizeErrorMessage(error);
           logWarn("tableau.mcp.tool.failed", {
             toolName: selection.tool.name,
             ...safeErrorDetails(error),
@@ -163,16 +234,29 @@ export class TableauMcpContextProvider implements TableauContextProvider {
           toolResults.push({
             toolName: selection.tool.name,
             status: "failed",
-            warning: "Tool call failed.",
+            warning: errorMessage,
+          });
+          executedToolCallCount += 1;
+          observations.push({
+            tool: selection.tool.name,
+            purpose: selection.reason ?? "Collect Tableau Cloud context",
+            argsSummary: summarizeToolArguments(selection.arguments),
+            success: false,
+            resultSummary: "",
+            errorMessage,
           });
         }
       }
 
+      const executionTimeMs = Date.now() - executionStartedAt;
       logInfo("tableau.mcp.stdio.completed", {
         toolCount: toolSummaries.length,
         calledToolCount: toolResults.filter((result) => result.status === "success").length,
         failedToolCount: toolResults.filter((result) => result.status === "failed").length,
         selectedTools: toolResults.map((result) => result.toolName),
+        blockedToolCount: blockedToolNames.length,
+        planningTimeMs,
+        executionTimeMs,
       });
       const extractedWorkbook = extractWorkbookFromToolResults(toolResults, input);
       const extractedDatasources = extractDatasourcesFromRawToolResults(rawToolResults, input);
@@ -186,6 +270,26 @@ export class TableauMcpContextProvider implements TableauContextProvider {
         workbookIdHash: safeHash(extractedWorkbook?.id),
       });
 
+      const executionDebug: McpExecutionDebug = {
+        intent: intent.intent,
+        intentConfidence: intent.confidence,
+        answerableFromDashboardContext: intent.answerableFromDashboardContext,
+        needsMcp: intent.needsMcp,
+        maxToolCalls: effectiveMaxToolCalls,
+        plannerReasonBrief: initialToolSelection.reasonBrief,
+        plannedTools: initialToolSelection.plannedTools,
+        blockedTools: blockedToolNames,
+        executedTools: toolResults.filter((result) => result.status === "success").map((result) => result.toolName),
+        skippedTools: toolResults.filter((result) => result.status === "skipped").map((result) => result.toolName),
+        toolCallCount: toolResults.filter((result) => result.status === "success").length,
+        replanUsed: dataReplanAttempted,
+        timingMs: {
+          planning: planningTimeMs,
+          execution: executionTimeMs,
+        },
+        ...(fallbackReason ? { fallbackReason } : {}),
+      };
+
       return {
         provider: this.name,
         workbook: extractedWorkbook,
@@ -196,9 +300,12 @@ export class TableauMcpContextProvider implements TableauContextProvider {
           calledTools: toolResults.map((result) => result.toolName),
           workbookExtracted: Boolean(extractedWorkbook),
           toolPlanningEnabled: mcpConfig.toolPlanningEnabled,
+          intent: intent.intent,
         },
         mcpTools: toolSummaries,
         mcpToolResults: toolResults,
+        mcpObservations: observations,
+        mcpExecutionDebug: executionDebug,
         warnings: toolResults
           .filter((result) => result.status === "failed" || result.status === "skipped")
           .map((result) => `${result.toolName}: ${result.warning ?? result.status}`),
@@ -257,6 +364,8 @@ async function callHttpMcpStub(input: GetAdditionalContextInput): Promise<Tablea
       metadata: body.metadata,
       mcpTools: body.mcpTools ?? [],
       mcpToolResults: body.mcpToolResults ?? [],
+      mcpObservations: body.mcpObservations ?? [],
+      mcpExecutionDebug: body.mcpExecutionDebug,
       warnings: body.warnings ?? [],
     };
   } catch {
@@ -333,10 +442,23 @@ async function selectInitialTools(
   tools: McpTool[],
   allowedTools: string[],
   input: GetAdditionalContextInput,
-): Promise<SelectedTool[]> {
-  const plannedSelections = await selectPlannedTools(tools, allowedTools, input);
-  if (plannedSelections.some((selection) => selection.status === "ready")) {
-    return plannedSelections;
+  intent: ClassifiedQuestionIntent,
+  maxToolCalls: number,
+): Promise<{
+  selections: SelectedTool[];
+  blockedTools: string[];
+  plannedTools: string[];
+  reasonBrief?: string;
+  planningTimeMs: number;
+}> {
+  const plannerStartedAt = Date.now();
+  const plannedSelections = await selectPlannedTools(tools, allowedTools, input, intent, maxToolCalls);
+  const planningTimeMs = Date.now() - plannerStartedAt;
+  if (plannedSelections.selections.some((selection) => selection.status === "ready")) {
+    return {
+      ...plannedSelections,
+      planningTimeMs,
+    };
   }
 
   const candidates = allowedTools.length ? tools.filter((tool) => allowedTools.includes(tool.name)) : getDefaultToolCandidates(tools, input);
@@ -347,36 +469,49 @@ async function selectInitialTools(
     allowedToolsConfigured: allowedTools.length > 0,
   });
 
-  return candidates.map((tool) => {
-    const args = inferToolArguments(tool, input);
-    if (!args) {
-      return {
-        status: "skipped",
-        toolName: tool.name,
-        warning: "Required arguments could not be inferred safely.",
-      };
-    }
+  return {
+    selections: candidates.map((tool) => {
+      const args = inferToolArguments(tool, input);
+      if (!args) {
+        return {
+          status: "skipped",
+          toolName: tool.name,
+          warning: "Required arguments could not be inferred safely.",
+        };
+      }
 
-    return {
-      status: "ready",
-      tool,
-      arguments: args,
-    };
-  });
+      return {
+        status: "ready",
+        tool,
+        arguments: args,
+      };
+    }),
+    blockedTools: [],
+    plannedTools: candidates.map((tool) => tool.name),
+    reasonBrief: "Fallback tool selection without LLM planning.",
+    planningTimeMs,
+  };
 }
 
 async function selectPlannedTools(
   tools: McpTool[],
   allowedTools: string[],
   input: GetAdditionalContextInput,
+  intent: ClassifiedQuestionIntent,
+  maxToolCalls: number,
   options: {
     observations?: TableauMcpToolResultSummary[];
     calledToolNames?: Set<string>;
   } = {},
-): Promise<SelectedTool[]> {
+): Promise<{
+  selections: SelectedTool[];
+  blockedTools: string[];
+  plannedTools: string[];
+  reasonBrief?: string;
+}> {
   const config = getConfig();
-  if (!config.tableau.mcp.toolPlanningEnabled) {
-    return [];
+  if (!config.tableau.mcp.toolPlanningEnabled || maxToolCalls <= 0) {
+    return { selections: [], blockedTools: [], plannedTools: [] };
   }
 
   const planner = new TableauMcpToolPlanner();
@@ -385,18 +520,26 @@ async function selectPlannedTools(
     question: input.question,
     dashboardContext: input.dashboardContext,
     tools,
-    maxToolCalls: config.tableau.mcp.maxToolCalls,
+    maxToolCalls,
     allowedToolNames,
     observations: options.observations,
     previouslyCalledToolNames: [...(options.calledToolNames ?? [])],
+    intentHint: intent,
   });
 
   if (!plan?.toolCalls.length) {
-    return [];
+    return {
+      selections: [],
+      blockedTools: [],
+      plannedTools: [],
+      reasonBrief: plan?.reasonBrief ?? intent.reasonBrief,
+    };
   }
 
+  const blockedTools: string[] = [];
+  const plannedTools = plan.toolCalls.map((call) => call.toolName);
   const selections = plan.toolCalls.map((call) =>
-    buildSelectionFromPlannedCall(call, tools, allowedToolNames, input, options.calledToolNames ?? new Set<string>()),
+    buildSelectionFromPlannedCall(call, tools, allowedToolNames, input, options.calledToolNames ?? new Set<string>(), blockedTools),
   );
   logInfo("tableau.mcp.tools.planned", {
     availableToolCount: tools.length,
@@ -404,9 +547,17 @@ async function selectPlannedTools(
     allowedToolsConfigured: allowedTools.length > 0,
     readyToolCount: selections.filter((selection) => selection.status === "ready").length,
     skippedToolCount: selections.filter((selection) => selection.status === "skipped").length,
+    blockedTools,
+    intent: plan.intent,
+    reasonBrief: plan.reasonBrief,
   });
 
-  return selections;
+  return {
+    selections,
+    blockedTools,
+    plannedTools,
+    reasonBrief: plan.reasonBrief,
+  };
 }
 
 function buildSelectionFromPlannedCall(
@@ -415,9 +566,11 @@ function buildSelectionFromPlannedCall(
   allowedToolNames: string[],
   input: GetAdditionalContextInput,
   calledToolNames: Set<string>,
+  blockedTools: string[],
 ): SelectedTool {
   const tool = tools.find((candidate) => candidate.name === call.toolName);
   if (!tool) {
+    blockedTools.push(call.toolName);
     return {
       status: "skipped",
       toolName: call.toolName,
@@ -426,6 +579,7 @@ function buildSelectionFromPlannedCall(
   }
 
   if (!allowedToolNames.includes(tool.name)) {
+    blockedTools.push(tool.name);
     return {
       status: "skipped",
       toolName: tool.name,
@@ -443,6 +597,7 @@ function buildSelectionFromPlannedCall(
 
   const args = inferPlannedToolArguments(tool, call.arguments, input);
   if (!args) {
+    blockedTools.push(tool.name);
     return {
       status: "skipped",
       toolName: tool.name,
@@ -454,7 +609,7 @@ function buildSelectionFromPlannedCall(
     status: "ready",
     tool,
     arguments: args,
-    reason: call.reason,
+    reason: call.purpose ?? call.reason,
   };
 }
 
@@ -474,7 +629,7 @@ function inferPlannedToolArguments(
   };
 
   if (tool.name === "query-datasource") {
-    return validateQueryDatasourceArguments(merged);
+    return validateQueryDatasourceArguments(merged, input);
   }
 
   const required = tool.inputSchema?.required ?? [];
@@ -507,24 +662,117 @@ function validateArgumentsAgainstSchema(
   return sanitized;
 }
 
-function validateQueryDatasourceArguments(args: Record<string, unknown>): Record<string, unknown> | undefined {
+function validateQueryDatasourceArguments(
+  args: Record<string, unknown>,
+  input: GetAdditionalContextInput,
+): Record<string, unknown> | undefined {
+  const config = getConfig().tableau.mcp;
   const datasourceLuid = readString(args.datasourceLuid) ?? readString(args.datasourceId);
   const query = args.query;
   if (!datasourceLuid || !query || typeof query !== "object" || Array.isArray(query)) {
     return undefined;
   }
 
-  const queryRecord = query as Record<string, unknown>;
-  if (!Array.isArray(queryRecord.fields) || queryRecord.fields.length === 0 || queryRecord.fields.length > 8) {
+  const knownDatasourceIds = new Set(
+    input.dashboardContext.dataSources?.map((datasource) => datasource.id).filter((id): id is string => Boolean(id)) ?? [],
+  );
+  if (knownDatasourceIds.size > 0 && !knownDatasourceIds.has(datasourceLuid)) {
     return undefined;
   }
 
-  const limit = typeof args.limit === "number" ? Math.min(Math.max(Math.floor(args.limit), 1), 100) : 50;
+  const queryRecord = query as Record<string, unknown>;
+  const fields = Array.isArray(queryRecord.fields) ? queryRecord.fields : undefined;
+  if (!fields || fields.length === 0 || fields.length > Math.max(config.queryDatasourceMaxFields, 1)) {
+    return undefined;
+  }
+
+  if (!containsAggregateField(fields)) {
+    return undefined;
+  }
+
+  if (containsSensitiveFieldName(fields) || containsSensitiveFieldNameFromFilters(queryRecord.filters)) {
+    return undefined;
+  }
+
+  const limit = typeof args.limit === "number" ? Math.floor(args.limit) : Math.floor(config.queryDatasourceMaxLimit);
+  if (!Number.isFinite(limit) || limit <= 0) {
+    return undefined;
+  }
+
   return {
     datasourceLuid,
     query: queryRecord,
-    limit,
+    limit: Math.min(limit, config.queryDatasourceMaxLimit),
   };
+}
+
+function containsAggregateField(fields: unknown[]): boolean {
+  return fields.some((field) => {
+    if (!field || typeof field !== "object" || Array.isArray(field)) {
+      return false;
+    }
+
+    const fn = readString((field as Record<string, unknown>).function)?.toUpperCase();
+    if (!fn) {
+      return false;
+    }
+
+    return [
+      "SUM",
+      "AVG",
+      "MEDIAN",
+      "COUNT",
+      "COUNTD",
+      "MIN",
+      "MAX",
+      "STDEV",
+      "VAR",
+      "YEAR",
+      "QUARTER",
+      "MONTH",
+      "WEEK",
+      "DAY",
+      "TRUNC_YEAR",
+      "TRUNC_QUARTER",
+      "TRUNC_MONTH",
+      "TRUNC_WEEK",
+      "TRUNC_DAY",
+      "AGG",
+    ].includes(fn);
+  });
+}
+
+function containsSensitiveFieldName(fields: unknown[]): boolean {
+  const sensitivePattern = /(email|e-mail|phone|tel|mobile|address|ssn|social|credit|card|token|secret|password|cookie|auth|user\s?id|employee\s?id)/i;
+  return fields.some((field) => {
+    if (!field || typeof field !== "object" || Array.isArray(field)) {
+      return false;
+    }
+
+    const caption = readString((field as Record<string, unknown>).fieldCaption);
+    return Boolean(caption && sensitivePattern.test(caption));
+  });
+}
+
+function containsSensitiveFieldNameFromFilters(filters: unknown): boolean {
+  if (!Array.isArray(filters)) {
+    return false;
+  }
+
+  const sensitivePattern = /(email|phone|address|ssn|credit|card|token|secret|password|cookie|auth)/i;
+  return filters.some((filter) => {
+    if (!filter || typeof filter !== "object" || Array.isArray(filter)) {
+      return false;
+    }
+
+    const field = (filter as Record<string, unknown>).field;
+    if (!field || typeof field !== "object" || Array.isArray(field)) {
+      return false;
+    }
+
+    const caption = readString((field as Record<string, unknown>).fieldCaption);
+    return Boolean(caption && sensitivePattern.test(caption));
+  });
 }
 
 function isSafeToolArgumentValue(value: unknown, depth: number): boolean {
@@ -549,7 +797,7 @@ function isSafeToolArgumentValue(value: unknown, depth: number): boolean {
 
 function getDefaultToolCandidates(tools: McpTool[], input: GetAdditionalContextInput): McpTool[] {
   const preferredNames = isDatasourceAnalysisQuestion(input.question)
-    ? ["list-datasources"]
+    ? ["list-datasources", "get-datasource-metadata"]
     : input.dashboardContext.workbookName
       ? ["list-workbooks", "get-workbook", "list-views", "list-datasources", "search-content"]
       : ["list-views", "search-content", "list-workbooks", "list-datasources"];
@@ -564,7 +812,7 @@ function getDefaultToolCandidates(tools: McpTool[], input: GetAdditionalContextI
   }
 
   return tools
-    .filter((tool) => /list.*workbook|list.*view|list.*datasource|search.*content/i.test(tool.name))
+    .filter((tool) => /list.*workbook|list.*view|list.*datasource|get.*datasource.*metadata|search.*content/i.test(tool.name))
     .sort((left, right) => getToolPriority(left.name) - getToolPriority(right.name));
 }
 
@@ -581,6 +829,9 @@ function getToolPriority(toolName: string): number {
   if (toolName === "list-datasources") {
     return 40;
   }
+  if (toolName === "get-datasource-metadata") {
+    return 45;
+  }
   if (toolName === "search-content") {
     return 50;
   }
@@ -588,7 +839,7 @@ function getToolPriority(toolName: string): number {
 }
 
 function shouldReplanForDatasourceQuery(
-  input: GetAdditionalContextInput,
+  intent: ClassifiedQuestionIntent,
   toolResults: TableauMcpToolResultSummary[],
   calledToolNames: Set<string>,
 ): boolean {
@@ -596,19 +847,17 @@ function shouldReplanForDatasourceQuery(
     return false;
   }
 
-  if (!isDatasourceAnalysisQuestion(input.question)) {
+  if (intent.intent !== "data_analysis") {
     return false;
   }
 
   return toolResults.some(
-    (result) =>
-      result.status === "success" &&
-      ["list-datasources", "get-datasource-metadata", "query-datasource"].includes(result.toolName),
+    (result) => result.status === "success" && ["list-datasources", "get-datasource-metadata"].includes(result.toolName),
   );
 }
 
 function isDataQuestion(question: string): boolean {
-  return /view|views|count|sum|average|avg|rank|ranking|top|bottom|trend|month|week|day|date|record|row|data|datasource|データ|件数|合計|平均|ランキング|上位|下位|推移|月|週|日|ビュー|最も|多い|少ない/i.test(
+  return /view|views|count|sum|average|avg|rank|ranking|top|bottom|trend|month|week|day|date|record|row|data|datasource|データ|集計|ランキング|推移|日|週|月/i.test(
     question,
   );
 }
@@ -616,12 +865,123 @@ function isDataQuestion(question: string): boolean {
 function isDatasourceAnalysisQuestion(question: string): boolean {
   return (
     isDataQuestion(question) ||
-    /データ|分析|集計|件数|合計|平均|ランキング|上位|下位|傾向|推移|月|週|日|ビュー|閲覧|最も|多い|少ない/i.test(
-      question,
-    )
+    /metadata|field|schema|column|datasource|フィールド|データソース|メタデータ|列|項目|値|傾向/i.test(question)
   );
 }
 
+async function executeToolWithCache(input: {
+  client: Client;
+  toolName: string;
+  args: Record<string, unknown>;
+  tableauSubject: string | undefined;
+  timeoutMs: number;
+}): Promise<{ result: unknown; cacheHit: boolean }> {
+  const config = getConfig().tableau.mcp;
+  if (!config.metadataCacheEnabled || !isCacheableToolName(input.toolName)) {
+    const result = await input.client.callTool(
+      {
+        name: input.toolName,
+        arguments: input.args,
+      },
+      undefined,
+      { timeout: input.timeoutMs },
+    );
+    return { result, cacheHit: false };
+  }
+
+  pruneMetadataToolCache();
+  const cacheKey = buildCacheKey(input.tableauSubject, input.toolName, input.args);
+  const cached = metadataToolCache.get(cacheKey);
+  if (cached && cached.expiresAt > Date.now()) {
+    return { result: cached.result, cacheHit: true };
+  }
+
+  const result = await input.client.callTool(
+    {
+      name: input.toolName,
+      arguments: input.args,
+    },
+    undefined,
+    { timeout: input.timeoutMs },
+  );
+  metadataToolCache.set(cacheKey, {
+    result,
+    expiresAt: Date.now() + Math.max(config.metadataCacheTtlMs, 1000),
+  });
+  return { result, cacheHit: false };
+}
+
+function isCacheableToolName(toolName: string): boolean {
+  return ["list-workbooks", "get-workbook", "list-views", "list-datasources", "get-datasource-metadata"].includes(toolName);
+}
+
+function pruneMetadataToolCache(): void {
+  const now = Date.now();
+  for (const [key, entry] of metadataToolCache.entries()) {
+    if (entry.expiresAt <= now) {
+      metadataToolCache.delete(key);
+    }
+  }
+}
+
+function buildCacheKey(subject: string | undefined, toolName: string, args: Record<string, unknown>): string {
+  const raw = `${subject ?? "anonymous"}|${toolName}|${stableStringify(args)}`;
+  return raw.length > TOOL_CACHE_KEY_MAX_LENGTH ? raw.slice(0, TOOL_CACHE_KEY_MAX_LENGTH) : raw;
+}
+
+function stableStringify(value: unknown): string {
+  if (!value || typeof value !== "object") {
+    return JSON.stringify(value);
+  }
+
+  if (Array.isArray(value)) {
+    return `[${value.map((item) => stableStringify(item)).join(",")}]`;
+  }
+
+  const record = value as Record<string, unknown>;
+  const keys = Object.keys(record).sort();
+  return `{${keys.map((key) => `${JSON.stringify(key)}:${stableStringify(record[key])}`).join(",")}}`;
+}
+
+function summarizeToolArguments(args: Record<string, unknown>): Record<string, unknown> {
+  return Object.fromEntries(
+    Object.entries(args)
+      .slice(0, 12)
+      .map(([key, value]) => {
+        if (typeof value === "string") {
+          return [key, value.slice(0, 120)];
+        }
+
+        if (typeof value === "number" || typeof value === "boolean" || value === null) {
+          return [key, value];
+        }
+
+        if (Array.isArray(value)) {
+          return [key, `array(${value.length})`];
+        }
+
+        if (value && typeof value === "object") {
+          return [key, `object(${Object.keys(value as Record<string, unknown>).length})`];
+        }
+
+        return [key, String(value)];
+      }),
+  );
+}
+
+function summarizeToolResultPreview(result: unknown): string {
+  const text = extractTextFromToolResult(result) || JSON.stringify(describeValueShape(result));
+  const compact = text.replace(/\s+/g, " ").trim();
+  return compact.length > TOOL_RESULT_PREVIEW_LIMIT ? `${compact.slice(0, TOOL_RESULT_PREVIEW_LIMIT)}...` : compact;
+}
+
+function summarizeErrorMessage(error: unknown): string {
+  if (!(error instanceof Error)) {
+    return "Tool call failed.";
+  }
+
+  return error.message?.slice(0, 220) || "Tool call failed.";
+}
 function buildFollowUpToolSelection(
   completedToolName: string,
   result: unknown,
@@ -815,7 +1175,8 @@ function logMcpToolResultDebug(toolName: string, result: unknown, enabled: boole
   logInfo("tableau.mcp.tool.result_debug", {
     toolName,
     resultShape: describeValueShape(record),
-    textSnippet: sanitizeDebugText(text || JSON.stringify(result)).slice(0, 1800),
+    textLength: text.length,
+    textHash: safeHash(text),
   });
 }
 
@@ -844,17 +1205,8 @@ function describeValueShape(value: unknown): unknown {
   };
 }
 
-function sanitizeDebugText(value: string): string {
-  return value
-    .replace(/"token"\s*:\s*"[^"]*"/gi, '"token":"[REDACTED]"')
-    .replace(/"secret[^"]*"\s*:\s*"[^"]*"/gi, '"secret":"[REDACTED]"')
-    .replace(/"password"\s*:\s*"[^"]*"/gi, '"password":"[REDACTED]"')
-    .replace(/"jwt"\s*:\s*"[^"]*"/gi, '"jwt":"[REDACTED]"')
-    .replace(/"authorization"\s*:\s*"[^"]*"/gi, '"authorization":"[REDACTED]"');
-}
-
 function summarizeToolResult(result: unknown): string {
-  const text = extractTextFromToolResult(result) || JSON.stringify(result);
+  const text = (extractTextFromToolResult(result) || JSON.stringify(describeValueShape(result))).replace(/\s+/g, " ").trim();
   return text.length > TOOL_RESULT_SUMMARY_LIMIT ? `${text.slice(0, TOOL_RESULT_SUMMARY_LIMIT)}...` : text;
 }
 
@@ -1282,3 +1634,4 @@ function sanitizeDashboardContext(input: GetAdditionalContextInput["dashboardCon
 function trimTrailingSlash(value: string): string {
   return value.replace(/\/$/, "");
 }
+

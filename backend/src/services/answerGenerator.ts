@@ -39,6 +39,7 @@ export class BedrockAnswerGenerator implements AnswerGenerator {
     additionalContext: TableauAdditionalContext;
   }): Promise<string> {
     const config = getConfig().model.bedrock;
+    const startedAt = Date.now();
 
     try {
       logInfo("answer.bedrock.started", {
@@ -73,6 +74,7 @@ export class BedrockAnswerGenerator implements AnswerGenerator {
         logInfo("answer.bedrock.empty_response", {
           region: config.region,
           modelId: config.modelId,
+          durationMs: Date.now() - startedAt,
         });
         return buildDeterministicAnswer(input.request, input.additionalContext);
       }
@@ -89,6 +91,7 @@ export class BedrockAnswerGenerator implements AnswerGenerator {
           maxOutputTokens: config.maxOutputTokens,
           answerLength: answer.length,
           outputTokens: response.usage?.outputTokens,
+          durationMs: Date.now() - startedAt,
         });
       }
 
@@ -100,10 +103,14 @@ export class BedrockAnswerGenerator implements AnswerGenerator {
         inputTokens: response.usage?.inputTokens,
         outputTokens: response.usage?.outputTokens,
         totalTokens: response.usage?.totalTokens,
+        durationMs: Date.now() - startedAt,
       });
       return finalAnswer;
     } catch (error) {
-      logError("answer.bedrock.failed", safeErrorDetails(error));
+      logError("answer.bedrock.failed", {
+        ...safeErrorDetails(error),
+        durationMs: Date.now() - startedAt,
+      });
       return [
         "Bedrockでの回答生成に失敗したため、取得済みのTableauコンテキストだけで回答します。",
         "",

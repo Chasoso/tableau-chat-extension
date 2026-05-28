@@ -126,11 +126,40 @@ For Lambda-local Tableau MCP:
 - `TABLEAU_MCP_DEBUG_LOG_RESULTS=false`: set to `true` only while diagnosing MCP result shapes in CloudWatch.
 - `TABLEAU_MCP_TOOL_PLANNING_ENABLED=false`: set to `true` to let Bedrock create a small JSON MCP tool plan before tool execution.
 - `TABLEAU_MCP_PLANNER_MAX_OUTPUT_TOKENS=600`: token cap for the planning call.
+- `TABLEAU_MCP_METADATA_CACHE_ENABLED=true`: enables short-lived in-memory metadata caching per user boundary.
+- `TABLEAU_MCP_METADATA_CACHE_TTL_MS=30000`: metadata cache TTL in milliseconds.
+- `TABLEAU_MCP_QUERY_MAX_LIMIT=50`: hard cap for `query-datasource` limit.
+- `TABLEAU_MCP_QUERY_MAX_FIELDS=6`: hard cap for `query-datasource` field count.
 - `TABLEAU_MCP_COMMAND` and `TABLEAU_MCP_ARGS`: optional override. If omitted, Lambda runs the installed `@tableau/mcp-server` package with Node.js.
+
+Recommended limited-agent settings:
+
+```bash
+TABLEAU_CONTEXT_PROVIDER=mcp
+TABLEAU_MCP_TRANSPORT=stdio
+TABLEAU_MCP_AUTH_MODE=direct-trust
+TABLEAU_MCP_TOOL_PLANNING_ENABLED=true
+TABLEAU_MCP_PLANNER_MAX_OUTPUT_TOKENS=400
+TABLEAU_MCP_MAX_TOOL_CALLS=5
+TABLEAU_MCP_ALLOWED_TOOLS=list-workbooks,get-workbook,list-views,list-datasources,get-datasource-metadata,search-content,query-datasource
+TABLEAU_MCP_DEBUG_LOG_RESULTS=false
+TABLEAU_MCP_METADATA_CACHE_ENABLED=true
+TABLEAU_MCP_METADATA_CACHE_TTL_MS=30000
+TABLEAU_MCP_QUERY_MAX_LIMIT=50
+TABLEAU_MCP_QUERY_MAX_FIELDS=6
+```
+
+Use `query-datasource` only with the safety guardrails enabled. The backend blocks row-level broad queries and enforces aggregated queries with small limits.
 
 The MCP child process receives Connected App credentials only through backend environment variables. These values are not logged.
 
-When MCP tool planning is enabled, the backend asks Bedrock to choose the smallest useful MCP tool set, validates it against an allowlist and schema checks, executes only approved tools, and then sends the resulting context to the final answer generator. Data-oriented questions may trigger one follow-up planning pass after datasource metadata is observed. Keep planner output small and avoid broad raw-data queries.
+When MCP tool planning is enabled, the backend runs as a limited agent:
+- It first classifies the user question intent.
+- It sets intent-specific tool-call limits.
+- It plans only allowlisted tools.
+- It performs at most one follow-up replan for data analysis questions.
+- It stores MCP observations (purpose, args summary, result summary, errors) and passes them to final answer generation.
+- It blocks unsafe `query-datasource` calls (broad/non-aggregate/sensitive-field style queries).
 
 ### Bedrock Settings
 

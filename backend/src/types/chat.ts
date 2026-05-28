@@ -27,6 +27,8 @@ export type ChatResponse = {
   debug?: {
     usedMock: boolean;
     tableauContextProvider: TableauAdditionalContext["provider"];
+    mcpExecutionDebug?: TableauAdditionalContext["mcpExecutionDebug"];
+    mcpObservations?: TableauAdditionalContext["mcpObservations"];
   };
 };
 

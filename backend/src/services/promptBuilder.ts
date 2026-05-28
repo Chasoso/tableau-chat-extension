@@ -11,13 +11,24 @@ export function buildPrompt(
   recentHistory: ChatHistoryRecord[] = [],
 ): string {
   const compressedContext = compressDashboardContext(request, additionalContext);
+  const observationCount = additionalContext.mcpObservations?.length ?? 0;
+  const executionDebug = additionalContext.mcpExecutionDebug;
 
   return [
     "You are a Tableau dashboard assistant.",
-    "Answer using only the provided dashboard metadata and additional Tableau context.",
+    "Answer directly to the user's question using dashboard context and MCP observations.",
+    "Use evidence from the provided context. Do not make claims beyond obtained data.",
+    "If information is missing, explain what is missing instead of guessing.",
     "Do not infer confidential row-level details that were not provided.",
-    "If the answer is not available from the context, say so clearly.",
+    "Avoid generic Tableau theory unless the user explicitly asks how-to guidance.",
+    "When answering, clarify scope with phrases like 'In this dashboard context' or 'From retrieved Tableau Cloud information'.",
+    observationCount
+      ? "You received MCP observations. Prioritize them as evidence over assumptions."
+      : "No MCP observations were collected. Rely only on dashboard context and clearly mention limitations.",
     "Respond in the same language as the user's question when practical.",
+    executionDebug
+      ? `Execution summary: intent=${executionDebug.intent}, needsMcp=${String(executionDebug.needsMcp)}, toolCalls=${executionDebug.toolCallCount}, replanUsed=${String(executionDebug.replanUsed)}`
+      : "",
     recentHistory.length
       ? [
           "Recent conversation in the same authenticated session:",

@@ -11,10 +11,14 @@ export type CompressedDashboardContext = {
   parameters: string[];
   dataSources: string[];
   provider: TableauAdditionalContext["provider"];
+  intent: string;
+  answerableFromDashboardContext: boolean;
+  needsMcp: boolean;
   workbookMetadata: string;
   additionalMetadata: string;
   mcpTools: string[];
   mcpToolResults: string[];
+  mcpObservations: string[];
   warnings: string[];
 };
 
@@ -41,6 +45,9 @@ export function compressDashboardContext(
       ...extractDataSourceNames(additionalContext.datasources),
     ].filter(unique),
     provider: additionalContext.provider,
+    intent: additionalContext.mcpExecutionDebug?.intent ?? "unknown",
+    answerableFromDashboardContext: additionalContext.mcpExecutionDebug?.answerableFromDashboardContext ?? false,
+    needsMcp: additionalContext.mcpExecutionDebug?.needsMcp ?? false,
     workbookMetadata: safeJsonSnippet(additionalContext.workbook, 1600),
     additionalMetadata: safeJsonSnippet(additionalContext.metadata, 2400),
     mcpTools: additionalContext.mcpTools?.map((tool) => tool.name).slice(0, 20) ?? [],
@@ -48,6 +55,12 @@ export function compressDashboardContext(
       additionalContext.mcpToolResults?.map((result) => {
         const prefix = `${result.toolName}: ${result.status}`;
         return result.summary ? `${prefix} - ${result.summary}` : result.warning ? `${prefix} - ${result.warning}` : prefix;
+      }) ?? [],
+    mcpObservations:
+      additionalContext.mcpObservations?.map((observation) => {
+        const status = observation.success ? "success" : "failed";
+        const reason = observation.resultSummary || observation.errorMessage || "no details";
+        return `${observation.tool} (${status}) purpose=${observation.purpose}; ${reason}`.slice(0, 420);
       }) ?? [],
     warnings: additionalContext.warnings ?? [],
   };
@@ -62,10 +75,14 @@ export function renderCompressedContext(context: CompressedDashboardContext): st
     `Parameters: ${context.parameters.join("; ") || "none"}`,
     `Data sources: ${context.dataSources.join(", ") || "not available"}`,
     `Additional context provider: ${context.provider}`,
+    `Question intent: ${context.intent}`,
+    `Answerable from dashboard context: ${String(context.answerableFromDashboardContext)}`,
+    `Needs MCP: ${String(context.needsMcp)}`,
     `Workbook metadata: ${context.workbookMetadata || "not available"}`,
     `Additional metadata: ${context.additionalMetadata || "not available"}`,
     `MCP tools: ${context.mcpTools.join(", ") || "not available"}`,
     `MCP tool results: ${context.mcpToolResults.join("\n") || "not available"}`,
+    `MCP observations: ${context.mcpObservations.join("\n") || "not available"}`,
     `Warnings: ${context.warnings.join("; ") || "none"}`,
   ].join("\n");
 }

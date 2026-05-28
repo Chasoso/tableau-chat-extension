@@ -26,6 +26,10 @@ Configuration:
 - `TABLEAU_MCP_MAX_TOOL_CALLS=3`
 - `TABLEAU_MCP_TOOL_PLANNING_ENABLED=false`: set to `true` to let Bedrock plan MCP tool calls from the user's question.
 - `TABLEAU_MCP_PLANNER_MAX_OUTPUT_TOKENS=600`
+- `TABLEAU_MCP_METADATA_CACHE_ENABLED=true`
+- `TABLEAU_MCP_METADATA_CACHE_TTL_MS=30000`
+- `TABLEAU_MCP_QUERY_MAX_LIMIT=50`
+- `TABLEAU_MCP_QUERY_MAX_FIELDS=6`
 
 If `TABLEAU_MCP_COMMAND` and `TABLEAU_MCP_ARGS` are omitted, the backend resolves the installed `@tableau/mcp-server` package and runs it with the Lambda Node.js runtime.
 
@@ -58,11 +62,23 @@ Avoid using a service-account PAT for all users in production. If a PAT is used 
 
 The provider supports an explicit `TABLEAU_MCP_ALLOWED_TOOLS` allowlist. This should be used in production. Without an allowlist, the PoC only attempts a small number of metadata-oriented tools and skips tools whose required arguments cannot be inferred safely.
 
-### LLM-Planned Tool Execution
+### LLM-Planned Tool Execution (Limited Agent)
 
 The next MCP step is now implemented behind `TABLEAU_MCP_TOOL_PLANNING_ENABLED=true`. In this mode, the backend asks Bedrock for a compact JSON plan such as `list-datasources`, `get-datasource-metadata`, or `query-datasource` before it executes MCP tools.
 
-The plan is treated as untrusted input. The backend intersects requested tools with `TABLEAU_MCP_ALLOWED_TOOLS` or the built-in PoC allowlist, validates required arguments, blocks unsafe `query-datasource` calls, and logs only tool names, counts, and sanitized diagnostics.
+The planner operates with an explicit question intent classification:
+
+- `dashboard_explanation`
+- `filter_or_selection_state`
+- `metadata_lookup`
+- `data_analysis`
+- `content_search`
+- `how_to_use_tableau`
+- `unsupported`
+
+The plan is treated as untrusted input. The backend intersects requested tools with `TABLEAU_MCP_ALLOWED_TOOLS` or the built-in PoC allowlist, validates required arguments, applies intent-specific max tool call limits, allows at most one replan for data-analysis flows, blocks unsafe `query-datasource` calls, and logs only sanitized diagnostics.
+
+Observed tool outputs are recorded as MCP observations (`tool`, `purpose`, `argsSummary`, `success`, `resultSummary`, `errorMessage`) and are passed to final answer generation so the response can clearly state evidence scope and missing information.
 
 Cost note: tool planning adds a Bedrock planning call, and data-oriented questions may use one follow-up planning pass after datasource metadata is observed. Keep planner responses short with `TABLEAU_MCP_PLANNER_MAX_OUTPUT_TOKENS`, use aggregate queries, and raise `TABLEAU_MCP_MAX_TOOL_CALLS` only when the question genuinely requires datasource metadata or query execution.
 

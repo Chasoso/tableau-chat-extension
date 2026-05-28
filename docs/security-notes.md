@@ -42,8 +42,10 @@ For production:
 - Use `TABLEAU_MCP_ALLOWED_TOOLS` to restrict callable tools.
 - Keep MCP timeouts short.
 - Log tool names and high-level status only.
-- Do not log tool payloads if they may contain business data.
+- Do not log tool payloads or row-level query results.
 - Confirm that MCP authentication enforces the same Tableau user permission boundary as direct Tableau API calls.
+- Keep metadata cache scoped by user permission boundary (`tableauSubject` or equivalent auth scope) and use short TTL.
+- For `query-datasource`, enforce aggregate-only patterns, small limits, and sensitive-field blocking.
 
 ### Bedrock and LLM Data Minimization
 

@@ -38,6 +38,10 @@ export type AppConfig = {
       debugLogResults: boolean;
       toolPlanningEnabled: boolean;
       plannerMaxOutputTokens: number;
+      metadataCacheEnabled: boolean;
+      metadataCacheTtlMs: number;
+      queryDatasourceMaxLimit: number;
+      queryDatasourceMaxFields: number;
     };
   };
 };
@@ -83,6 +87,10 @@ export function getConfig(): AppConfig {
         debugLogResults: process.env.TABLEAU_MCP_DEBUG_LOG_RESULTS === "true",
         toolPlanningEnabled: process.env.TABLEAU_MCP_TOOL_PLANNING_ENABLED === "true",
         plannerMaxOutputTokens: Number(process.env.TABLEAU_MCP_PLANNER_MAX_OUTPUT_TOKENS ?? 600),
+        metadataCacheEnabled: process.env.TABLEAU_MCP_METADATA_CACHE_ENABLED !== "false",
+        metadataCacheTtlMs: Number(process.env.TABLEAU_MCP_METADATA_CACHE_TTL_MS ?? 30000),
+        queryDatasourceMaxLimit: Number(process.env.TABLEAU_MCP_QUERY_MAX_LIMIT ?? 50),
+        queryDatasourceMaxFields: Number(process.env.TABLEAU_MCP_QUERY_MAX_FIELDS ?? 6),
       },
     },
   };
