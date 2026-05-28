@@ -78,6 +78,10 @@ The planner operates with an explicit question intent classification:
 
 The plan is treated as untrusted input. The backend intersects requested tools with `TABLEAU_MCP_ALLOWED_TOOLS` or the built-in PoC allowlist, validates required arguments, applies intent-specific max tool call limits, allows at most one replan for data-analysis flows, blocks unsafe `query-datasource` calls, and logs only sanitized diagnostics.
 
+For observability, logs should distinguish allowlist source:
+- `allowlistSource="configured"` when `TABLEAU_MCP_ALLOWED_TOOLS` is explicitly set
+- `allowlistSource="default"` when built-in default allowlist is used
+
 Observed tool outputs are recorded as MCP observations (`tool`, `purpose`, `argsSummary`, `success`, `resultSummary`, `errorMessage`) and are passed to final answer generation so the response can clearly state evidence scope and missing information.
 
 Cost note: tool planning adds a Bedrock planning call, and data-oriented questions may use one follow-up planning pass after datasource metadata is observed. Keep planner responses short with `TABLEAU_MCP_PLANNER_MAX_OUTPUT_TOKENS`, use aggregate queries, and raise `TABLEAU_MCP_MAX_TOOL_CALLS` only when the question genuinely requires datasource metadata or query execution.

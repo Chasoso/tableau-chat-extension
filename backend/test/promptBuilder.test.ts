@@ -25,6 +25,7 @@ describe("buildPrompt", () => {
     expect(prompt).toContain("Executive Workbook");
     expect(prompt).toContain("Sales Trend");
     expect(prompt).toContain("Region: West");
+    expect(prompt).toContain("Do not provide long HTTP status explanations");
   });
 
   it("includes recent session history when provided", () => {

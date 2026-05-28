@@ -56,7 +56,7 @@ export class ChatService {
       messageId,
       datasourceCount: additionalContext.datasources?.length ?? 0,
       hasWorkbook: Boolean(additionalContext.workbook),
-      hasMetadata: Boolean(additionalContext.metadata),
+      hasMetadata: hasResolvedMetadata(additionalContext),
       warningCount: additionalContext.warnings?.length ?? 0,
     });
     const prompt = buildPrompt(request, additionalContext, recentHistory);
@@ -144,6 +144,21 @@ export class ChatService {
       },
     };
   }
+}
+
+function hasResolvedMetadata(additionalContext: Awaited<ReturnType<TableauContextProvider["getAdditionalContext"]>>): boolean {
+  if (additionalContext.provider === "tableau-mcp") {
+    const metadata = additionalContext.metadata as Record<string, unknown> | undefined;
+    if (typeof metadata?.hasMetadata === "boolean") {
+      return metadata.hasMetadata;
+    }
+
+    return additionalContext.mcpToolResults?.some(
+      (result) => result.toolName === "get-datasource-metadata" && result.status === "success",
+    ) ?? false;
+  }
+
+  return Boolean(additionalContext.metadata);
 }
 
 function buildDashboardContextPatch(

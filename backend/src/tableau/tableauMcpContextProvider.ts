@@ -46,6 +46,20 @@ type CacheEntry = {
 
 const metadataToolCache = new Map<string, CacheEntry>();
 
+export type ToolPreconditionResult = {
+  ok: boolean;
+  reason?: string;
+  recoverable?: boolean;
+  suggestedTools?: string[];
+};
+
+type McpExecutionState = {
+  intent: ClassifiedQuestionIntent;
+  dashboardContext: GetAdditionalContextInput["dashboardContext"];
+  calledToolNames: Set<string>;
+  executedToolResults: TableauMcpToolResultSummary[];
+};
+
 export class TableauMcpContextProvider implements TableauContextProvider {
   readonly name = "tableau-mcp" as const;
 
@@ -123,6 +137,8 @@ export class TableauMcpContextProvider implements TableauContextProvider {
       let planningTimeMs = initialToolSelection.planningTimeMs;
       const executionStartedAt = Date.now();
       const blockedToolNames = [...initialToolSelection.blockedTools];
+      const recoverablePreconditionSuggestions = new Set<string>();
+      let hasRecoverablePreconditionFailure = false;
       let fallbackReason: string | undefined;
 
       logInfo("tableau.mcp.intent.classified", {
@@ -141,7 +157,13 @@ export class TableauMcpContextProvider implements TableauContextProvider {
         if (!toolQueue.length) {
           if (
             !dataReplanAttempted &&
-            shouldReplanForDatasourceQuery(intent, toolResults, calledToolNames) &&
+            shouldReplanForDatasourceQuery(
+              intent,
+              toolResults,
+              calledToolNames,
+              hasRecoverablePreconditionFailure,
+              recoverablePreconditionSuggestions,
+            ) &&
             executedToolCallCount < effectiveMaxToolCalls
           ) {
             dataReplanAttempted = true;
@@ -149,6 +171,7 @@ export class TableauMcpContextProvider implements TableauContextProvider {
             const replannedTools = await selectPlannedTools(tools, mcpConfig.allowedTools, input, intent, effectiveMaxToolCalls, {
               observations: toolResults,
               calledToolNames,
+              preferredRecoveryTools: [...recoverablePreconditionSuggestions],
             });
             planningTimeMs += Date.now() - replanStartedAt;
             blockedToolNames.push(...replannedTools.blockedTools);
@@ -184,6 +207,37 @@ export class TableauMcpContextProvider implements TableauContextProvider {
           continue;
         }
 
+        const precondition = checkToolPreconditions(selection.tool.name, selection.arguments, {
+          intent,
+          dashboardContext: input.dashboardContext,
+          calledToolNames,
+          executedToolResults: toolResults,
+        });
+        if (!precondition.ok) {
+          const warning = precondition.reason ?? "Tool precondition failed.";
+          blockedToolNames.push(selection.tool.name);
+          if (precondition.recoverable) {
+            hasRecoverablePreconditionFailure = true;
+            for (const suggestedToolName of precondition.suggestedTools ?? []) {
+              recoverablePreconditionSuggestions.add(suggestedToolName);
+            }
+          }
+          toolResults.push({
+            toolName: selection.tool.name,
+            status: "skipped",
+            warning,
+          });
+          observations.push({
+            tool: selection.tool.name,
+            purpose: selection.reason ?? "Collect Tableau Cloud context",
+            argsSummary: summarizeToolArguments(selection.arguments),
+            success: false,
+            resultSummary: "",
+            errorMessage: warning,
+          });
+          continue;
+        }
+
         const toolStartedAt = Date.now();
         try {
           const execution = await executeToolWithCache({
@@ -194,6 +248,45 @@ export class TableauMcpContextProvider implements TableauContextProvider {
             timeoutMs: mcpConfig.timeoutMs,
           });
           const result = execution.result;
+          if (isMcpErrorResult(result)) {
+            const errorCategory = classifyMcpErrorCategory(result);
+            const errorMessage = buildMcpErrorMessage(result, errorCategory);
+            toolResults.push({
+              toolName: selection.tool.name,
+              status: "failed",
+              warning: errorMessage,
+            });
+            rawToolResults.push({
+              toolName: selection.tool.name,
+              result,
+            });
+            observations.push({
+              tool: selection.tool.name,
+              purpose: selection.reason ?? "Collect Tableau Cloud context",
+              argsSummary: summarizeToolArguments(selection.arguments),
+              success: false,
+              resultSummary: errorCategory,
+              errorMessage,
+              rawResultPreview: summarizeToolResultPreview(result),
+            });
+            calledToolNames.add(selection.tool.name);
+            executedToolCallCount += 1;
+            const errorText = extractTextFromToolResult(result);
+            logWarn("tableau.mcp.tool.error_result", {
+              toolName: selection.tool.name,
+              durationMs: Date.now() - toolStartedAt,
+              errorCategory,
+              textLength: errorText.length,
+              textHash: safeHash(errorText),
+            });
+            if (intent.intent === "metadata_lookup" && selection.tool.name === "get-datasource-metadata") {
+              hasRecoverablePreconditionFailure = true;
+              for (const toolName of ["list-datasources", "search-content", "list-views", "get-workbook", "list-workbooks"]) {
+                recoverablePreconditionSuggestions.add(toolName);
+              }
+            }
+            continue;
+          }
           const resultSummary = summarizeToolResult(result);
           toolResults.push({
             toolName: selection.tool.name,
@@ -245,6 +338,12 @@ export class TableauMcpContextProvider implements TableauContextProvider {
             resultSummary: "",
             errorMessage,
           });
+          if (intent.intent === "metadata_lookup" && selection.tool.name === "get-datasource-metadata") {
+            hasRecoverablePreconditionFailure = true;
+            for (const toolName of ["list-datasources", "search-content", "list-views", "get-workbook", "list-workbooks"]) {
+              recoverablePreconditionSuggestions.add(toolName);
+            }
+          }
         }
       }
 
@@ -260,9 +359,17 @@ export class TableauMcpContextProvider implements TableauContextProvider {
       });
       const extractedWorkbook = extractWorkbookFromToolResults(toolResults, input);
       const extractedDatasources = extractDatasourcesFromRawToolResults(rawToolResults, input);
+      const metadataCallSucceeded = toolResults.some(
+        (result) => result.toolName === "get-datasource-metadata" && result.status === "success",
+      );
+      const hasMetadata = metadataCallSucceeded;
+      if (intent.intent === "metadata_lookup" && !hasMetadata && !fallbackReason) {
+        fallbackReason = "Datasource metadata could not be resolved from current dashboard/workbook context.";
+      }
       logInfo("tableau.mcp.datasources.extracted", {
         datasourceCount: extractedDatasources.length,
         matchedKnownDatasource: hasDatasourceMatchingDashboardContext(extractedDatasources, input),
+        hasMetadata,
       });
       logInfo("tableau.mcp.workbook.extracted", {
         workbookNamePresent: Boolean(extractedWorkbook?.name),
@@ -301,6 +408,7 @@ export class TableauMcpContextProvider implements TableauContextProvider {
           workbookExtracted: Boolean(extractedWorkbook),
           toolPlanningEnabled: mcpConfig.toolPlanningEnabled,
           intent: intent.intent,
+          hasMetadata,
         },
         mcpTools: toolSummaries,
         mcpToolResults: toolResults,
@@ -451,6 +559,14 @@ async function selectInitialTools(
   reasonBrief?: string;
   planningTimeMs: number;
 }> {
+  const ruleBased = buildRuleBasedInitialSelections(tools, allowedTools, input, intent, maxToolCalls);
+  if (ruleBased.selections.length > 0) {
+    return {
+      ...ruleBased,
+      planningTimeMs: 0,
+    };
+  }
+
   const plannerStartedAt = Date.now();
   const plannedSelections = await selectPlannedTools(tools, allowedTools, input, intent, maxToolCalls);
   const planningTimeMs = Date.now() - plannerStartedAt;
@@ -466,7 +582,7 @@ async function selectInitialTools(
   logInfo("tableau.mcp.tools.selected", {
     availableToolCount: tools.length,
     selectedTools: candidates.map((tool) => tool.name),
-    allowedToolsConfigured: allowedTools.length > 0,
+    allowlistSource: getAllowlistSource(allowedTools),
   });
 
   return {
@@ -493,6 +609,133 @@ async function selectInitialTools(
   };
 }
 
+function buildRuleBasedInitialSelections(
+  tools: McpTool[],
+  allowedTools: string[],
+  input: GetAdditionalContextInput,
+  intent: ClassifiedQuestionIntent,
+  maxToolCalls: number,
+): {
+  selections: SelectedTool[];
+  blockedTools: string[];
+  plannedTools: string[];
+  reasonBrief?: string;
+} {
+  if (intent.intent !== "metadata_lookup" || maxToolCalls <= 0) {
+    return {
+      selections: [],
+      blockedTools: [],
+      plannedTools: [],
+    };
+  }
+
+  const allowedToolNames = resolveAllowedToolNames(tools, allowedTools);
+  const knownDatasourceWithId = input.dashboardContext.dataSources?.find((datasource) => Boolean(readString(datasource.id)));
+  const knownDatasourceName = chooseKnownDatasourceName(input);
+  const selections: SelectedTool[] = [];
+  const plannedTools: string[] = [];
+  const blockedTools: string[] = [];
+
+  if (knownDatasourceWithId && allowedToolNames.includes("get-datasource-metadata")) {
+    const metadataTool = tools.find((tool) => tool.name === "get-datasource-metadata");
+    if (metadataTool) {
+      const args = inferPlannedToolArguments(
+        metadataTool,
+        {
+          datasourceLuid: readString(knownDatasourceWithId.id),
+        },
+        input,
+      );
+      if (args) {
+        selections.push({
+          status: "ready",
+          tool: metadataTool,
+          arguments: args,
+          reason: "Dashboard context already has datasource id. Retrieve datasource fields directly.",
+        });
+        plannedTools.push("get-datasource-metadata");
+      }
+    }
+  } else if (knownDatasourceName) {
+    const listDatasourcesSelection = buildReadySelectionFromToolName(tools, "list-datasources", input, {
+      reason: "Resolve datasource id from dashboard datasource name before metadata lookup.",
+      allowlist: allowedToolNames,
+    });
+    if (listDatasourcesSelection) {
+      selections.push(listDatasourcesSelection);
+      plannedTools.push("list-datasources");
+    } else {
+      const searchContentSelection = buildReadySelectionFromToolName(tools, "search-content", input, {
+        reason: "Resolve datasource id from Tableau Cloud content search before metadata lookup.",
+        allowlist: allowedToolNames,
+      });
+      if (searchContentSelection) {
+        selections.push(searchContentSelection);
+        plannedTools.push("search-content");
+      } else {
+        blockedTools.push("list-datasources");
+        blockedTools.push("search-content");
+      }
+    }
+  } else {
+    const workbookResolutionTools = ["list-views", "list-workbooks", "get-workbook"] as const;
+    for (const toolName of workbookResolutionTools) {
+      const selection = buildReadySelectionFromToolName(tools, toolName, input, {
+        reason: "Resolve workbook/view context to infer datasource candidates.",
+        allowlist: allowedToolNames,
+      });
+      if (selection) {
+        selections.push(selection);
+        plannedTools.push(toolName);
+      }
+      if (selections.length >= maxToolCalls) {
+        break;
+      }
+    }
+  }
+
+  return {
+    selections: selections.slice(0, maxToolCalls),
+    blockedTools,
+    plannedTools,
+    reasonBrief:
+      selections.length > 0
+        ? "Applied rule-based metadata lookup flow before planner."
+        : "No safe rule-based metadata flow available.",
+  };
+}
+
+function buildReadySelectionFromToolName(
+  tools: McpTool[],
+  toolName: string,
+  input: GetAdditionalContextInput,
+  options: {
+    reason: string;
+    allowlist: string[];
+  },
+): SelectedTool | undefined {
+  if (!options.allowlist.includes(toolName)) {
+    return undefined;
+  }
+
+  const tool = tools.find((candidate) => candidate.name === toolName);
+  if (!tool) {
+    return undefined;
+  }
+
+  const args = inferToolArguments(tool, input);
+  if (!args) {
+    return undefined;
+  }
+
+  return {
+    status: "ready",
+    tool,
+    arguments: args,
+    reason: options.reason,
+  };
+}
+
 async function selectPlannedTools(
   tools: McpTool[],
   allowedTools: string[],
@@ -502,6 +745,7 @@ async function selectPlannedTools(
   options: {
     observations?: TableauMcpToolResultSummary[];
     calledToolNames?: Set<string>;
+    preferredRecoveryTools?: string[];
   } = {},
 ): Promise<{
   selections: SelectedTool[];
@@ -538,13 +782,36 @@ async function selectPlannedTools(
 
   const blockedTools: string[] = [];
   const plannedTools = plan.toolCalls.map((call) => call.toolName);
-  const selections = plan.toolCalls.map((call) =>
+  const plannedSelections = plan.toolCalls
+    .filter((call) => !(options.preferredRecoveryTools?.length && call.toolName === "get-datasource-metadata"))
+    .map((call) =>
     buildSelectionFromPlannedCall(call, tools, allowedToolNames, input, options.calledToolNames ?? new Set<string>(), blockedTools),
-  );
+    );
+  const recoverySelections =
+    options.preferredRecoveryTools?.flatMap((toolName) => {
+      if (options.calledToolNames?.has(toolName)) {
+        return [];
+      }
+      const selection = buildReadySelectionFromToolName(tools, toolName, input, {
+        reason: "Recovery step to resolve datasource/workbook identifiers.",
+        allowlist: allowedToolNames,
+      });
+      return selection ? [selection] : [];
+    }) ?? [];
+  const seenTools = new Set<string>();
+  const selections = [...recoverySelections, ...plannedSelections].filter((selection) => {
+    const toolName = getSelectionToolName(selection);
+    if (seenTools.has(toolName)) {
+      return false;
+    }
+
+    seenTools.add(toolName);
+    return true;
+  });
   logInfo("tableau.mcp.tools.planned", {
     availableToolCount: tools.length,
     selectedTools: selections.map(getSelectionToolName),
-    allowedToolsConfigured: allowedTools.length > 0,
+    allowlistSource: getAllowlistSource(allowedTools),
     readyToolCount: selections.filter((selection) => selection.status === "ready").length,
     skippedToolCount: selections.filter((selection) => selection.status === "skipped").length,
     blockedTools,
@@ -558,6 +825,10 @@ async function selectPlannedTools(
     plannedTools,
     reasonBrief: plan.reasonBrief,
   };
+}
+
+function getAllowlistSource(allowedTools: string[]): "configured" | "default" {
+  return allowedTools.length > 0 ? "configured" : "default";
 }
 
 function buildSelectionFromPlannedCall(
@@ -645,6 +916,64 @@ function inferPlannedToolArguments(
   }
 
   return validateArgumentsAgainstSchema(merged, tool.inputSchema?.properties ?? {});
+}
+
+export function checkToolPreconditions(
+  toolName: string,
+  args: Record<string, unknown>,
+  state: McpExecutionState,
+): ToolPreconditionResult {
+  if (toolName !== "get-datasource-metadata") {
+    return { ok: true };
+  }
+
+  const directIdentifier =
+    readString(args.datasourceLuid) ??
+    readString(args.datasourceId) ??
+    readString(args.datasource_id) ??
+    readString(args.contentUrl) ??
+    readString(args.name);
+  if (directIdentifier) {
+    return { ok: true };
+  }
+
+  const knownIds = state.dashboardContext.dataSources
+    ?.map((datasource) => readString(datasource.id))
+    .filter((value): value is string => Boolean(value));
+  if (knownIds?.length) {
+    return {
+      ok: false,
+      recoverable: false,
+      reason: "Datasource id exists in dashboard context but is not bound to get-datasource-metadata arguments.",
+    };
+  }
+
+  const knownNames = state.dashboardContext.dataSources
+    ?.map((datasource) => readString(datasource.name))
+    .filter((value): value is string => Boolean(value));
+  if (knownNames?.length) {
+    return {
+      ok: false,
+      recoverable: true,
+      reason: "Datasource identifier is missing. Resolve datasource id from datasource name first.",
+      suggestedTools: ["list-datasources", "search-content"],
+    };
+  }
+
+  if (!state.calledToolNames.has("list-views") || !state.calledToolNames.has("list-workbooks")) {
+    return {
+      ok: false,
+      recoverable: true,
+      reason: "Datasource identifier is missing. Resolve workbook/view context first.",
+      suggestedTools: ["list-views", "list-workbooks", "get-workbook", "search-content"],
+    };
+  }
+
+  return {
+    ok: false,
+    recoverable: false,
+    reason: "Datasource identifier is still unresolved after context lookup.",
+  };
 }
 
 function validateArgumentsAgainstSchema(
@@ -842,18 +1171,40 @@ function shouldReplanForDatasourceQuery(
   intent: ClassifiedQuestionIntent,
   toolResults: TableauMcpToolResultSummary[],
   calledToolNames: Set<string>,
+  hasRecoverablePreconditionFailure: boolean,
+  recoverablePreconditionSuggestions: Set<string>,
 ): boolean {
-  if (!getConfig().tableau.mcp.toolPlanningEnabled || calledToolNames.has("query-datasource")) {
+  if (!getConfig().tableau.mcp.toolPlanningEnabled) {
     return false;
   }
 
-  if (intent.intent !== "data_analysis") {
+  const metadataLookupNeedsRecovery =
+    intent.intent === "metadata_lookup" &&
+    (hasRecoverablePreconditionFailure ||
+      toolResults.some(
+        (result) => result.toolName === "get-datasource-metadata" && (result.status === "failed" || result.status === "skipped"),
+      ));
+  const dataAnalysisNeedsRecovery =
+    intent.intent === "data_analysis" &&
+    !calledToolNames.has("query-datasource") &&
+    toolResults.some((result) => result.status === "success" && ["list-datasources", "get-datasource-metadata"].includes(result.toolName));
+
+  if (!metadataLookupNeedsRecovery && !dataAnalysisNeedsRecovery) {
     return false;
   }
 
-  return toolResults.some(
-    (result) => result.status === "success" && ["list-datasources", "get-datasource-metadata"].includes(result.toolName),
+  if (!metadataLookupNeedsRecovery) {
+    return dataAnalysisNeedsRecovery;
+  }
+
+  const hasSuggestedRecoveryTool = [...recoverablePreconditionSuggestions].some((toolName) =>
+    ["list-datasources", "search-content", "list-views", "get-workbook", "list-workbooks"].includes(toolName),
   );
+  const hasAnyRecoveryToolAttempted = toolResults.some((result) =>
+    ["list-datasources", "search-content", "list-views", "get-workbook", "list-workbooks"].includes(result.toolName),
+  );
+
+  return hasSuggestedRecoveryTool || !hasAnyRecoveryToolAttempted;
 }
 
 function isDataQuestion(question: string): boolean {
@@ -982,6 +1333,49 @@ function summarizeErrorMessage(error: unknown): string {
 
   return error.message?.slice(0, 220) || "Tool call failed.";
 }
+
+export function isMcpErrorResult(result: unknown): boolean {
+  if (!result || typeof result !== "object" || Array.isArray(result)) {
+    return false;
+  }
+
+  return (result as { isError?: unknown }).isError === true;
+}
+
+export function classifyMcpErrorCategory(result: unknown): string {
+  const text = extractTextFromToolResult(result).toLowerCase();
+  if (text.includes("status code 400") || text.includes("invalid") || text.includes("bad request")) {
+    return "request_invalid_or_identifier_missing";
+  }
+  if (text.includes("unauthorized") || text.includes("forbidden") || text.includes("permission")) {
+    return "permission_or_auth";
+  }
+  if (text.includes("not found")) {
+    return "resource_not_found";
+  }
+
+  return "tool_error";
+}
+
+export function buildMcpErrorMessage(result: unknown, category: string): string {
+  if (category === "request_invalid_or_identifier_missing") {
+    return "Datasource metadata request was invalid, often because datasource identifier was missing.";
+  }
+  if (category === "permission_or_auth") {
+    return "Datasource metadata could not be retrieved due to permission or auth constraints.";
+  }
+  if (category === "resource_not_found") {
+    return "Datasource metadata target could not be found from current context.";
+  }
+
+  const text = extractTextFromToolResult(result).trim();
+  if (!text) {
+    return "Tool returned an error result.";
+  }
+
+  return `Tool returned an error result: ${text.slice(0, 180)}`;
+}
+
 function buildFollowUpToolSelection(
   completedToolName: string,
   result: unknown,
@@ -1103,6 +1497,10 @@ function inferKnownToolArguments(toolName: string, input: GetAdditionalContextIn
       const datasourceName = chooseKnownDatasourceName(input);
       return datasourceName ? { filter: `name:eq:${escapeFilterValue(datasourceName)}`, limit: 10 } : { limit: 100 };
     }
+    case "get-datasource-metadata": {
+      const datasourceId = chooseKnownDatasourceId(input);
+      return datasourceId ? { datasourceLuid: datasourceId } : undefined;
+    }
     case "search-content":
       return {
         terms: workbookName ?? dashboardName,
@@ -1155,6 +1553,19 @@ function chooseKnownDatasourceName(input: GetAdditionalContextInput): string | u
     datasourceNames.find((name) => normalizedQuestion.includes(name.toLowerCase())) ??
     (datasourceNames.length === 1 ? datasourceNames[0] : undefined)
   );
+}
+
+function chooseKnownDatasourceId(input: GetAdditionalContextInput): string | undefined {
+  const ids =
+    input.dashboardContext.dataSources
+      ?.map((datasource) => readString(datasource.id))
+      .filter((value): value is string => Boolean(value)) ?? [];
+
+  if (!ids.length) {
+    return undefined;
+  }
+
+  return ids[0];
 }
 
 function toToolSummary(tool: McpTool): TableauMcpToolSummary {

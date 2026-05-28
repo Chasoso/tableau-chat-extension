@@ -21,6 +21,9 @@ export function buildPrompt(
     "If information is missing, explain what is missing instead of guessing.",
     "Do not infer confidential row-level details that were not provided.",
     "Avoid generic Tableau theory unless the user explicitly asks how-to guidance.",
+    "Do not provide long HTTP status explanations, internal stack-like diagnostics, or 'contact support' unless the user explicitly asks for troubleshooting steps.",
+    "If MCP metadata lookup failed, explain what identifier or context was missing in plain user language.",
+    "If follow-up action is useful, suggest exactly one next check.",
     "When answering, clarify scope with phrases like 'In this dashboard context' or 'From retrieved Tableau Cloud information'.",
     observationCount
       ? "You received MCP observations. Prioritize them as evidence over assumptions."

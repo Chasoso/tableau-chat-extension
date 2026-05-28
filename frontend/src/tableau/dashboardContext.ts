@@ -38,6 +38,10 @@ export function createMockDashboardContext(contextWarning = "モックのダッ�
   return {
     dashboardName: "Mock Executive Sales Dashboard",
     workbookName: "Mock Sales Workbook",
+    workbookId: null,
+    workbookContentUrl: "Mock-Sales-Workbook",
+    viewName: "Mock-Executive-Sales-Dashboard",
+    viewId: null,
     worksheets: [
       {
         name: "Sales Trend",
@@ -78,8 +82,15 @@ export function createMockDashboardContext(contextWarning = "モックのダッ�
         worksheetName: "Sales Trend",
         name: "Mock Superstore",
         id: "mock-datasource",
+        fields: null,
+        fieldsAvailability: "not_implemented",
       },
     ],
+    availability: {
+      workbookId: "not_supported",
+      viewId: "not_supported",
+      datasourceFields: "not_implemented",
+    },
     contextSource: "mock",
     contextWarning,
     capturedAt: new Date().toISOString(),
@@ -92,6 +103,8 @@ export async function getDashboardContext(
 ): Promise<DashboardContext> {
   const worksheets = dashboard.worksheets ?? [];
   const workbookName = resolveWorkbookName(dashboard, options);
+  const workbookId = resolveWorkbookId(options.workbook);
+  const referrerParts = parseReferrerParts(options.referrer);
 
   const worksheetSummaries: WorksheetSummary[] = worksheets.map((worksheet) => ({
     name: worksheet.name ?? "Untitled worksheet",
@@ -115,11 +128,22 @@ export async function getDashboardContext(
   return {
     dashboardName: dashboard.name ?? "Untitled dashboard",
     workbookName,
+    workbookId,
+    workbookContentUrl: referrerParts.workbookContentUrl,
+    viewName: referrerParts.viewName,
+    viewId: null,
     worksheets: worksheetSummaries,
     filters,
     parameters,
     selectedMarks,
     dataSources,
+    availability: {
+      workbookId: workbookId ? "available" : "not_supported",
+      viewId: "not_supported",
+      datasourceFields: dataSources.some((datasource) => datasource.fieldsAvailability === "available")
+        ? "available"
+        : "not_implemented",
+    },
     contextSource: "tableau-extension",
     capturedAt: new Date().toISOString(),
   };
@@ -166,6 +190,36 @@ function parseWorkbookNameFromUrl(value: string | null | undefined): string | nu
   }
 
   return null;
+}
+
+function resolveWorkbookId(workbook: unknown): string | null {
+  return normalizeName(readStringProperty(workbook, "id")) ?? null;
+}
+
+function parseReferrerParts(value: string | null | undefined): { workbookContentUrl: string | null; viewName: string | null } {
+  if (!value) {
+    return { workbookContentUrl: null, viewName: null };
+  }
+
+  try {
+    const parsed = new URL(value);
+    const hashPath = parsed.hash.startsWith("#") ? parsed.hash.slice(1) : parsed.hash;
+    const pathCandidates = [hashPath, parsed.pathname].filter(Boolean);
+
+    for (const path of pathCandidates) {
+      const match = path.match(/\/views\/([^/?#]+)\/([^/?#]+)/);
+      if (match) {
+        return {
+          workbookContentUrl: normalizeName(decodeURIComponent(match[1])) ?? null,
+          viewName: normalizeName(decodeURIComponent(match[2])) ?? null,
+        };
+      }
+    }
+  } catch {
+    return { workbookContentUrl: null, viewName: null };
+  }
+
+  return { workbookContentUrl: null, viewName: null };
 }
 
 function readStringProperty(value: unknown, key: string): string | undefined {
@@ -294,11 +348,17 @@ async function collectDataSources(worksheets: TableauWorksheet[]): Promise<DataS
       try {
         const dataSources = await worksheet.getDataSourcesAsync();
         return dataSources.map((source) => {
-          const value = source as { name?: string; id?: string };
+          const value = source as { name?: string; id?: string; fields?: Array<{ name?: string }> };
+          const fields =
+            Array.isArray(value.fields) && value.fields.length
+              ? value.fields.map((field) => field.name).filter((fieldName): fieldName is string => Boolean(fieldName))
+              : null;
           return {
             worksheetName: worksheet.name ?? null,
             name: value.name ?? "Unknown datasource",
             id: value.id ?? null,
+            fields,
+            fieldsAvailability: fields?.length ? ("available" as const) : ("not_implemented" as const),
           };
         });
       } catch {

@@ -30,16 +30,29 @@ export type DataSourceSummary = {
   worksheetName?: string | null;
   name: string;
   id?: string | null;
+  fields?: string[] | null;
+  fieldsAvailability?: "available" | "not_implemented" | "not_supported";
+};
+
+export type ContextAvailability = {
+  workbookId: "available" | "not_implemented" | "not_supported";
+  viewId: "available" | "not_implemented" | "not_supported";
+  datasourceFields: "available" | "not_implemented" | "not_supported";
 };
 
 export type DashboardContext = {
   dashboardName: string;
   workbookName?: string | null;
+  workbookId?: string | null;
+  workbookContentUrl?: string | null;
+  viewName?: string | null;
+  viewId?: string | null;
   worksheets: WorksheetSummary[];
   filters: FilterSummary[];
   parameters: ParameterSummary[];
   selectedMarks?: SelectedMarkSummary[];
   dataSources?: DataSourceSummary[];
+  availability?: ContextAvailability;
   contextSource?: "tableau-extension" | "mock";
   contextWarning?: string;
   capturedAt: string;

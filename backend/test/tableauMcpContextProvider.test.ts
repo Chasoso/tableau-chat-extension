@@ -1,8 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildMcpErrorMessage,
+  checkToolPreconditions,
+  classifyMcpErrorCategory,
   extractBestWorkbookId,
   extractDatasourcesFromRawToolResults,
   extractWorkbookFromToolResults,
+  isMcpErrorResult,
 } from "../src/tableau/tableauMcpContextProvider";
 import type { TableauMcpToolResultSummary } from "../src/types/tableau";
 import type { GetAdditionalContextInput } from "../src/tableau/contextProvider";
@@ -105,5 +109,105 @@ describe("TableauMcpContextProvider extraction helpers", () => {
         },
       },
     ]);
+  });
+
+  it("precondition blocks datasource metadata call when datasource id is missing but name exists", () => {
+    const result = checkToolPreconditions(
+      "get-datasource-metadata",
+      {},
+      {
+        intent: {
+          intent: "metadata_lookup",
+          confidence: 0.8,
+          reasonBrief: "Need datasource metadata.",
+          answerableFromDashboardContext: false,
+          needsMcp: true,
+          maxToolCalls: 5,
+        },
+        dashboardContext: {
+          ...baseInput.dashboardContext,
+          dataSources: [{ name: "Tableau Public Per Day(2025/04-)" }],
+        },
+        calledToolNames: new Set<string>(),
+        executedToolResults: [],
+      },
+    );
+
+    expect(result.ok).toBe(false);
+    expect(result.recoverable).toBe(true);
+    expect(result.suggestedTools).toContain("list-datasources");
+  });
+
+  it("precondition allows datasource metadata call when datasource id is provided", () => {
+    const result = checkToolPreconditions(
+      "get-datasource-metadata",
+      {
+        datasourceLuid: "datasource-luid",
+      },
+      {
+        intent: {
+          intent: "metadata_lookup",
+          confidence: 0.9,
+          reasonBrief: "Need datasource metadata.",
+          answerableFromDashboardContext: false,
+          needsMcp: true,
+          maxToolCalls: 5,
+        },
+        dashboardContext: {
+          ...baseInput.dashboardContext,
+          dataSources: [{ name: "Tableau Public Per Day(2025/04-)", id: "datasource-luid" }],
+        },
+        calledToolNames: new Set<string>(),
+        executedToolResults: [],
+      },
+    );
+
+    expect(result.ok).toBe(true);
+  });
+
+  it("treats MCP isError responses as failures and classifies invalid requests", () => {
+    const errorResult = {
+      content: [{ type: "text", text: "Request failed with status code 400" }],
+      isError: true,
+    };
+
+    expect(isMcpErrorResult(errorResult)).toBe(true);
+    const category = classifyMcpErrorCategory(errorResult);
+    expect(category).toBe("request_invalid_or_identifier_missing");
+    expect(buildMcpErrorMessage(errorResult, category)).toContain("invalid");
+  });
+
+  it("precondition becomes non-recoverable after context resolution attempts still lack datasource identifier", () => {
+    const result = checkToolPreconditions(
+      "get-datasource-metadata",
+      {},
+      {
+        intent: {
+          intent: "metadata_lookup",
+          confidence: 0.8,
+          reasonBrief: "Need datasource metadata.",
+          answerableFromDashboardContext: false,
+          needsMcp: true,
+          maxToolCalls: 5,
+        },
+        dashboardContext: {
+          ...baseInput.dashboardContext,
+        },
+        calledToolNames: new Set<string>(["list-views", "list-workbooks", "search-content"]),
+        executedToolResults: [
+          {
+            toolName: "list-views",
+            status: "success",
+          },
+          {
+            toolName: "list-workbooks",
+            status: "success",
+          },
+        ],
+      },
+    );
+
+    expect(result.ok).toBe(false);
+    expect(result.recoverable).toBe(false);
   });
 });

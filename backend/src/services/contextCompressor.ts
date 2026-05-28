@@ -6,6 +6,9 @@ const REDACTED_KEYS = /token|secret|password|jwt|authorization|credential|cookie
 export type CompressedDashboardContext = {
   dashboardName: string;
   workbookName: string;
+  workbookId: string;
+  viewName: string;
+  viewId: string;
   worksheets: string[];
   filters: string[];
   parameters: string[];
@@ -31,6 +34,9 @@ export function compressDashboardContext(
   return {
     dashboardName: dashboardContext.dashboardName,
     workbookName: dashboardContext.workbookName ?? extractName(additionalContext.workbook) ?? "not available",
+    workbookId: dashboardContext.workbookId ?? "not available",
+    viewName: dashboardContext.viewName ?? "not available",
+    viewId: dashboardContext.viewId ?? "not available",
     worksheets: dashboardContext.worksheets.map((worksheet) => worksheet.name).filter(Boolean),
     filters: dashboardContext.filters.map((filter) => {
       const values = filter.appliedValues?.length ? filter.appliedValues.join(", ") : "not specified";
@@ -70,6 +76,9 @@ export function renderCompressedContext(context: CompressedDashboardContext): st
   return [
     `Dashboard: ${context.dashboardName}`,
     `Workbook: ${context.workbookName}`,
+    `Workbook ID: ${context.workbookId}`,
+    `View Name: ${context.viewName}`,
+    `View ID: ${context.viewId}`,
     `Worksheets: ${context.worksheets.join(", ") || "none"}`,
     `Filters: ${context.filters.join("; ") || "none"}`,
     `Parameters: ${context.parameters.join("; ") || "none"}`,
