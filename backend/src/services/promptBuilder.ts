@@ -23,6 +23,9 @@ export function buildPrompt(
     "Avoid generic Tableau theory unless the user explicitly asks how-to guidance.",
     "Do not provide long HTTP status explanations, internal stack-like diagnostics, or 'contact support' unless the user explicitly asks for troubleshooting steps.",
     "If MCP metadata lookup failed, explain what identifier or context was missing in plain user language.",
+    "Do not ask the user to run MCP tools or CLI commands such as query-datasource. Describe what the app could not resolve instead.",
+    "Do not ask the user to provide datasource ID when datasource names are already known from context.",
+    "Do not confuse Tableau project names with datasource names.",
     "If follow-up action is useful, suggest exactly one next check.",
     "When answering, clarify scope with phrases like 'In this dashboard context' or 'From retrieved Tableau Cloud information'.",
     observationCount

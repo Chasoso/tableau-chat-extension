@@ -97,10 +97,66 @@ export type McpExecutionDebug = {
   fallbackReason?: string;
 };
 
+export type TableauProjectRef = {
+  type: "project";
+  name: string;
+  id?: string;
+};
+
+export type TableauWorkbookRef = {
+  type: "workbook";
+  name: string;
+  id?: string;
+  projectName?: string;
+};
+
+export type TableauViewRef = {
+  type: "view";
+  name: string;
+  id?: string;
+  workbookName?: string;
+  workbookId?: string;
+  projectName?: string;
+};
+
+export type TableauDatasourceRef = {
+  type: "datasource";
+  name: string;
+  id?: string;
+  luid?: string;
+  contentUrl?: string;
+  projectName?: string;
+  workbookName?: string;
+};
+
+export type ResolvedDatasourceRef = {
+  name: string;
+  id?: string;
+  luid?: string;
+  contentUrl?: string;
+  projectName?: string;
+  workbookName?: string;
+  matchConfidence: number;
+  matchReason: string;
+  source: "dashboardContext" | "list-datasources" | "search-content" | "list-views";
+};
+
+export type NormalizedTableauContext = {
+  dashboard?: {
+    name?: string;
+  };
+  workbook?: TableauWorkbookRef;
+  project?: TableauProjectRef;
+  views: TableauViewRef[];
+  datasources: TableauDatasourceRef[];
+  projects: TableauProjectRef[];
+};
+
 export type TableauAdditionalContext = {
   provider: "mock" | "direct-api" | "tableau-mcp";
   workbook?: unknown;
   datasources?: unknown[];
+  normalizedContext?: NormalizedTableauContext;
   metadata?: unknown;
   mcpTools?: TableauMcpToolSummary[];
   mcpToolResults?: TableauMcpToolResultSummary[];

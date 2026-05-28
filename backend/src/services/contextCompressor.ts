@@ -48,7 +48,7 @@ export function compressDashboardContext(
     }),
     dataSources: [
       ...(dashboardContext.dataSources?.map((datasource) => datasource.name) ?? []),
-      ...extractDataSourceNames(additionalContext.datasources),
+      ...extractNormalizedDatasourceNames(additionalContext),
     ].filter(unique),
     provider: additionalContext.provider,
     intent: additionalContext.mcpExecutionDebug?.intent ?? "unknown",
@@ -131,26 +131,27 @@ function extractName(value: unknown): string | undefined {
   return typeof name === "string" && name.trim() ? name.trim() : undefined;
 }
 
-function extractDataSourceNames(datasources: unknown[] | undefined): string[] {
-  if (!datasources?.length) {
+function extractNormalizedDatasourceNames(additionalContext: TableauAdditionalContext): string[] {
+  if (additionalContext.normalizedContext?.datasources?.length) {
+    return additionalContext.normalizedContext.datasources
+      .map((datasource) => datasource.name.trim())
+      .filter(Boolean);
+  }
+
+  if (!additionalContext.datasources?.length) {
     return [];
   }
 
-  return datasources.flatMap((datasource) => findNamesByKey(datasource, "name")).filter(Boolean);
-}
+  return additionalContext.datasources
+    .map((datasource) => {
+      if (!datasource || typeof datasource !== "object") {
+        return "";
+      }
 
-function findNamesByKey(value: unknown, key: string): string[] {
-  if (!value || typeof value !== "object") {
-    return [];
-  }
-
-  if (Array.isArray(value)) {
-    return value.flatMap((item) => findNamesByKey(item, key));
-  }
-
-  const record = value as Record<string, unknown>;
-  const direct = typeof record[key] === "string" ? [record[key] as string] : [];
-  return [...direct, ...Object.values(record).flatMap((item) => findNamesByKey(item, key))];
+      const name = (datasource as Record<string, unknown>).name;
+      return typeof name === "string" ? name.trim() : "";
+    })
+    .filter(Boolean);
 }
 
 function unique(value: string, index: number, values: string[]): boolean {

@@ -6,7 +6,9 @@ import {
   extractBestWorkbookId,
   extractDatasourcesFromRawToolResults,
   extractWorkbookFromToolResults,
+  inferPlannedToolArguments,
   isMcpErrorResult,
+  resolveDatasourceIdentifier,
 } from "../src/tableau/tableauMcpContextProvider";
 import type { TableauMcpToolResultSummary } from "../src/types/tableau";
 import type { GetAdditionalContextInput } from "../src/tableau/contextProvider";
@@ -98,15 +100,47 @@ describe("TableauMcpContextProvider extraction helpers", () => {
 
     expect(extractDatasourcesFromRawToolResults([{ toolName: "list-datasources", result }], input)).toEqual([
       {
-        id: "datasource-luid",
+        type: "datasource",
         name: "Tableau Public Per Day(2025/04-)",
+        id: "datasource-luid",
+        luid: "datasource-luid",
         contentUrl: undefined,
-        description: "Daily Tableau Public activity data.",
-        webpageUrl: undefined,
-        project: {
-          id: "project-1",
-          name: "Sandbox",
+        projectName: "Sandbox",
+        workbookName: undefined,
+      },
+    ]);
+  });
+
+  it("does not treat project content as datasource", () => {
+    const result = {
+      content: [
+        {
+          text: JSON.stringify([
+            {
+              contentType: "datasource",
+              name: "Tableau Public Per Day(2025/04-)",
+              id: "datasource-luid",
+              projectName: "Sandbox",
+            },
+            {
+              contentType: "project",
+              name: "Sandbox",
+              id: "project-id",
+            },
+          ]),
         },
+      ],
+    };
+
+    expect(extractDatasourcesFromRawToolResults([{ toolName: "search-content", result }], baseInput)).toEqual([
+      {
+        type: "datasource",
+        name: "Tableau Public Per Day(2025/04-)",
+        id: "datasource-luid",
+        luid: "datasource-luid",
+        contentUrl: undefined,
+        projectName: "Sandbox",
+        workbookName: undefined,
       },
     ]);
   });
@@ -130,6 +164,7 @@ describe("TableauMcpContextProvider extraction helpers", () => {
         },
         calledToolNames: new Set<string>(),
         executedToolResults: [],
+        rawToolResults: [],
       },
     );
 
@@ -159,6 +194,7 @@ describe("TableauMcpContextProvider extraction helpers", () => {
         },
         calledToolNames: new Set<string>(),
         executedToolResults: [],
+        rawToolResults: [],
       },
     );
 
@@ -204,10 +240,111 @@ describe("TableauMcpContextProvider extraction helpers", () => {
             status: "success",
           },
         ],
+        rawToolResults: [],
       },
     );
 
     expect(result.ok).toBe(false);
     expect(result.recoverable).toBe(false);
+  });
+
+  it("resolves datasource identifier from list-datasources by name", () => {
+    const rawToolResults = [
+      {
+        toolName: "list-datasources",
+        result: {
+          content: [
+            {
+              text: JSON.stringify([
+                {
+                  name: "Tableau Public Per Day(2025/04-)",
+                  id: "ds-123",
+                  project: { name: "Sandbox" },
+                },
+              ]),
+            },
+          ],
+        },
+      },
+    ];
+    const resolved = resolveDatasourceIdentifier(["Tableau Public Per Day(2025/04-)"], [], [], { rawToolResults });
+    expect(resolved[0]?.id).toBe("ds-123");
+    expect(resolved[0]?.matchReason).toBe("exact_name_match");
+  });
+
+  it("does not allow metadata args when only datasource name is provided", () => {
+    const tool = {
+      name: "get-datasource-metadata",
+      inputSchema: {
+        type: "object",
+        required: ["datasourceLuid"],
+        properties: {
+          datasourceLuid: { type: "string" },
+          datasourceId: { type: "string" },
+          name: { type: "string" },
+        },
+      },
+    };
+
+    const args = inferPlannedToolArguments(
+      tool,
+      { name: "Tableau Public Per Day(2025/04-)" },
+      {
+        ...baseInput,
+        dashboardContext: {
+          ...baseInput.dashboardContext,
+          dataSources: [{ name: "Tableau Public Per Day(2025/04-)" }],
+        },
+      },
+    );
+    expect(args).toBeUndefined();
+  });
+
+  it("does not treat workbook name as workbook id for get-workbook", () => {
+    const tool = {
+      name: "get-workbook",
+      inputSchema: {
+        type: "object",
+        required: ["workbookId"],
+        properties: {
+          workbookId: { type: "string" },
+        },
+      },
+    };
+
+    const args = inferPlannedToolArguments(
+      tool,
+      { workbookId: "Tableau Public Insights" },
+      {
+        ...baseInput,
+        dashboardContext: {
+          ...baseInput.dashboardContext,
+          workbookName: "Tableau Public Insights",
+        },
+      },
+    );
+    expect(args).toBeUndefined();
+  });
+
+  it("treats multiple close datasource matches as ambiguous", () => {
+    const rawToolResults = [
+      {
+        toolName: "list-datasources",
+        result: {
+          content: [
+            {
+              text: JSON.stringify([
+                { name: "Sales Daily", id: "ds-1" },
+                { name: "Sales_Daily", id: "ds-2" },
+              ]),
+            },
+          ],
+        },
+      },
+    ];
+
+    const resolved = resolveDatasourceIdentifier(["Sales Daily"], [], [], { rawToolResults });
+    expect(resolved.length).toBeGreaterThan(1);
+    expect(Math.abs(resolved[0]!.matchConfidence - resolved[1]!.matchConfidence)).toBeLessThanOrEqual(0.051);
   });
 });
