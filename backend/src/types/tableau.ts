@@ -138,7 +138,7 @@ export type ResolvedDatasourceRef = {
   workbookName?: string;
   matchConfidence: number;
   matchReason: string;
-  source: "dashboardContext" | "list-datasources" | "search-content" | "list-views";
+  source: "dashboardContext" | "list-datasources" | "search-content" | "list-views" | "get-workbook" | "list-workbooks";
 };
 
 export type NormalizedTableauContext = {

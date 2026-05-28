@@ -26,7 +26,7 @@ import type {
 } from "../types/tableau";
 import type { GetAdditionalContextInput, TableauContextProvider } from "./contextProvider";
 
-type McpTool = {
+export type McpTool = {
   name: string;
   description?: string;
   inputSchema?: {
@@ -379,6 +379,7 @@ export class TableauMcpContextProvider implements TableauContextProvider {
         rawToolResults,
         datasources: extractedDatasources,
       });
+      const answerContextDatasources = normalizedContext.datasources;
       const metadataCallSucceeded = toolResults.some(
         (result) => result.toolName === "get-datasource-metadata" && result.status === "success",
       );
@@ -387,10 +388,11 @@ export class TableauMcpContextProvider implements TableauContextProvider {
         fallbackReason = "Datasource metadata could not be resolved from current dashboard/workbook context.";
       }
       logInfo("tableau.mcp.datasources.extracted", {
-        datasourceCount: extractedDatasources.length,
+        rawExtractedDatasourceCount: extractedDatasources.length,
         normalizedDatasourceCount: normalizedContext.datasources.length,
+        answerContextDatasourceCount: answerContextDatasources.length,
         normalizedProjectCount: normalizedContext.projects.length,
-        matchedKnownDatasource: hasDatasourceMatchingDashboardContext(extractedDatasources, input),
+        matchedKnownDatasource: hasDatasourceMatchingDashboardContext(answerContextDatasources, input),
         hasMetadata,
       });
       logInfo("tableau.mcp.workbook.extracted", {
@@ -422,7 +424,7 @@ export class TableauMcpContextProvider implements TableauContextProvider {
       return {
         provider: this.name,
         workbook: extractedWorkbook,
-        datasources: extractedDatasources,
+        datasources: answerContextDatasources,
         normalizedContext,
         metadata: {
           transport: "stdio",
@@ -557,7 +559,7 @@ function compactEnv(values: Record<string, string | undefined>): Record<string, 
   return Object.fromEntries(Object.entries(values).filter((entry): entry is [string, string] => Boolean(entry[1])));
 }
 
-type SelectedTool =
+export type SelectedTool =
   | {
       status: "ready";
       tool: McpTool;
@@ -581,10 +583,17 @@ async function selectInitialTools(
   blockedTools: string[];
   plannedTools: string[];
   reasonBrief?: string;
+  stopFallback?: boolean;
   planningTimeMs: number;
 }> {
   const ruleBased = buildRuleBasedInitialSelections(tools, allowedTools, input, intent, maxToolCalls);
   if (ruleBased.selections.length > 0) {
+    return {
+      ...ruleBased,
+      planningTimeMs: 0,
+    };
+  }
+  if (ruleBased.stopFallback) {
     return {
       ...ruleBased,
       planningTimeMs: 0,
@@ -633,7 +642,7 @@ async function selectInitialTools(
   };
 }
 
-function buildRuleBasedInitialSelections(
+export function buildRuleBasedInitialSelections(
   tools: McpTool[],
   allowedTools: string[],
   input: GetAdditionalContextInput,
@@ -644,12 +653,14 @@ function buildRuleBasedInitialSelections(
   blockedTools: string[];
   plannedTools: string[];
   reasonBrief?: string;
+  stopFallback?: boolean;
 } {
   if (intent.intent !== "metadata_lookup" || maxToolCalls <= 0) {
     return {
       selections: [],
       blockedTools: [],
       plannedTools: [],
+      stopFallback: false,
     };
   }
 
@@ -702,6 +713,13 @@ function buildRuleBasedInitialSelections(
       } else {
         blockedTools.push("list-datasources");
         blockedTools.push("search-content");
+        return {
+          selections: [],
+          blockedTools,
+          plannedTools,
+          reasonBrief: "Datasource names are known, but datasource-resolution tools are not allowlisted.",
+          stopFallback: true,
+        };
       }
     }
   } else {
@@ -729,6 +747,7 @@ function buildRuleBasedInitialSelections(
       selections.length > 0
         ? "Applied rule-based metadata lookup flow before planner."
         : "No safe rule-based metadata flow available.",
+    stopFallback: false,
   };
 }
 
@@ -972,6 +991,8 @@ export function checkToolPreconditions(
       rawToolResults: state.rawToolResults,
       workbookName: state.dashboardContext.workbookName ?? undefined,
       dashboardName: state.dashboardContext.dashboardName,
+      viewName: state.dashboardContext.viewName ?? undefined,
+      worksheetNames: state.dashboardContext.worksheets.map((worksheet) => worksheet.name),
     },
   );
   if (resolvedFromObservations.some((candidate) => hasResolvableDatasourceIdentifier(candidate))) {
@@ -1484,6 +1505,8 @@ function buildFollowUpToolSelection(
         rawToolResults: [{ toolName: completedToolName, result }],
         workbookName: input.dashboardContext.workbookName ?? undefined,
         dashboardName: input.dashboardContext.dashboardName,
+        viewName: input.dashboardContext.viewName ?? undefined,
+        worksheetNames: input.dashboardContext.worksheets.map((worksheet) => worksheet.name),
       },
     );
     const datasourceRef = selectBestResolvedDatasource(resolved);
@@ -1810,6 +1833,8 @@ export function extractDatasourcesFromRawToolResults(
       rawToolResults,
       workbookName: input.dashboardContext.workbookName ?? undefined,
       dashboardName: input.dashboardContext.dashboardName,
+      viewName: input.dashboardContext.viewName ?? undefined,
+      worksheetNames: input.dashboardContext.worksheets.map((worksheet) => worksheet.name),
     },
   );
   const uniqueDatasources = dedupeDatasourceObjects(
@@ -1830,10 +1855,24 @@ export function extractDatasourcesFromRawToolResults(
 
   const matchingDatasources = uniqueDatasources.filter((datasource) => {
     const name = readString((datasource as Record<string, unknown>).name);
-    return Boolean(name && knownNames.has(name.trim().toLowerCase()));
+    return Boolean(
+      name &&
+        [...knownNames].some((knownName) => normalizeNameForMatch(knownName) === normalizeNameForMatch(name)),
+    );
   });
 
-  return matchingDatasources.length ? matchingDatasources : uniqueDatasources;
+  if (matchingDatasources.length) {
+    return matchingDatasources;
+  }
+
+  return [
+    ...(input.dashboardContext.dataSources?.map((datasource) => ({
+      type: "datasource" as const,
+      name: datasource.name,
+      id: readString(datasource.id) ?? undefined,
+      luid: readString(datasource.id) ?? undefined,
+    })) ?? []),
+  ];
 }
 
 type WorkbookCandidate = {
@@ -2023,7 +2062,7 @@ function looksLikeDatasourceRecord(record: Record<string, unknown>): boolean {
   return Boolean(id || contentUrl || contentType === "datasource");
 }
 
-function normalizeDatasourceObject(value: unknown): TableauDatasourceRef | undefined {
+function normalizeDatasourceObject(value: unknown, explicitName?: string): TableauDatasourceRef | undefined {
   if (!value || typeof value !== "object") {
     return undefined;
   }
@@ -2031,7 +2070,7 @@ function normalizeDatasourceObject(value: unknown): TableauDatasourceRef | undef
   const record = value as Record<string, unknown>;
   const id = readString(record.id) ?? readString(record.datasourceId) ?? readString(record.datasource_id);
   const luid = readString(record.luid) ?? readString(record.datasourceLuid) ?? id;
-  const name = readString(record.name) ?? readString(record.datasourceName) ?? readString(record.dataSourceName);
+  const name = explicitName ?? readString(record.name) ?? readString(record.datasourceName) ?? readString(record.dataSourceName);
   if (!name) {
     return undefined;
   }
@@ -2055,35 +2094,53 @@ function normalizeDatasourceObject(value: unknown): TableauDatasourceRef | undef
 }
 
 function dedupeDatasourceObjects(datasources: Array<TableauDatasourceRef | undefined>): TableauDatasourceRef[] {
-  const seen = new Set<string>();
-  return datasources.filter((datasource): datasource is TableauDatasourceRef => {
+  const byNormalizedName = new Map<string, TableauDatasourceRef>();
+
+  for (const datasource of datasources) {
     if (!datasource) {
-      return false;
+      continue;
     }
 
-    const id = readString((datasource as TableauDatasourceRef).luid) ?? readString((datasource as TableauDatasourceRef).id);
-    const name = readString((datasource as TableauDatasourceRef).name);
-    const key = id ?? normalizeNameForMatch(name ?? "");
-    if (!key || seen.has(key)) {
-      return false;
+    const normalizedName = normalizeNameForMatch(datasource.name);
+    if (!normalizedName) {
+      continue;
     }
 
-    seen.add(key);
-    return true;
-  });
+    const existing = byNormalizedName.get(normalizedName);
+    if (!existing) {
+      byNormalizedName.set(normalizedName, datasource);
+      continue;
+    }
+
+    byNormalizedName.set(normalizedName, chooseBetterDatasourceRef(existing, datasource));
+  }
+
+  return [...byNormalizedName.values()];
+}
+
+function chooseBetterDatasourceRef(left: TableauDatasourceRef, right: TableauDatasourceRef): TableauDatasourceRef {
+  const leftScore =
+    (hasDatasourceIdentifier(left) ? 2 : 0) + (left.projectName ? 1 : 0) + (left.workbookName ? 1 : 0);
+  const rightScore =
+    (hasDatasourceIdentifier(right) ? 2 : 0) + (right.projectName ? 1 : 0) + (right.workbookName ? 1 : 0);
+  return rightScore > leftScore ? right : left;
+}
+
+function hasDatasourceIdentifier(candidate: TableauDatasourceRef): boolean {
+  return Boolean(readString(candidate.luid) ?? readString(candidate.id) ?? readString(candidate.contentUrl));
 }
 
 function getKnownDatasourceNames(input: GetAdditionalContextInput): Set<string> {
   return new Set(
     input.dashboardContext.dataSources
-      ?.map((datasource) => datasource.name.trim().toLowerCase())
+      ?.map((datasource) => datasource.name.trim())
       .filter(Boolean) ?? [],
   );
 }
 
 function hasDatasourceMatchingDashboardContext(datasources: unknown[], input: GetAdditionalContextInput): boolean {
-  const knownNames = getKnownDatasourceNames(input);
-  if (!knownNames.size) {
+  const knownNames = [...getKnownDatasourceNames(input)].map((name) => normalizeNameForMatch(name));
+  if (!knownNames.length) {
     return false;
   }
 
@@ -2093,15 +2150,37 @@ function hasDatasourceMatchingDashboardContext(datasources: unknown[], input: Ge
     }
 
     const name = readString((datasource as Record<string, unknown>).name);
-    return Boolean(name && knownNames.has(name.trim().toLowerCase()));
+    return Boolean(name && knownNames.includes(normalizeNameForMatch(name)));
   });
 }
+
+type CandidateRejectionReason =
+  | "from_dashboard_name"
+  | "from_view_name"
+  | "from_workbook_name"
+  | "from_project_name"
+  | "from_worksheet_name"
+  | "from_owner_name"
+  | "missing_content_type"
+  | "name_mismatch"
+  | "no_identifier";
+
+type DatasourceResolutionDiagnostics = {
+  sources: string[];
+  calledResolutionTools: {
+    listDatasources: boolean;
+    searchContent: boolean;
+  };
+  rejectedReasonCounts: Record<CandidateRejectionReason, number>;
+};
+
+const DATASOURCE_SOURCE_TOOL_NAMES = ["list-datasources", "search-content", "list-views", "get-workbook", "list-workbooks"] as const;
 
 function extractDatasourceCandidatesFromRawToolResults(rawToolResults: RawMcpToolResult[]): ResolvedDatasourceRef[] {
   const candidates: ResolvedDatasourceRef[] = [];
 
   for (const toolResult of rawToolResults) {
-    if (!["list-datasources", "search-content", "list-views"].includes(toolResult.toolName)) {
+    if (!DATASOURCE_SOURCE_TOOL_NAMES.includes(toolResult.toolName as (typeof DATASOURCE_SOURCE_TOOL_NAMES)[number])) {
       continue;
     }
 
@@ -2109,11 +2188,15 @@ function extractDatasourceCandidatesFromRawToolResults(rawToolResults: RawMcpToo
     for (const payload of payloads) {
       const records = findObjectRecords(payload);
       for (const record of records) {
-        if (!looksLikeDatasourceRecord(record)) {
+        const explicitDatasourceName =
+          extractExplicitDatasourceName(record) ??
+          (toolResult.toolName === "list-datasources" && hasListDatasourceShape(record) ? readString(record.name) : undefined);
+        const contentType = readString(record.contentType)?.toLowerCase() ?? readString(record.type)?.toLowerCase();
+        if (!explicitDatasourceName && contentType !== "datasource") {
           continue;
         }
 
-        const normalized = normalizeDatasourceObject(record);
+        const normalized = normalizeDatasourceObject(record, explicitDatasourceName);
         if (!normalized) {
           continue;
         }
@@ -2139,6 +2222,12 @@ function extractDatasourceCandidatesFromRawToolResults(rawToolResults: RawMcpToo
 function mapToolNameToDatasourceSource(toolName: string): ResolvedDatasourceRef["source"] {
   if (toolName === "search-content") {
     return "search-content";
+  }
+  if (toolName === "get-workbook") {
+    return "get-workbook";
+  }
+  if (toolName === "list-workbooks") {
+    return "list-workbooks";
   }
   if (toolName === "list-views") {
     return "list-views";
@@ -2178,6 +2267,39 @@ function looksLikeProjectRecord(record: Record<string, unknown>): boolean {
   return hasProjectLikeKeys;
 }
 
+function extractExplicitDatasourceName(record: Record<string, unknown>): string | undefined {
+  const direct = readString(record.datasourceName) ?? readString(record.dataSourceName);
+  if (direct) {
+    return direct;
+  }
+
+  const nestedDatasource =
+    record.datasource && typeof record.datasource === "object" ? readString((record.datasource as Record<string, unknown>).name) : undefined;
+  if (nestedDatasource) {
+    return nestedDatasource;
+  }
+
+  const nestedDataSource =
+    record.dataSource && typeof record.dataSource === "object" ? readString((record.dataSource as Record<string, unknown>).name) : undefined;
+  if (nestedDataSource) {
+    return nestedDataSource;
+  }
+
+  const contentType = readString(record.contentType)?.toLowerCase() ?? readString(record.type)?.toLowerCase();
+  if (contentType === "datasource") {
+    return readString(record.name);
+  }
+
+  return undefined;
+}
+
+function hasListDatasourceShape(record: Record<string, unknown>): boolean {
+  const name = readString(record.name);
+  const id = readString(record.id) ?? readString(record.luid) ?? readString(record.datasourceId) ?? readString(record.datasourceLuid);
+  const contentUrl = readString(record.contentUrl);
+  return Boolean(name && (id || contentUrl));
+}
+
 export function resolveDatasourceIdentifier(
   knownDatasourceNames: string[],
   observations: McpObservation[],
@@ -2186,11 +2308,38 @@ export function resolveDatasourceIdentifier(
     rawToolResults?: RawMcpToolResult[];
     workbookName?: string;
     dashboardName?: string;
+    viewName?: string;
+    worksheetNames?: string[];
+    projectNames?: string[];
   } = {},
 ): ResolvedDatasourceRef[] {
   const normalizedKnownNames = knownDatasourceNames.map((name) => name.trim()).filter(Boolean);
   const knownMatchKeys = normalizedKnownNames.map(normalizeNameForMatch);
   const rawCandidates = options.rawToolResults?.length ? extractDatasourceCandidatesFromRawToolResults(options.rawToolResults) : [];
+  const rejectionCounts: Record<CandidateRejectionReason, number> = {
+    from_dashboard_name: 0,
+    from_view_name: 0,
+    from_workbook_name: 0,
+    from_project_name: 0,
+    from_worksheet_name: 0,
+    from_owner_name: 0,
+    missing_content_type: 0,
+    name_mismatch: 0,
+    no_identifier: 0,
+  };
+  const rejectedCandidates: Array<{ candidate: ResolvedDatasourceRef; reason: CandidateRejectionReason }> = [];
+  const calledResolutionTools = {
+    listDatasources: Boolean(options.rawToolResults?.some((result) => result.toolName === "list-datasources")),
+    searchContent: Boolean(options.rawToolResults?.some((result) => result.toolName === "search-content")),
+  };
+
+  const dashboardDerivedCandidates = normalizedKnownNames.map((name) => ({
+    name,
+    matchConfidence: 0.6,
+    matchReason: "dashboard_context_hint",
+    source: "dashboardContext" as const,
+  }));
+  rawCandidates.push(...dashboardDerivedCandidates);
 
   for (const observation of observations) {
     const extractedName = readString(observation.argsSummary.datasourceName) ?? readString(observation.argsSummary.name);
@@ -2204,13 +2353,49 @@ export function resolveDatasourceIdentifier(
     }
   }
 
+  const disallowedNormalizedNames = new Map<string, CandidateRejectionReason>();
+  const addDisallowed = (name: string | undefined, reason: CandidateRejectionReason): void => {
+    const normalized = normalizeNameForMatch(name ?? "");
+    if (!normalized) {
+      return;
+    }
+    if (!disallowedNormalizedNames.has(normalized)) {
+      disallowedNormalizedNames.set(normalized, reason);
+    }
+  };
+  addDisallowed(options.dashboardName, "from_dashboard_name");
+  addDisallowed(options.viewName, "from_view_name");
+  addDisallowed(options.workbookName, "from_workbook_name");
+  for (const worksheetName of options.worksheetNames ?? []) {
+    addDisallowed(worksheetName, "from_worksheet_name");
+  }
+  for (const projectName of options.projectNames ?? []) {
+    addDisallowed(projectName, "from_project_name");
+  }
+
+  const rawCandidateCount = rawCandidates.length;
   const scored = rawCandidates
     .map((candidate) => {
       const normalizedCandidate = normalizeNameForMatch(candidate.name);
+      const disallowedReason = disallowedNormalizedNames.get(normalizedCandidate);
+      if (disallowedReason) {
+        rejectionCounts[disallowedReason] += 1;
+        rejectedCandidates.push({ candidate, reason: disallowedReason });
+        return undefined;
+      }
+
       const exactIndex = normalizedKnownNames.findIndex((name) => name.trim().toLowerCase() === candidate.name.trim().toLowerCase());
       const normalizedIndex = knownMatchKeys.findIndex((key) => key === normalizedCandidate);
       const containsIndex = knownMatchKeys.findIndex((key) => key.includes(normalizedCandidate) || normalizedCandidate.includes(key));
-      const confidence = exactIndex >= 0 ? 1 : normalizedIndex >= 0 ? 0.95 : containsIndex >= 0 ? 0.75 : 0.4;
+      const singletonFallbackEnabled =
+        normalizedKnownNames.length === 1 && rawCandidates.length === 1 && hasResolvableDatasourceIdentifier(candidate);
+      if (knownMatchKeys.length > 0 && exactIndex < 0 && normalizedIndex < 0 && containsIndex < 0 && !singletonFallbackEnabled) {
+        rejectionCounts.name_mismatch += 1;
+        rejectedCandidates.push({ candidate, reason: "name_mismatch" });
+        return undefined;
+      }
+
+      const confidence = exactIndex >= 0 ? 1 : normalizedIndex >= 0 ? 0.95 : containsIndex >= 0 ? 0.75 : singletonFallbackEnabled ? 0.72 : 0.4;
       const workbookBoost =
         options.workbookName &&
         candidate.workbookName &&
@@ -2227,25 +2412,64 @@ export function resolveDatasourceIdentifier(
               ? "normalized_name_match"
               : containsIndex >= 0
                 ? "partial_name_match"
-                : "low_confidence_candidate",
+                : singletonFallbackEnabled
+                  ? "single_candidate_with_identifier"
+                  : "low_confidence_candidate",
       };
     })
-    .filter((candidate) => candidate.matchConfidence >= (knownMatchKeys.length ? 0.7 : 0.4))
+    .filter((candidate): candidate is ResolvedDatasourceRef => Boolean(candidate))
+    .filter((candidate) => {
+      if (candidate.matchConfidence >= (knownMatchKeys.length ? 0.7 : 0.4)) {
+        return true;
+      }
+      rejectionCounts.name_mismatch += 1;
+      rejectedCandidates.push({ candidate, reason: "name_mismatch" });
+      return false;
+    })
     .sort((left, right) => right.matchConfidence - left.matchConfidence);
 
   const unique = dedupeResolvedDatasourceRefs(scored);
+  const unresolvedIdentifierCount = unique.filter((candidate) => !hasResolvableDatasourceIdentifier(candidate)).length;
+  if (unresolvedIdentifierCount > 0) {
+    rejectionCounts.no_identifier += unresolvedIdentifierCount;
+  }
+  const diagnostics: DatasourceResolutionDiagnostics = {
+    sources: [...new Set(rawCandidates.map((candidate) => candidate.source))],
+    calledResolutionTools,
+    rejectedReasonCounts: rejectionCounts,
+  };
   logInfo("tableau.mcp.datasource.identifier_resolution", {
     knownDatasourceNames: normalizedKnownNames.length,
-    candidateDatasourceCount: rawCandidates.length,
+    candidateDatasourceCount: rawCandidateCount,
     matchedDatasourceCount: unique.length,
     matchMethod: unique[0]?.matchReason ?? "none",
     selectedIdentifierType: selectIdentifierType(unique[0]),
     selectedIdentifierPresent: Boolean(unique[0] && hasResolvableDatasourceIdentifier(unique[0])),
     ambiguousCandidateCount: countAmbiguousCandidates(unique),
+    datasourceCandidateSources: diagnostics.sources,
+    listDatasourcesCalled: diagnostics.calledResolutionTools.listDatasources,
+    searchContentCalled: diagnostics.calledResolutionTools.searchContent,
+    rejectedDatasourceCandidateCount: Object.values(diagnostics.rejectedReasonCounts).reduce((sum, count) => sum + count, 0),
+    rejectedReasonBreakdown: diagnostics.rejectedReasonCounts,
     schemaRequiredArgs: availableToolSchemas
       .find((tool) => tool.name === "get-datasource-metadata")
       ?.inputSchema?.required?.slice(0, 6),
   });
+  if (getConfig().tableau.mcp.debugLogResults) {
+    logInfo("tableau.mcp.datasource.identifier_resolution_debug", {
+      knownDatasourceCount: normalizedKnownNames.length,
+      candidateDatasourceCount: rawCandidateCount,
+      knownNamePreview: normalizedKnownNames[0]?.slice(0, 120),
+      candidateNamePreview: rawCandidates[0]?.name.slice(0, 120),
+      knownNameNormalizedHash: safeHash(knownMatchKeys[0]),
+      candidateNameNormalizedHash: safeHash(rawCandidates[0]?.name ? normalizeNameForMatch(rawCandidates[0].name) : undefined),
+      candidateSource: rawCandidates[0]?.source ?? "none",
+      candidateHasId: Boolean(readString(rawCandidates[0]?.id)),
+      candidateHasLuid: Boolean(readString(rawCandidates[0]?.luid)),
+      candidateHasContentUrl: Boolean(readString(rawCandidates[0]?.contentUrl)),
+      matchRejectedReason: rejectedCandidates[0]?.reason ?? "none",
+    });
+  }
 
   if (normalizedKnownNames.length > 0 && unique.length > 0 && !unique.some(hasResolvableDatasourceIdentifier)) {
     logWarn("tableau.mcp.datasource.identifier_resolution_failed", {
@@ -2386,9 +2610,12 @@ function normalizeTableauContext(input: {
         id: input.workbook?.id ?? readString(input.dashboardContext.workbookId) ?? undefined,
       }
     : undefined;
+  const rawDatasourceCandidates = extractDatasourceCandidatesFromRawToolResults(input.rawToolResults);
+  const listDatasourcesCalled = input.rawToolResults.some((result) => result.toolName === "list-datasources");
+  const searchContentCalled = input.rawToolResults.some((result) => result.toolName === "search-content");
   const datasources = dedupeDatasourceObjects([
     ...((input.datasources as TableauDatasourceRef[]) ?? []),
-    ...extractDatasourceCandidatesFromRawToolResults(input.rawToolResults).map((candidate) => ({
+    ...rawDatasourceCandidates.map((candidate) => ({
       type: "datasource" as const,
       name: candidate.name,
       id: candidate.id,
@@ -2416,9 +2643,11 @@ function normalizeTableauContext(input: {
     excludedProjectAsDatasourceCount: projects.filter((projectRef) =>
       datasources.some((datasource) => normalizeNameForMatch(datasource.name) === normalizeNameForMatch(projectRef.name)),
     ).length,
-    datasourceCandidateSource: "list-datasources|search-content|dashboardContext",
+    datasourceCandidateSources: [...new Set(rawDatasourceCandidates.map((candidate) => candidate.source))],
     contentType: "datasource",
     projectNamePresent: datasources.some((datasource) => Boolean(datasource.projectName)),
+    listDatasourcesCalled,
+    searchContentCalled,
   });
 
   return {

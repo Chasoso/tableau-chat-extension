@@ -47,8 +47,7 @@ export function compressDashboardContext(
       return `${parameter.name}: ${String(value)}`;
     }),
     dataSources: [
-      ...(dashboardContext.dataSources?.map((datasource) => datasource.name) ?? []),
-      ...extractNormalizedDatasourceNames(additionalContext),
+      ...extractAnswerDatasourceNames(dashboardContext.dataSources?.map((datasource) => datasource.name) ?? [], additionalContext),
     ].filter(unique),
     provider: additionalContext.provider,
     intent: additionalContext.mcpExecutionDebug?.intent ?? "unknown",
@@ -131,27 +130,16 @@ function extractName(value: unknown): string | undefined {
   return typeof name === "string" && name.trim() ? name.trim() : undefined;
 }
 
-function extractNormalizedDatasourceNames(additionalContext: TableauAdditionalContext): string[] {
+function extractAnswerDatasourceNames(
+  dashboardDatasourceNames: string[],
+  additionalContext: TableauAdditionalContext,
+): string[] {
   if (additionalContext.normalizedContext?.datasources?.length) {
     return additionalContext.normalizedContext.datasources
       .map((datasource) => datasource.name.trim())
       .filter(Boolean);
   }
-
-  if (!additionalContext.datasources?.length) {
-    return [];
-  }
-
-  return additionalContext.datasources
-    .map((datasource) => {
-      if (!datasource || typeof datasource !== "object") {
-        return "";
-      }
-
-      const name = (datasource as Record<string, unknown>).name;
-      return typeof name === "string" ? name.trim() : "";
-    })
-    .filter(Boolean);
+  return dashboardDatasourceNames.map((name) => name.trim()).filter(Boolean);
 }
 
 function unique(value: string, index: number, values: string[]): boolean {

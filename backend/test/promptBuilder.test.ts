@@ -26,6 +26,41 @@ describe("buildPrompt", () => {
     expect(prompt).toContain("Sales Trend");
     expect(prompt).toContain("Region: West");
     expect(prompt).toContain("Do not provide long HTTP status explanations");
+    expect(prompt).toContain("Never mention internal MCP tool names");
+  });
+
+  it("uses normalized datasource list instead of dashboard/view names", () => {
+    const prompt = buildPrompt(
+      {
+        ...request,
+        dashboardContext: {
+          ...request.dashboardContext,
+          dashboardName: "Statistics",
+          dataSources: [{ name: "Statistics" }],
+        },
+      },
+      {
+        provider: "tableau-mcp",
+        normalizedContext: {
+          dashboard: { name: "Statistics" },
+          workbook: {
+            type: "workbook",
+            name: "Tableau Public Insights",
+          },
+          views: [],
+          datasources: [
+            {
+              type: "datasource",
+              name: "Tableau Public Per Day(2025/04-)",
+            },
+          ],
+          projects: [],
+        },
+      },
+    );
+
+    expect(prompt).toContain("Data sources: Tableau Public Per Day(2025/04-)");
+    expect(prompt).not.toContain("Data sources: Statistics");
   });
 
   it("includes recent session history when provided", () => {

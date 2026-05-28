@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildRuleBasedInitialSelections,
   buildMcpErrorMessage,
   checkToolPreconditions,
   classifyMcpErrorCategory,
@@ -10,6 +11,7 @@ import {
   isMcpErrorResult,
   resolveDatasourceIdentifier,
 } from "../src/tableau/tableauMcpContextProvider";
+import type { ClassifiedQuestionIntent } from "../src/services/tableauMcpToolPlanner";
 import type { TableauMcpToolResultSummary } from "../src/types/tableau";
 import type { GetAdditionalContextInput } from "../src/tableau/contextProvider";
 
@@ -141,6 +143,64 @@ describe("TableauMcpContextProvider extraction helpers", () => {
         contentUrl: undefined,
         projectName: "Sandbox",
         workbookName: undefined,
+      },
+    ]);
+  });
+
+  it("does not treat view/workbook/project names as datasource", () => {
+    const result = {
+      content: [
+        {
+          text: JSON.stringify([
+            {
+              id: "view-1",
+              name: "Statistics",
+              workbook: { name: "Tableau Public Insights" },
+              project: { name: "Sandbox" },
+            },
+          ]),
+        },
+      ],
+    };
+
+    expect(extractDatasourcesFromRawToolResults([{ toolName: "list-views", result }], baseInput)).toEqual([]);
+  });
+
+  it("keeps known datasource hint when only view records are present", () => {
+    const rawToolResults = [
+      {
+        toolName: "list-views",
+        result: {
+          content: [
+            {
+              text: JSON.stringify([
+                {
+                  id: "view-1",
+                  name: "Statistics",
+                  workbook: { name: "Tableau Public Insights" },
+                  project: { name: "Sandbox" },
+                },
+              ]),
+            },
+          ],
+        },
+      },
+    ];
+
+    const resolved = resolveDatasourceIdentifier(["Tableau Public Per Day(2025/04-)"], [], [], {
+      rawToolResults,
+      dashboardName: "Statistics",
+      viewName: "Statistics",
+      workbookName: "Tableau Public Insights",
+      worksheetNames: ["Views"],
+      projectNames: ["Sandbox"],
+    });
+    expect(resolved).toEqual([
+      {
+        name: "Tableau Public Per Day(2025/04-)",
+        matchConfidence: 1,
+        matchReason: "exact_name_match",
+        source: "dashboardContext",
       },
     ]);
   });
@@ -346,5 +406,31 @@ describe("TableauMcpContextProvider extraction helpers", () => {
     const resolved = resolveDatasourceIdentifier(["Sales Daily"], [], [], { rawToolResults });
     expect(resolved.length).toBeGreaterThan(1);
     expect(Math.abs(resolved[0]!.matchConfidence - resolved[1]!.matchConfidence)).toBeLessThanOrEqual(0.051);
+  });
+
+  it("prioritizes datasource resolution tools for metadata lookup when datasource name exists", () => {
+    const intent: ClassifiedQuestionIntent = {
+      intent: "metadata_lookup",
+      confidence: 0.9,
+      reasonBrief: "Need datasource fields.",
+      answerableFromDashboardContext: false,
+      needsMcp: true,
+      maxToolCalls: 5,
+    };
+    const input: GetAdditionalContextInput = {
+      ...baseInput,
+      dashboardContext: {
+        ...baseInput.dashboardContext,
+        dataSources: [{ name: "Tableau Public Per Day(2025/04-)" }],
+      },
+    };
+    const tools = [
+      { name: "list-datasources", inputSchema: { type: "object", properties: { limit: { type: "number" } } } },
+      { name: "search-content", inputSchema: { type: "object", properties: { terms: { type: "string" } } } },
+      { name: "list-views", inputSchema: { type: "object", properties: { limit: { type: "number" } } } },
+      { name: "list-workbooks", inputSchema: { type: "object", properties: { limit: { type: "number" } } } },
+    ];
+    const selection = buildRuleBasedInitialSelections(tools, [], input, intent, 5);
+    expect(selection.plannedTools[0]).toBe("list-datasources");
   });
 });

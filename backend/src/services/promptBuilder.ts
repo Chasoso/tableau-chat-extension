@@ -24,6 +24,7 @@ export function buildPrompt(
     "Do not provide long HTTP status explanations, internal stack-like diagnostics, or 'contact support' unless the user explicitly asks for troubleshooting steps.",
     "If MCP metadata lookup failed, explain what identifier or context was missing in plain user language.",
     "Do not ask the user to run MCP tools or CLI commands such as query-datasource. Describe what the app could not resolve instead.",
+    "Never mention internal MCP tool names such as get-datasource-metadata, query-datasource, list-datasources, or search-content in the user-facing answer.",
     "Do not ask the user to provide datasource ID when datasource names are already known from context.",
     "Do not confuse Tableau project names with datasource names.",
     "If follow-up action is useful, suggest exactly one next check.",
