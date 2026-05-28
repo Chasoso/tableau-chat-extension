@@ -162,6 +162,22 @@ export class TableauMcpContextProvider implements TableauContextProvider {
 
       while (intent.needsMcp && executedToolCallCount < effectiveMaxToolCalls) {
         if (!toolQueue.length) {
+          const remainingToolBudget = effectiveMaxToolCalls - executedToolCallCount;
+          const metadataRecoverySelection = buildMetadataIdentifierRecoverySelection({
+            tools,
+            allowedToolNames,
+            input,
+            intent,
+            calledToolNames,
+            rawToolResults,
+            observations,
+            remainingToolBudget,
+          });
+          if (metadataRecoverySelection) {
+            toolQueue.push(metadataRecoverySelection);
+            continue;
+          }
+
           if (
             !dataReplanAttempted &&
             shouldReplanForDatasourceQuery(
@@ -1276,6 +1292,67 @@ function getToolPriority(toolName: string): number {
     return 50;
   }
   return 100;
+}
+
+export function buildMetadataIdentifierRecoverySelection(input: {
+  tools: McpTool[];
+  allowedToolNames: string[];
+  input: GetAdditionalContextInput;
+  intent: ClassifiedQuestionIntent;
+  calledToolNames: Set<string>;
+  rawToolResults: RawMcpToolResult[];
+  observations: McpObservation[];
+  remainingToolBudget: number;
+}): SelectedTool | undefined {
+  if (input.intent.intent !== "metadata_lookup" || input.remainingToolBudget <= 0) {
+    return undefined;
+  }
+
+  const knownDatasourceNames =
+    input.input.dashboardContext.dataSources?.map((datasource) => datasource.name.trim()).filter(Boolean) ?? [];
+  if (!knownDatasourceNames.length) {
+    return undefined;
+  }
+
+  const resolved = resolveDatasourceIdentifier(knownDatasourceNames, input.observations, input.tools, {
+    rawToolResults: input.rawToolResults,
+    workbookName: input.input.dashboardContext.workbookName ?? undefined,
+    dashboardName: input.input.dashboardContext.dashboardName,
+    viewName: input.input.dashboardContext.viewName ?? undefined,
+    worksheetNames: input.input.dashboardContext.worksheets.map((worksheet) => worksheet.name),
+  });
+  const matchedDatasourceCount = resolved.length;
+  const selectedIdentifierPresent = resolved.some(hasResolvableDatasourceIdentifier);
+  const listDatasourcesCalled =
+    input.calledToolNames.has("list-datasources") || input.rawToolResults.some((result) => result.toolName === "list-datasources");
+  const searchContentCalled =
+    input.calledToolNames.has("search-content") || input.rawToolResults.some((result) => result.toolName === "search-content");
+
+  if (matchedDatasourceCount <= 0 || selectedIdentifierPresent) {
+    return undefined;
+  }
+
+  if (!listDatasourcesCalled) {
+    const selection = buildReadySelectionFromToolName(input.tools, "list-datasources", input.input, {
+      reason: "Recovery step: resolve datasource identifier from datasource listing.",
+      allowlist: input.allowedToolNames,
+    });
+    if (selection) {
+      return selection;
+    }
+  }
+
+  if (listDatasourcesCalled && !searchContentCalled) {
+    const selection = buildReadySelectionFromToolName(input.tools, "search-content", input.input, {
+      reason: "Recovery step: resolve datasource identifier from content search.",
+      allowlist: input.allowedToolNames,
+    });
+    if (selection) {
+      return selection;
+    }
+  }
+
+  return undefined;
 }
 
 function shouldReplanForDatasourceQuery(
@@ -2472,11 +2549,19 @@ export function resolveDatasourceIdentifier(
   }
 
   if (normalizedKnownNames.length > 0 && unique.length > 0 && !unique.some(hasResolvableDatasourceIdentifier)) {
+    const identifierResolutionFailedReason = !diagnostics.calledResolutionTools.listDatasources &&
+      !diagnostics.calledResolutionTools.searchContent
+      ? "datasource_resolution_tools_not_called"
+      : diagnostics.calledResolutionTools.listDatasources && !diagnostics.calledResolutionTools.searchContent
+        ? "list_datasources_result_has_no_identifier"
+        : diagnostics.calledResolutionTools.searchContent
+          ? "search_content_result_has_no_identifier"
+          : "datasource_identifier_not_resolved_from_dashboard_context";
     logWarn("tableau.mcp.datasource.identifier_resolution_failed", {
-      reason: "list_datasources_result_has_no_identifier",
+      reason: identifierResolutionFailedReason,
       knownDatasourceNames: normalizedKnownNames.length,
       candidateCount: unique.length,
-      identifierResolutionFailedReason: "candidate_without_identifier",
+      identifierResolutionFailedReason,
     });
   }
 

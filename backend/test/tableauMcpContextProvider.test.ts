@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildMetadataIdentifierRecoverySelection,
   buildRuleBasedInitialSelections,
   buildMcpErrorMessage,
   checkToolPreconditions,
@@ -432,5 +433,116 @@ describe("TableauMcpContextProvider extraction helpers", () => {
     ];
     const selection = buildRuleBasedInitialSelections(tools, [], input, intent, 5);
     expect(selection.plannedTools[0]).toBe("list-datasources");
+  });
+
+  it("selects list-datasources as recovery tool when datasource is matched but identifier is missing", () => {
+    const intent: ClassifiedQuestionIntent = {
+      intent: "metadata_lookup",
+      confidence: 0.9,
+      reasonBrief: "Need datasource fields.",
+      answerableFromDashboardContext: false,
+      needsMcp: true,
+      maxToolCalls: 5,
+    };
+    const tools = [
+      { name: "list-datasources", inputSchema: { type: "object", properties: { limit: { type: "number" } } } },
+      { name: "search-content", inputSchema: { type: "object", properties: { terms: { type: "string" } } } },
+      { name: "list-views", inputSchema: { type: "object", properties: { limit: { type: "number" } } } },
+      { name: "list-workbooks", inputSchema: { type: "object", properties: { limit: { type: "number" } } } },
+      { name: "get-workbook", inputSchema: { type: "object", properties: { workbookId: { type: "string" } } } },
+      { name: "get-datasource-metadata", inputSchema: { type: "object", properties: { datasourceLuid: { type: "string" } } } },
+    ];
+    const selection = buildMetadataIdentifierRecoverySelection({
+      tools,
+      allowedToolNames: tools.map((tool) => tool.name),
+      input: {
+        ...baseInput,
+        dashboardContext: {
+          ...baseInput.dashboardContext,
+          dataSources: [{ name: "Tableau Public Per Day(2025/04-)" }],
+        },
+      },
+      intent,
+      calledToolNames: new Set(["list-views", "get-workbook", "list-workbooks"]),
+      rawToolResults: [],
+      observations: [],
+      remainingToolBudget: 2,
+    });
+    expect(selection?.status).toBe("ready");
+    if (selection?.status === "ready") {
+      expect(selection.tool.name).toBe("list-datasources");
+    }
+  });
+
+  it("selects search-content as recovery tool after list-datasources is called and identifier remains missing", () => {
+    const intent: ClassifiedQuestionIntent = {
+      intent: "metadata_lookup",
+      confidence: 0.9,
+      reasonBrief: "Need datasource fields.",
+      answerableFromDashboardContext: false,
+      needsMcp: true,
+      maxToolCalls: 5,
+    };
+    const tools = [
+      { name: "list-datasources", inputSchema: { type: "object", properties: { limit: { type: "number" } } } },
+      { name: "search-content", inputSchema: { type: "object", properties: { terms: { type: "string" } } } },
+      { name: "get-datasource-metadata", inputSchema: { type: "object", properties: { datasourceLuid: { type: "string" } } } },
+    ];
+    const selection = buildMetadataIdentifierRecoverySelection({
+      tools,
+      allowedToolNames: tools.map((tool) => tool.name),
+      input: {
+        ...baseInput,
+        dashboardContext: {
+          ...baseInput.dashboardContext,
+          dataSources: [{ name: "Tableau Public Per Day(2025/04-)" }],
+        },
+      },
+      intent,
+      calledToolNames: new Set(["list-datasources"]),
+      rawToolResults: [
+        {
+          toolName: "list-datasources",
+          result: {
+            content: [{ text: JSON.stringify([{ name: "Tableau Public Per Day(2025/04-)" }]) }],
+          },
+        },
+      ],
+      observations: [],
+      remainingToolBudget: 1,
+    });
+    expect(selection?.status).toBe("ready");
+    if (selection?.status === "ready") {
+      expect(selection.tool.name).toBe("search-content");
+    }
+  });
+
+  it("does not enqueue recovery tool when no remaining tool budget", () => {
+    const intent: ClassifiedQuestionIntent = {
+      intent: "metadata_lookup",
+      confidence: 0.9,
+      reasonBrief: "Need datasource fields.",
+      answerableFromDashboardContext: false,
+      needsMcp: true,
+      maxToolCalls: 5,
+    };
+    const tools = [{ name: "list-datasources", inputSchema: { type: "object", properties: { limit: { type: "number" } } } }];
+    const selection = buildMetadataIdentifierRecoverySelection({
+      tools,
+      allowedToolNames: ["list-datasources"],
+      input: {
+        ...baseInput,
+        dashboardContext: {
+          ...baseInput.dashboardContext,
+          dataSources: [{ name: "Tableau Public Per Day(2025/04-)" }],
+        },
+      },
+      intent,
+      calledToolNames: new Set(),
+      rawToolResults: [],
+      observations: [],
+      remainingToolBudget: 0,
+    });
+    expect(selection).toBeUndefined();
   });
 });

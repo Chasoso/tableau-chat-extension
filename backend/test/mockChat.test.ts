@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { InMemoryChatHistoryRepository } from "../src/repositories/chatHistoryRepository";
 import type { AnswerGenerator } from "../src/services/answerGenerator";
 import { MockAnswerGenerator } from "../src/services/answerGenerator";
-import { ChatService } from "../src/services/chatService";
+import { ChatService, sanitizeUserFacingAnswer } from "../src/services/chatService";
 import { MockTableauContextProvider } from "../src/tableau/mockTableauContextProvider";
 import type { AuthenticatedUser } from "../src/types/auth";
 
@@ -108,5 +108,53 @@ describe("ChatService with mock provider", () => {
 
     expect(otherUserResponse.answer).not.toContain("Turn 1 user: First question");
     expect(otherUserResponse.answer).not.toContain("Turn 1 assistant: First answer");
+  });
+
+  it("sanitizes internal tool instructions in metadata-unavailable answers", () => {
+    const sanitized = sanitizeUserFacingAnswer(
+      "get-datasource-metadataツールを実行するか、query-datasourceを実行してください。datasource-idを指定してください。",
+      {
+        question: "このダッシュボードで使われているデータソースのフィールドを説明して",
+        dashboardContext: {
+          dashboardName: "Statistics",
+          workbookName: "Tableau Public Insights",
+          worksheets: [{ name: "Views" }],
+          filters: [],
+          parameters: [],
+          dataSources: [{ name: "Tableau Public Per Day(2025/04-)" }],
+          capturedAt: new Date().toISOString(),
+        },
+      },
+      {
+        provider: "tableau-mcp",
+        normalizedContext: {
+          dashboard: { name: "Statistics" },
+          workbook: { type: "workbook", name: "Tableau Public Insights" },
+          views: [],
+          datasources: [{ type: "datasource", name: "Tableau Public Per Day(2025/04-)" }],
+          projects: [],
+        },
+        mcpExecutionDebug: {
+          intent: "metadata_lookup",
+          intentConfidence: 0.9,
+          answerableFromDashboardContext: false,
+          needsMcp: true,
+          maxToolCalls: 5,
+          plannedTools: [],
+          blockedTools: [],
+          executedTools: [],
+          skippedTools: [],
+          toolCallCount: 0,
+          replanUsed: true,
+          timingMs: { planning: 0, execution: 0 },
+        },
+        metadata: { hasMetadata: false },
+      },
+    );
+
+    expect(sanitized).not.toContain("get-datasource-metadata");
+    expect(sanitized).not.toContain("query-datasource");
+    expect(sanitized).not.toContain("datasource-id");
+    expect(sanitized).toContain("アプリ側で特定できなかった");
   });
 });

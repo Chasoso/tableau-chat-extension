@@ -65,6 +65,7 @@ export class ChatService {
       prompt,
       additionalContext,
     });
+    const sanitizedAnswer = sanitizeUserFacingAnswer(answer, request, additionalContext);
     const dashboardContextPatch = buildDashboardContextPatch(request, additionalContext);
     if (dashboardContextPatch?.workbookName) {
       logInfo("chat.service.dashboard_context_patch.created", {
@@ -81,7 +82,7 @@ export class ChatService {
       messageId,
       ownerUserId: ownerUserId ?? null,
       question: request.question,
-      answer,
+      answer: sanitizedAnswer,
       dashboardName: request.dashboardContext.dashboardName,
       workbookName: request.dashboardContext.workbookName ?? null,
       worksheetNames: request.dashboardContext.worksheets.map((worksheet) => worksheet.name),
@@ -90,7 +91,7 @@ export class ChatService {
     });
 
     return {
-      answer,
+      answer: sanitizedAnswer,
       sessionId,
       messageId,
       dashboardContextPatch,
@@ -144,6 +145,39 @@ export class ChatService {
       },
     };
   }
+}
+
+export function sanitizeUserFacingAnswer(
+  answer: string,
+  request: ChatRequest,
+  additionalContext: Awaited<ReturnType<TableauContextProvider["getAdditionalContext"]>>,
+): string {
+  const containsInternalToolInstruction =
+    /(get-datasource-metadata|query-datasource|datasource-id|datasource id|ツールを実行|toolを実行)/i.test(answer);
+  if (!containsInternalToolInstruction) {
+    return answer;
+  }
+
+  const isMetadataLookup = additionalContext.mcpExecutionDebug?.intent === "metadata_lookup";
+  const metadataResolved = hasResolvedMetadata(additionalContext);
+  if (!isMetadataLookup || metadataResolved) {
+    return answer
+      .replace(/get-datasource-metadata/gi, "データソースメタデータ取得")
+      .replace(/query-datasource/gi, "データ問い合わせ")
+      .replace(/datasource-id/gi, "datasource identifier");
+  }
+
+  const datasourceNames =
+    additionalContext.normalizedContext?.datasources?.map((datasource) => datasource.name).filter(Boolean) ??
+    request.dashboardContext.dataSources?.map((datasource) => datasource.name).filter(Boolean) ??
+    [];
+  const datasourceText = datasourceNames.length ? datasourceNames.join("、") : "該当データソース";
+
+  return [
+    `このダッシュボードで確認できているデータソースは ${datasourceText} です。`,
+    "ただし、フィールド一覧を取得するために必要な Tableau Cloud 上の datasource id / luid / contentUrl をアプリ側で特定できなかったため、現時点ではフィールド一覧までは説明できません。",
+    "次は、開発者側の確認として list-datasources または search-content の結果から datasource identifier を解決できるかを確認するのがよいです。",
+  ].join("");
 }
 
 function hasResolvedMetadata(additionalContext: Awaited<ReturnType<TableauContextProvider["getAdditionalContext"]>>): boolean {
