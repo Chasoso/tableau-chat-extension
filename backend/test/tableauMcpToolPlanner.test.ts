@@ -55,7 +55,7 @@ describe("tableauMcpToolPlanner", () => {
     expect(plan?.needsMcp).toBe(true);
   });
 
-  it("intersects default planner tools with tools exposed by MCP", () => {
+  it("uses all MCP-exposed tools when no explicit allowlist is configured", () => {
     const allowed = resolveAllowedToolNames(
       [
         { name: "list-workbooks" },
@@ -63,6 +63,19 @@ describe("tableauMcpToolPlanner", () => {
         { name: "delete-everything" },
       ],
       [],
+    );
+
+    expect(allowed).toEqual(["list-workbooks", "query-datasource", "delete-everything"]);
+  });
+
+  it("intersects configured allowlist with tools exposed by MCP", () => {
+    const allowed = resolveAllowedToolNames(
+      [
+        { name: "list-workbooks" },
+        { name: "query-datasource" },
+        { name: "delete-everything" },
+      ],
+      ["list-workbooks", "query-datasource", "get-workbook"],
     );
 
     expect(allowed).toEqual(["list-workbooks", "query-datasource"]);

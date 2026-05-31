@@ -626,7 +626,9 @@ async function selectInitialTools(
     };
   }
 
-  const candidates = allowedTools.length ? tools.filter((tool) => allowedTools.includes(tool.name)) : getDefaultToolCandidates(tools, input);
+  const resolvedAllowedToolNames = resolveAllowedToolNames(tools, allowedTools);
+  const allowlistedTools = tools.filter((tool) => resolvedAllowedToolNames.includes(tool.name));
+  const candidates = allowedTools.length ? allowlistedTools : getDefaultToolCandidates(allowlistedTools, input);
 
   logInfo("tableau.mcp.tools.selected", {
     availableToolCount: tools.length,
@@ -889,8 +891,8 @@ async function selectPlannedTools(
   };
 }
 
-function getAllowlistSource(allowedTools: string[]): "configured" | "default" {
-  return allowedTools.length > 0 ? "configured" : "default";
+function getAllowlistSource(allowedTools: string[]): "configured" | "dynamic_mcp" {
+  return allowedTools.length > 0 ? "configured" : "dynamic_mcp";
 }
 
 function buildSelectionFromPlannedCall(

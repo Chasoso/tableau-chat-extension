@@ -22,7 +22,7 @@ Configuration:
 - `TABLEAU_MCP_TRANSPORT=stdio`
 - `TABLEAU_MCP_AUTH_MODE=direct-trust`
 - `TABLEAU_MCP_TIMEOUT_MS=5000`
-- `TABLEAU_MCP_ALLOWED_TOOLS`: optional comma-separated tool allowlist
+- `TABLEAU_MCP_ALLOWED_TOOLS`: optional comma-separated tool allowlist (if omitted, all tools returned by `listTools` are considered)
 - `TABLEAU_MCP_MAX_TOOL_CALLS=3`
 - `TABLEAU_MCP_TOOL_PLANNING_ENABLED=false`: set to `true` to let Bedrock plan MCP tool calls from the user's question.
 - `TABLEAU_MCP_PLANNER_MAX_OUTPUT_TOKENS=600`
@@ -66,7 +66,7 @@ Avoid using a service-account PAT for all users in production. If a PAT is used 
 
 ### Tool Selection
 
-The provider supports an explicit `TABLEAU_MCP_ALLOWED_TOOLS` allowlist. This should be used in production. Without an allowlist, the PoC only attempts a small number of metadata-oriented tools and skips tools whose required arguments cannot be inferred safely.
+The provider supports an explicit `TABLEAU_MCP_ALLOWED_TOOLS` allowlist. This should be used in production. Without an allowlist, the PoC uses the live MCP tool catalog returned by `listTools` and still applies argument validation, preconditions, and query safety checks before execution.
 
 ### LLM-Planned Tool Execution (Limited Agent)
 
@@ -82,11 +82,11 @@ The planner operates with an explicit question intent classification:
 - `how_to_use_tableau`
 - `unsupported`
 
-The plan is treated as untrusted input. The backend intersects requested tools with `TABLEAU_MCP_ALLOWED_TOOLS` or the built-in PoC allowlist, validates required arguments, applies intent-specific max tool call limits, allows at most one replan for data-analysis flows, blocks unsafe `query-datasource` calls, and logs only sanitized diagnostics.
+The plan is treated as untrusted input. The backend intersects requested tools with `TABLEAU_MCP_ALLOWED_TOOLS` (or the live MCP tool list when unset), validates required arguments, applies intent-specific max tool call limits, allows at most one replan for data-analysis flows, blocks unsafe `query-datasource` calls, and logs only sanitized diagnostics.
 
 For observability, logs should distinguish allowlist source:
 - `allowlistSource="configured"` when `TABLEAU_MCP_ALLOWED_TOOLS` is explicitly set
-- `allowlistSource="default"` when built-in default allowlist is used
+- `allowlistSource="dynamic_mcp"` when live MCP tool discovery is used
 
 Observed tool outputs are recorded as MCP observations (`tool`, `purpose`, `argsSummary`, `success`, `resultSummary`, `errorMessage`) and are passed to final answer generation so the response can clearly state evidence scope and missing information.
 

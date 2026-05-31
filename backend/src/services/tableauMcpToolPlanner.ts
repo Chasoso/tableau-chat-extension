@@ -104,16 +104,6 @@ export type McpToolPlannerInput = {
   intentHint?: ClassifiedQuestionIntent;
 };
 
-const DEFAULT_PLANNING_ALLOWLIST = [
-  "list-workbooks",
-  "get-workbook",
-  "list-views",
-  "list-datasources",
-  "get-datasource-metadata",
-  "query-datasource",
-  "search-content",
-];
-
 const PREFERRED_TOOL_NAMES_FOR_INTENT: Record<QuestionIntent, string[]> = {
   dashboard_explanation: ["list-workbooks", "get-workbook", "list-views"],
   filter_or_selection_state: ["list-views", "get-workbook"],
@@ -167,7 +157,10 @@ export class TableauMcpToolPlanner {
     const config = getConfig();
     const mcpConfig = config.tableau.mcp;
     const intentClassifierMode = mcpConfig.intentClassifierMode;
-    const intentToolFilterMode = mcpConfig.intentToolFilterMode;
+    const hasConfiguredAllowlist = input.allowedToolNames.length > 0;
+    const effectiveIntentToolFilterMode: PlannerToolFilterMode = hasConfiguredAllowlist
+      ? mcpConfig.intentToolFilterMode
+      : "off";
 
     if (!mcpConfig.toolPlanningEnabled) {
       return undefined;
@@ -198,7 +191,7 @@ export class TableauMcpToolPlanner {
     }
 
     const baseAllowedToolNames = resolveAllowedToolNames(input.tools, input.allowedToolNames);
-    const allowedToolNames = filterAllowedToolNamesByIntent(baseAllowedToolNames, intent.intent, intentToolFilterMode);
+    const allowedToolNames = filterAllowedToolNamesByIntent(baseAllowedToolNames, intent.intent, effectiveIntentToolFilterMode);
     const maxToolCalls = Math.max(0, Math.min(input.maxToolCalls, intent.maxToolCalls));
     const preferredToolNames = PREFERRED_TOOL_NAMES_FOR_INTENT[intent.intent].filter((toolName) =>
       baseAllowedToolNames.includes(toolName),
@@ -222,7 +215,7 @@ export class TableauMcpToolPlanner {
         availableToolCount: input.tools.length,
         allowedToolCount: allowedToolNames.length,
         baseAllowedToolCount: baseAllowedToolNames.length,
-        intentToolFilterMode,
+        intentToolFilterMode: effectiveIntentToolFilterMode,
         intentClassifierMode,
         observationCount: input.observations?.length ?? 0,
         promptLength: prompt.length,
@@ -459,9 +452,13 @@ export function parseToolPlanResponse(
 }
 
 export function resolveAllowedToolNames(tools: McpToolForPlanning[], configuredAllowedTools: string[]): string[] {
-  const available = new Set(tools.map((tool) => tool.name));
-  const desired = configuredAllowedTools.length ? configuredAllowedTools : DEFAULT_PLANNING_ALLOWLIST;
-  return desired.filter((toolName) => available.has(toolName));
+  const availableToolNames = tools.map((tool) => tool.name).filter(Boolean);
+  if (!configuredAllowedTools.length) {
+    return [...new Set(availableToolNames)];
+  }
+
+  const available = new Set(availableToolNames);
+  return configuredAllowedTools.filter((toolName) => available.has(toolName));
 }
 
 function normalizeToolCall(value: unknown, sanitizeOptions: ArgumentSanitizeOptions): PlannedMcpToolCall | undefined {

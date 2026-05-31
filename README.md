@@ -123,12 +123,12 @@ For Lambda-local Tableau MCP:
 - `TABLEAU_MCP_TRANSPORT=stdio`
 - `TABLEAU_MCP_AUTH_MODE=direct-trust`
 - `TABLEAU_MCP_TIMEOUT_MS=5000`
-- `TABLEAU_MCP_ALLOWED_TOOLS`: optional comma-separated allowlist of MCP tools to call.
+- `TABLEAU_MCP_ALLOWED_TOOLS`: optional comma-separated allowlist of MCP tools to call. If omitted, the backend uses the live tool list returned by `client.listTools()`.
 - `TABLEAU_MCP_MAX_TOOL_CALLS=3`: increase to `5`-`8` when tool planning is enabled and datasource metadata/query tools are needed.
 - `TABLEAU_MCP_DEBUG_LOG_RESULTS=false`: set to `true` only while diagnosing MCP result shapes in CloudWatch.
 - `TABLEAU_MCP_TOOL_PLANNING_ENABLED=false`: set to `true` to let Bedrock create a small JSON MCP tool plan before tool execution.
 - `TABLEAU_MCP_PLANNER_MAX_OUTPUT_TOKENS=600`: token cap for the planning call.
-- `TABLEAU_MCP_INTENT_TOOL_FILTER_MODE=strict`: `strict` keeps legacy intent-based tool filtering, `soft` keeps all allowlisted tools but adds intent tool preferences to the prompt, `off` disables intent tool filtering entirely.
+- `TABLEAU_MCP_INTENT_TOOL_FILTER_MODE=strict`: `strict` keeps legacy intent-based tool filtering, `soft` keeps all allowlisted tools but adds intent tool preferences to the prompt, `off` disables intent tool filtering entirely. When `TABLEAU_MCP_ALLOWED_TOOLS` is unset, intent filtering is automatically relaxed to `off` so new MCP tools can still be considered.
 - `TABLEAU_MCP_INTENT_CLASSIFIER_MODE=heuristic`: `hybrid` allows Bedrock planner to revise intent when classifier confidence is low.
 - `TABLEAU_MCP_ARG_SANITIZE_MODE=drop`: `drop` removes sensitive-like keys, `mask` preserves argument shape while redacting sensitive values.
 - `TABLEAU_MCP_ARG_MAX_DEPTH=5`, `TABLEAU_MCP_ARG_MAX_ARRAY=50`, `TABLEAU_MCP_ARG_MAX_OBJECT_KEYS=30`: JSON argument safety caps for planner output.
@@ -208,7 +208,7 @@ See [docs/github-actions-deployment.md](docs/github-actions-deployment.md).
 
 ### Not Production Ready Yet
 
-- MCP tool selection is conservative and should be hardened with an explicit tool allowlist.
+- MCP tool selection can use all MCP-advertised tools when no explicit allowlist is set; production should still harden this with an explicit tool allowlist.
 - Screenshot analysis is not wired into the prompt yet.
 - Cognito email equals Tableau username is a PoC assumption.
 - Production user mapping, IdP federation, audit logging, WAF, custom domains, and data governance need additional design.
