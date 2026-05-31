@@ -1,6 +1,6 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { getConfig } from "../config";
-import { logWarn, safeErrorDetails } from "../logging";
+import { logInfo, logWarn, safeErrorDetails, safeHash } from "../logging";
 import type { NotionConnectionRecord, NotionOAuthStateRecord } from "../types/notion";
 import { getDefaultNotionConnectionId, NotionRepository } from "../repositories/notionRepository";
 import { decryptToken, encryptToken } from "./notionTokenCrypto";
@@ -44,6 +44,12 @@ export class NotionOAuthService {
       expiresAt: expiresAtEpoch,
     };
     await this.repository.putOAuthState(stateRecord);
+    logInfo("notion.oauth.connect.started", {
+      userHash: safeHash(input.userId),
+      stateHash: safeHash(state),
+      ttlSeconds: config.notion.oauthStateTtlSeconds,
+      hasRedirectAfter: Boolean(input.redirectAfter),
+    });
 
     const codeChallenge = createCodeChallenge(codeVerifier);
     const authorizeUrl = new URL(config.notion.oauthAuthorizeUrl);
@@ -69,6 +75,11 @@ export class NotionOAuthService {
     if (!stateRecord) {
       throw new Error("OAuth state not found or already used.");
     }
+    logInfo("notion.oauth.callback.state_loaded", {
+      stateHash: safeHash(input.state),
+      userHash: safeHash(stateRecord.userId),
+      hasRedirectAfter: Boolean(stateRecord.redirectAfter),
+    });
 
     try {
       const nowEpoch = Math.floor(Date.now() / 1000);
@@ -79,6 +90,11 @@ export class NotionOAuthService {
       const tokenData = await exchangeAuthorizationCode({
         code: input.code,
         codeVerifier: stateRecord.codeVerifier,
+      });
+      logInfo("notion.oauth.callback.token_exchanged", {
+        stateHash: safeHash(input.state),
+        hasRefreshToken: Boolean(tokenData.refresh_token),
+        hasWorkspaceId: Boolean(tokenData.workspace_id),
       });
 
       const accessEncrypted = await encryptToken(tokenData.access_token);
@@ -107,6 +123,10 @@ export class NotionOAuthService {
         status: "connected",
       };
       await this.repository.putConnection(connection);
+      logInfo("notion.oauth.callback.connection_saved", {
+        userHash: safeHash(stateRecord.userId),
+        workspaceHash: safeHash(tokenData.workspace_name),
+      });
     } finally {
       await this.repository.deleteOAuthState(input.state).catch((error) => {
         logWarn("notion.oauth_state.cleanup_failed", safeErrorDetails(error));

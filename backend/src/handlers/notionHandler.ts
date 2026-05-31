@@ -1,5 +1,5 @@
 import { getConfig } from "../config";
-import { logWarn, safeErrorDetails } from "../logging";
+import { logInfo, logWarn, safeErrorDetails, safeHash } from "../logging";
 import { NotionService } from "../notion/notionService";
 import type { AuthenticatedUser } from "../types/auth";
 import type { ApiGatewayProxyEvent, ApiGatewayProxyResult } from "../types/api";
@@ -32,8 +32,17 @@ export async function handleNotionRoute(
     if (path.endsWith("/notion/callback") && method === "GET") {
       const code = event.queryStringParameters?.code;
       const state = event.queryStringParameters?.state;
+      logInfo("notion.callback.received", {
+        hasCode: Boolean(code),
+        hasState: Boolean(state),
+        stateHash: safeHash(state),
+      });
       try {
         const result = await notionService.callback(code, state);
+        logInfo("notion.callback.completed", {
+          ok: true,
+          redirectToHash: safeHash(result.redirectTo),
+        });
         return htmlResponse(
           200,
           buildNotionCallbackHtml({
@@ -43,6 +52,13 @@ export async function handleNotionRoute(
         );
       } catch (error) {
         const userFacing = toUserFacingMessage(error);
+        logWarn("notion.callback.failed", {
+          hasCode: Boolean(code),
+          hasState: Boolean(state),
+          stateHash: safeHash(state),
+          statusCode: userFacing.statusCode,
+          ...safeErrorDetails(error),
+        });
         return htmlResponse(
           userFacing.statusCode,
           buildNotionCallbackHtml({

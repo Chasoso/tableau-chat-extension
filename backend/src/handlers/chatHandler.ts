@@ -17,7 +17,7 @@ export async function handler(event: ApiGatewayProxyEvent): Promise<ApiGatewayPr
   }
 
   try {
-    logInfo("chat.request.received", { requestId, method });
+    logInfo("chat.request.received", { requestId, method, routePath });
     const authResult = isNotionCallbackRoute ? { ok: true as const, user: undefined } : await authenticateRequest(event.headers);
     if (!authResult.ok) {
       logWarn("chat.auth.rejected", { requestId, statusCode: authResult.statusCode });
