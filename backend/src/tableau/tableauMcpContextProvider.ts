@@ -12,6 +12,7 @@ import {
   type PlannedMcpToolCall,
 } from "../services/tableauMcpToolPlanner";
 import type {
+  DatasourceFieldProfile,
   McpExecutionDebug,
   McpObservation,
   ResolvedDatasourceRef,
@@ -396,6 +397,7 @@ export class TableauMcpContextProvider implements TableauContextProvider {
         datasources: extractedDatasources,
       });
       const answerContextDatasources = normalizedContext.datasources;
+      const datasourceFieldProfiles = extractDatasourceFieldProfilesFromRawToolResults(rawToolResults, answerContextDatasources);
       const metadataCallSucceeded = toolResults.some(
         (result) => result.toolName === "get-datasource-metadata" && result.status === "success",
       );
@@ -441,6 +443,7 @@ export class TableauMcpContextProvider implements TableauContextProvider {
         provider: this.name,
         workbook: extractedWorkbook,
         datasources: answerContextDatasources,
+        datasourceFieldProfiles,
         normalizedContext,
         metadata: {
           transport: "stdio",
@@ -450,6 +453,7 @@ export class TableauMcpContextProvider implements TableauContextProvider {
           toolPlanningEnabled: mcpConfig.toolPlanningEnabled,
           intent: intent.intent,
           hasMetadata,
+          datasourceFieldProfiles,
         },
         mcpTools: toolSummaries,
         mcpToolResults: toolResults,
@@ -1954,11 +1958,155 @@ export function extractDatasourcesFromRawToolResults(
   ];
 }
 
+export function extractDatasourceFieldProfilesFromRawToolResults(
+  rawToolResults: RawMcpToolResult[],
+  normalizedDatasources: TableauDatasourceRef[],
+): DatasourceFieldProfile[] {
+  const knownNames = new Set(normalizedDatasources.map((datasource) => normalizeNameForMatch(datasource.name)).filter(Boolean));
+  const profiles: DatasourceFieldProfile[] = [];
+
+  for (const toolResult of rawToolResults) {
+    if (toolResult.toolName !== "get-datasource-metadata") {
+      continue;
+    }
+
+    for (const payload of parseToolResultPayloads(toolResult.result)) {
+      const payloadRecord = isPlainObject(payload) ? payload : undefined;
+      if (!payloadRecord) {
+        continue;
+      }
+
+      const datasourceNameCandidates = [
+        readString(payloadRecord.datasourceName),
+        readString(payloadRecord.name),
+        isPlainObject(payloadRecord.datasourceModel) ? readString((payloadRecord.datasourceModel as Record<string, unknown>).name) : undefined,
+      ].filter((value): value is string => Boolean(value));
+
+      const fieldNames = dedupeFieldNames([
+        ...extractFieldNamesFromDatasourceModel(payloadRecord.datasourceModel),
+        ...extractFieldNamesFromFieldGroups(payloadRecord.fieldGroups),
+      ]);
+
+      if (!fieldNames.length) {
+        continue;
+      }
+
+      const matchedDatasourceName =
+        datasourceNameCandidates.find((candidate) => knownNames.has(normalizeNameForMatch(candidate))) ??
+        normalizedDatasources.find((datasource) => knownNames.has(normalizeNameForMatch(datasource.name)))?.name ??
+        datasourceNameCandidates[0] ??
+        normalizedDatasources[0]?.name ??
+        "Unknown datasource";
+
+      profiles.push({
+        datasourceName: matchedDatasourceName,
+        fieldNames,
+        fieldCount: fieldNames.length,
+        sourceTool: "get-datasource-metadata",
+      });
+    }
+  }
+
+  return dedupeDatasourceFieldProfiles(profiles);
+}
+
 type WorkbookCandidate = {
   id?: string;
   name: string;
   source: "workbook" | "view-workbook" | "workbookName" | "parentWorkbookName";
 };
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function extractFieldNamesFromDatasourceModel(value: unknown): string[] {
+  if (!isPlainObject(value)) {
+    return [];
+  }
+
+  const fields = (value as Record<string, unknown>).fields;
+  if (!Array.isArray(fields)) {
+    return [];
+  }
+
+  return fields
+    .map((field) => {
+      if (!isPlainObject(field)) {
+        return undefined;
+      }
+
+      return readString((field as Record<string, unknown>).name) ?? readString((field as Record<string, unknown>).fieldName);
+    })
+    .filter((name): name is string => Boolean(name));
+}
+
+function extractFieldNamesFromFieldGroups(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  const names: string[] = [];
+  for (const group of value) {
+    if (!isPlainObject(group)) {
+      continue;
+    }
+    const fields = (group as Record<string, unknown>).fields;
+    if (!Array.isArray(fields)) {
+      continue;
+    }
+    for (const field of fields) {
+      if (!isPlainObject(field)) {
+        continue;
+      }
+      const name = readString((field as Record<string, unknown>).name) ?? readString((field as Record<string, unknown>).fieldName);
+      if (name) {
+        names.push(name);
+      }
+    }
+  }
+
+  return names;
+}
+
+function dedupeFieldNames(fieldNames: string[]): string[] {
+  const seen = new Set<string>();
+  const deduped: string[] = [];
+  for (const fieldName of fieldNames) {
+    const key = normalizeNameForMatch(fieldName);
+    if (!key || seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    deduped.push(fieldName);
+  }
+
+  return deduped;
+}
+
+function dedupeDatasourceFieldProfiles(profiles: DatasourceFieldProfile[]): DatasourceFieldProfile[] {
+  const byDatasource = new Map<string, DatasourceFieldProfile>();
+  for (const profile of profiles) {
+    const key = normalizeNameForMatch(profile.datasourceName);
+    if (!key) {
+      continue;
+    }
+    const existing = byDatasource.get(key);
+    if (!existing) {
+      byDatasource.set(key, profile);
+      continue;
+    }
+
+    const mergedFieldNames = dedupeFieldNames([...existing.fieldNames, ...profile.fieldNames]);
+    byDatasource.set(key, {
+      ...existing,
+      fieldNames: mergedFieldNames,
+      fieldCount: mergedFieldNames.length,
+    });
+  }
+
+  return [...byDatasource.values()];
+}
 
 type WorkbookCandidateOptions = {
   preferredWorkbookName?: string;

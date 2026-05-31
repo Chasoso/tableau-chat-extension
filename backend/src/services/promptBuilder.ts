@@ -30,6 +30,7 @@ export function buildPrompt(
     "Do not ask the user to provide datasource id unless the product explicitly supports manual id input.",
     "Do not ask the user to provide datasource ID when datasource names are already known from context.",
     "Do not confuse Tableau project names with datasource names.",
+    "If datasource field evidence is present, list only those field names. Do not invent additional field names.",
     "If follow-up action is useful, suggest exactly one next check.",
     "When answering, clarify scope with phrases like 'In this dashboard context' or 'From retrieved Tableau Cloud information'.",
     observationCount

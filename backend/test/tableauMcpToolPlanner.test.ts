@@ -98,6 +98,24 @@ describe("tableauMcpToolPlanner", () => {
     expect(intent.needsMcp).toBe(false);
   });
 
+  it("prioritizes metadata intent when question asks for datasource fields", () => {
+    const intent = classifyQuestionIntent(
+      "このダッシュボードで使われているデータソースのフィールドを説明して",
+      {
+        dashboardName: "Statistics",
+        workbookName: "Tableau Public Insights",
+        worksheets: [{ name: "Views" }],
+        filters: [],
+        parameters: [],
+        dataSources: [{ name: "Tableau Public Per Day(2025/04-)" }],
+        capturedAt: "2026-05-31T00:00:00.000Z",
+      },
+      ["list-datasources", "get-datasource-metadata", "query-datasource"],
+    );
+
+    expect(intent.intent).toBe("metadata_lookup");
+  });
+
   it("keeps tool freedom in soft intent filter mode", () => {
     const allowed = filterAllowedToolNamesByIntent(
       ["list-views", "list-datasources", "search-content"],

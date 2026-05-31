@@ -129,6 +129,13 @@ export type TableauDatasourceRef = {
   workbookName?: string;
 };
 
+export type DatasourceFieldProfile = {
+  datasourceName: string;
+  fieldNames: string[];
+  fieldCount: number;
+  sourceTool: "get-datasource-metadata";
+};
+
 export type ResolvedDatasourceRef = {
   name: string;
   id?: string;
@@ -156,6 +163,7 @@ export type TableauAdditionalContext = {
   provider: "mock" | "direct-api" | "tableau-mcp";
   workbook?: unknown;
   datasources?: unknown[];
+  datasourceFieldProfiles?: DatasourceFieldProfile[];
   normalizedContext?: NormalizedTableauContext;
   metadata?: unknown;
   mcpTools?: TableauMcpToolSummary[];

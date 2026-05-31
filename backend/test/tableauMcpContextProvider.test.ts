@@ -6,6 +6,7 @@ import {
   checkToolPreconditions,
   classifyMcpErrorCategory,
   extractBestWorkbookId,
+  extractDatasourceFieldProfilesFromRawToolResults,
   extractDatasourcesFromRawToolResults,
   extractWorkbookFromToolResults,
   inferPlannedToolArguments,
@@ -111,6 +112,50 @@ describe("TableauMcpContextProvider extraction helpers", () => {
         contentUrl: undefined,
         projectName: "Sandbox",
         workbookName: undefined,
+      },
+    ]);
+  });
+
+  it("extracts datasource field profiles from get-datasource-metadata results", () => {
+    const rawToolResults = [
+      {
+        toolName: "get-datasource-metadata",
+        result: {
+          content: [
+            {
+              text: JSON.stringify({
+                datasourceModel: {
+                  name: "Tableau Public Per Day(2025/04-)",
+                  fields: [{ name: "Datetime(JST)" }, { name: "workbook_title" }],
+                },
+                fieldGroups: [
+                  {
+                    name: "Measures",
+                    fields: [{ name: "workbook_viewCount" }],
+                  },
+                ],
+              }),
+            },
+          ],
+        },
+      },
+    ];
+
+    const profiles = extractDatasourceFieldProfilesFromRawToolResults(rawToolResults, [
+      {
+        type: "datasource",
+        name: "Tableau Public Per Day(2025/04-)",
+        id: "datasource-luid",
+        luid: "datasource-luid",
+      },
+    ]);
+
+    expect(profiles).toEqual([
+      {
+        datasourceName: "Tableau Public Per Day(2025/04-)",
+        fieldNames: ["Datetime(JST)", "workbook_title", "workbook_viewCount"],
+        fieldCount: 3,
+        sourceTool: "get-datasource-metadata",
       },
     ]);
   });

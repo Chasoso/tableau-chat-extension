@@ -1,5 +1,5 @@
 import type { ChatRequest } from "../types/chat";
-import type { TableauAdditionalContext } from "../types/tableau";
+import type { DatasourceFieldProfile, TableauAdditionalContext } from "../types/tableau";
 
 const REDACTED_KEYS = /token|secret|password|jwt|authorization|credential|cookie/i;
 
@@ -22,6 +22,7 @@ export type CompressedDashboardContext = {
   mcpTools: string[];
   mcpToolResults: string[];
   mcpObservations: string[];
+  datasourceFieldEvidence: string[];
   warnings: string[];
 };
 
@@ -67,6 +68,7 @@ export function compressDashboardContext(
         const reason = observation.resultSummary || observation.errorMessage || "no details";
         return `${observation.tool} (${status}) purpose=${observation.purpose}; ${reason}`.slice(0, 420);
       }) ?? [],
+    datasourceFieldEvidence: renderDatasourceFieldEvidence(additionalContext.datasourceFieldProfiles ?? []),
     warnings: additionalContext.warnings ?? [],
   };
 }
@@ -91,6 +93,7 @@ export function renderCompressedContext(context: CompressedDashboardContext): st
     `MCP tools: ${context.mcpTools.join(", ") || "not available"}`,
     `MCP tool results: ${context.mcpToolResults.join("\n") || "not available"}`,
     `MCP observations: ${context.mcpObservations.join("\n") || "not available"}`,
+    `Datasource field evidence: ${context.datasourceFieldEvidence.join("\n") || "not available"}`,
     `Warnings: ${context.warnings.join("; ") || "none"}`,
   ].join("\n");
 }
@@ -144,4 +147,12 @@ function extractAnswerDatasourceNames(
 
 function unique(value: string, index: number, values: string[]): boolean {
   return value.trim().length > 0 && values.indexOf(value) === index;
+}
+
+function renderDatasourceFieldEvidence(profiles: DatasourceFieldProfile[]): string[] {
+  return profiles.slice(0, 5).map((profile) => {
+    const topFields = profile.fieldNames.slice(0, 40).join(", ");
+    const suffix = profile.fieldNames.length > 40 ? ", ..." : "";
+    return `${profile.datasourceName} fields (${profile.fieldCount}): ${topFields}${suffix}`;
+  });
 }

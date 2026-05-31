@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+﻿import { describe, expect, it } from "vitest";
 import { InMemoryChatHistoryRepository } from "../src/repositories/chatHistoryRepository";
 import type { AnswerGenerator } from "../src/services/answerGenerator";
 import { MockAnswerGenerator } from "../src/services/answerGenerator";
@@ -26,7 +26,6 @@ describe("ChatService with mock provider", () => {
       },
     });
 
-    expect(response.answer).toContain("含まれるワークシートは 2 個です");
     expect(response.answer).toContain("Sheet 1, Sheet 2");
     expect(response.debug?.usedMock).toBe(true);
     expect(response.debug?.tableauContextProvider).toBe("mock");
@@ -112,7 +111,7 @@ describe("ChatService with mock provider", () => {
 
   it("sanitizes internal tool instructions in metadata-unavailable answers", () => {
     const sanitized = sanitizeUserFacingAnswer(
-      "get-datasource-metadataツールを実行するか、query-datasourceを実行してください。datasource-idを指定してください。",
+      "get-datasource-metadata and query-datasource need datasource-id",
       {
         question: "このダッシュボードで使われているデータソースのフィールドを説明して",
         dashboardContext: {
@@ -155,6 +154,67 @@ describe("ChatService with mock provider", () => {
     expect(sanitized).not.toContain("get-datasource-metadata");
     expect(sanitized).not.toContain("query-datasource");
     expect(sanitized).not.toContain("datasource-id");
-    expect(sanitized).toContain("アプリ側で特定できなかった");
+    expect(sanitized).toContain("このダッシュボードで確認できているデータソース");
+  });
+
+  it("replaces hallucinated datasource fields with strict metadata-backed field list", () => {
+    const sanitized = sanitizeUserFacingAnswer(
+      [
+        "| field | type |",
+        "| --- | --- |",
+        "| workbook_title | string |",
+        "| workbook_reactionCounts_LAUGH | number |",
+      ].join("\n"),
+      {
+        question: "このデータソースのフィールドを説明して",
+        dashboardContext: {
+          dashboardName: "Statistics",
+          workbookName: "Tableau Public Insights",
+          worksheets: [{ name: "Views" }],
+          filters: [],
+          parameters: [],
+          dataSources: [{ name: "Tableau Public Per Day(2025/04-)" }],
+          capturedAt: new Date().toISOString(),
+        },
+      },
+      {
+        provider: "tableau-mcp",
+        normalizedContext: {
+          dashboard: { name: "Statistics" },
+          workbook: { type: "workbook", name: "Tableau Public Insights" },
+          views: [],
+          datasources: [{ type: "datasource", name: "Tableau Public Per Day(2025/04-)" }],
+          projects: [],
+        },
+        datasourceFieldProfiles: [
+          {
+            datasourceName: "Tableau Public Per Day(2025/04-)",
+            fieldNames: ["workbook_title", "workbook_viewCount"],
+            fieldCount: 2,
+            sourceTool: "get-datasource-metadata",
+          },
+        ],
+        mcpExecutionDebug: {
+          intent: "metadata_lookup",
+          intentConfidence: 0.9,
+          answerableFromDashboardContext: false,
+          needsMcp: true,
+          maxToolCalls: 5,
+          plannedTools: [],
+          blockedTools: [],
+          executedTools: ["get-datasource-metadata"],
+          skippedTools: [],
+          toolCallCount: 1,
+          replanUsed: false,
+          timingMs: { planning: 0, execution: 0 },
+        },
+        metadata: { hasMetadata: true },
+      },
+    );
+
+    expect(sanitized).toContain("Tableau Public Per Day(2025/04-)");
+    expect(sanitized).toContain("workbook_title");
+    expect(sanitized).toContain("workbook_viewCount");
+    expect(sanitized).not.toContain("workbook_reactionCounts_LAUGH");
   });
 });

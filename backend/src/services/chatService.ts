@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+﻿import { randomUUID } from "node:crypto";
 import { getConfig } from "../config";
 import { logDebug, logInfo, safeHash } from "../logging";
 import { createChatHistoryRepository, type ChatHistoryRepository } from "../repositories/chatHistoryRepository";
@@ -8,7 +8,7 @@ import { TableauMcpContextProvider } from "../tableau/tableauMcpContextProvider"
 import type { TableauContextProvider } from "../tableau/contextProvider";
 import type { AuthenticatedUser } from "../types/auth";
 import type { ChatRequest, ChatResponse, ContextRequest, ContextResponse } from "../types/chat";
-import type { DashboardContext } from "../types/tableau";
+import type { DashboardContext, DatasourceFieldProfile } from "../types/tableau";
 import { BedrockAnswerGenerator, MockAnswerGenerator, type AnswerGenerator } from "./answerGenerator";
 import { buildPrompt } from "./promptBuilder";
 
@@ -173,18 +173,20 @@ export function sanitizeUserFacingAnswer(
   request: ChatRequest,
   additionalContext: Awaited<ReturnType<TableauContextProvider["getAdditionalContext"]>>,
 ): string {
-  const containsInternalToolInstruction =
-    /(get-datasource-metadata|query-datasource|datasource-id|datasource id|ツールを実行|toolを実行)/i.test(answer);
+  const answerAfterFieldValidation = sanitizeHallucinatedFieldMentions(answer, request, additionalContext);
+  const containsInternalToolInstruction = /(get-datasource-metadata|query-datasource|datasource-id|datasource id)/i.test(
+    answerAfterFieldValidation,
+  );
   if (!containsInternalToolInstruction) {
-    return answer;
+    return answerAfterFieldValidation;
   }
 
   const isMetadataLookup = additionalContext.mcpExecutionDebug?.intent === "metadata_lookup";
   const metadataResolved = hasResolvedMetadata(additionalContext);
   if (!isMetadataLookup || metadataResolved) {
-    return answer
-      .replace(/get-datasource-metadata/gi, "データソースメタデータ取得")
-      .replace(/query-datasource/gi, "データ問い合わせ")
+    return answerAfterFieldValidation
+      .replace(/get-datasource-metadata/gi, "datasource metadata lookup")
+      .replace(/query-datasource/gi, "datasource query")
       .replace(/datasource-id/gi, "datasource identifier");
   }
 
@@ -192,15 +194,120 @@ export function sanitizeUserFacingAnswer(
     additionalContext.normalizedContext?.datasources?.map((datasource) => datasource.name).filter(Boolean) ??
     request.dashboardContext.dataSources?.map((datasource) => datasource.name).filter(Boolean) ??
     [];
-  const datasourceText = datasourceNames.length ? datasourceNames.join("、") : "該当データソース";
+  const datasourceText = datasourceNames.length ? datasourceNames.join("、") : "対象データソース";
 
   return [
     `このダッシュボードで確認できているデータソースは ${datasourceText} です。`,
     "ただし、フィールド一覧を取得するために必要な Tableau Cloud 上の datasource id / luid / contentUrl をアプリ側で特定できなかったため、現時点ではフィールド一覧までは説明できません。",
-    "次は、開発者側の確認として list-datasources または search-content の結果から datasource identifier を解決できるかを確認するのがよいです。",
+    "次は、開発者向けの確認として list-datasources または search-content の結果に datasource identifier が含まれているかを確認するのがよいです。",
   ].join("");
 }
 
+function sanitizeHallucinatedFieldMentions(
+  answer: string,
+  request: ChatRequest,
+  additionalContext: Awaited<ReturnType<TableauContextProvider["getAdditionalContext"]>>,
+): string {
+  if (additionalContext.provider !== "tableau-mcp") {
+    return answer;
+  }
+
+  if (additionalContext.mcpExecutionDebug?.intent !== "metadata_lookup") {
+    return answer;
+  }
+
+  const fieldProfiles = additionalContext.datasourceFieldProfiles ?? [];
+  if (!fieldProfiles.length) {
+    return answer;
+  }
+
+  const knownFieldNameSet = new Set(
+    fieldProfiles
+      .flatMap((profile) => profile.fieldNames)
+      .map((fieldName) => normalizeFieldToken(fieldName))
+      .filter(Boolean),
+  );
+  if (!knownFieldNameSet.size) {
+    return answer;
+  }
+
+  const mentionedFieldCandidates = extractMentionedFieldCandidates(answer);
+  const unknownMentionedFields = mentionedFieldCandidates.filter(
+    (field) => !knownFieldNameSet.has(normalizeFieldToken(field)),
+  );
+  if (!unknownMentionedFields.length) {
+    return answer;
+  }
+
+  const datasourceNames =
+    additionalContext.normalizedContext?.datasources?.map((datasource) => datasource.name).filter(Boolean) ??
+    request.dashboardContext.dataSources?.map((datasource) => datasource.name).filter(Boolean) ??
+    [];
+
+  return buildStrictFieldAnswerFromProfiles(fieldProfiles, datasourceNames);
+}
+
+function extractMentionedFieldCandidates(answer: string): string[] {
+  const candidates = new Set<string>();
+
+  for (const match of answer.matchAll(/`([^`\n]{2,120})`/g)) {
+    const value = match[1]?.trim();
+    if (looksLikeFieldToken(value)) {
+      candidates.add(value);
+    }
+  }
+
+  for (const line of answer.split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed.startsWith("|")) {
+      continue;
+    }
+    const firstCell = trimmed.split("|")[1]?.trim();
+    if (!firstCell || /^-+$/.test(firstCell)) {
+      continue;
+    }
+    if (looksLikeFieldToken(firstCell)) {
+      candidates.add(firstCell);
+    }
+  }
+
+  return [...candidates];
+}
+
+function looksLikeFieldToken(value: string | undefined): boolean {
+  if (!value) {
+    return false;
+  }
+
+  const trimmed = value.trim();
+  if (!trimmed || /^[\d\-_.]+$/.test(trimmed)) {
+    return false;
+  }
+
+  return /[A-Za-z_]/.test(trimmed) && !/\s{2,}/.test(trimmed);
+}
+
+function normalizeFieldToken(value: string): string {
+  return value.trim().toLowerCase().replace(/\s+/g, "");
+}
+
+function buildStrictFieldAnswerFromProfiles(profiles: DatasourceFieldProfile[], datasourceNames: string[]): string {
+  const lines: string[] = [];
+  const uniqueDatasourceNames = [...new Set(datasourceNames)];
+  const headerDatasource = uniqueDatasourceNames.length
+    ? uniqueDatasourceNames.join("、")
+    : profiles.map((profile) => profile.datasourceName).join("、");
+  lines.push(`このダッシュボードで確認できているデータソースは ${headerDatasource} です。`);
+  lines.push("取得できたTableau Cloudのメタデータに基づくフィールド一覧は次のとおりです。");
+
+  for (const profile of profiles) {
+    lines.push(`- ${profile.datasourceName}（${profile.fieldCount}件）`);
+    lines.push(`  ${profile.fieldNames.join("、")}`);
+  }
+
+  lines.push("上記以外のフィールド名は、今回取得できたメタデータでは確認できませんでした。");
+  return lines.join("\n");
+}
 function hasResolvedMetadata(additionalContext: Awaited<ReturnType<TableauContextProvider["getAdditionalContext"]>>): boolean {
   if (additionalContext.provider === "tableau-mcp") {
     const metadata = additionalContext.metadata as Record<string, unknown> | undefined;
@@ -327,3 +434,4 @@ function resolveTableauSubject(authenticatedUser: AuthenticatedUser | undefined)
   const config = getConfig();
   return authenticatedUser?.tableauSubject ?? (config.tableau.defaultSubject || undefined);
 }
+

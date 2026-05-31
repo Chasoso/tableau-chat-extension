@@ -368,14 +368,16 @@ export function classifyQuestionIntent(
     intent = "filter_or_selection_state";
     confidence = 0.82;
     reasonBrief = "The question focuses on current filters, selections, or parameter state.";
+  } else if (hasMetadataKeywords || knownDatasourceMentioned) {
+    intent = "metadata_lookup";
+    confidence = hasAnalysisKeywords ? 0.78 : knownDatasourceMentioned ? 0.84 : 0.74;
+    reasonBrief = hasAnalysisKeywords
+      ? "The question includes datasource/field metadata cues, so metadata lookup should run before analysis."
+      : "The question asks about datasources, fields, or workbook/view metadata.";
   } else if (hasAnalysisKeywords || (knownDatasourceMentioned && hasQueryTool)) {
     intent = "data_analysis";
     confidence = hasQueryTool ? 0.86 : 0.68;
     reasonBrief = "The question asks for aggregated values, trends, or ranking analysis.";
-  } else if (hasMetadataKeywords || knownDatasourceMentioned) {
-    intent = "metadata_lookup";
-    confidence = knownDatasourceMentioned ? 0.84 : 0.74;
-    reasonBrief = "The question asks about datasources, fields, or workbook/view metadata.";
   } else if (hasContentSearchKeywords && hasSearchTool) {
     intent = "content_search";
     confidence = 0.78;
