@@ -211,8 +211,11 @@ This PoC adds a backend-managed Notion integration for low-cost small-team usage
 - `NOTION_DEFAULT_TARGET_PARENT_PAGE_ID=<optional default parent page>`
 - `NOTION_DEFAULT_TARGET_DATABASE_ID=<optional default database>`
 - `NOTION_LOCAL_DEV_USER_ID=local-dev-user`
-- `NOTION_OAUTH_CLIENT_ID=<notion oauth client id>`
-- `NOTION_OAUTH_CLIENT_SECRET=<notion oauth client secret>`
+- `NOTION_OAUTH_CLIENT_ID=<optional static oauth client id fallback>`
+- `NOTION_OAUTH_CLIENT_SECRET=<optional static oauth client secret fallback>`
+
+Notion MCP OAuth now uses Dynamic Client Registration (DCR) by default.  
+If DCR succeeds, static `NOTION_OAUTH_CLIENT_ID/SECRET` are not required.
 
 #### New Notion APIs
 

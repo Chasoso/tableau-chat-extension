@@ -50,8 +50,8 @@ Store these as GitHub Secrets:
 | `NOTION_REDIRECT_URI` | Notion OAuth callback URL (`/notion/callback`). |
 | `NOTION_DEFAULT_TARGET_PARENT_PAGE_ID` | Optional default Notion parent page for page creation. |
 | `NOTION_DEFAULT_TARGET_DATABASE_ID` | Optional default Notion database/data source ID. |
-| `NOTION_OAUTH_CLIENT_ID` | Notion OAuth client ID. |
-| `NOTION_OAUTH_CLIENT_SECRET` | Notion OAuth client secret. |
+| `NOTION_OAUTH_CLIENT_ID` | Optional static Notion OAuth client ID fallback when Dynamic Client Registration is unavailable. |
+| `NOTION_OAUTH_CLIENT_SECRET` | Optional static Notion OAuth client secret fallback. |
 
 ### GitHub Variables
 
