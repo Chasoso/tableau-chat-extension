@@ -74,21 +74,40 @@ export default function ChatPanel({ dashboardContext, authToken, userDisplayName
       });
   }, [authToken, dashboardContext, onDashboardContextPatch]);
 
+  async function refreshNotionStatus() {
+    try {
+      const status = await getNotionStatus(authToken);
+      setNotionStatus(status);
+    } catch {
+      setNotionStatus({
+        connected: false,
+        status: "disconnected",
+        targetParentPageIdConfigured: false,
+        targetDatabaseIdConfigured: false,
+      });
+    }
+  }
+
   useEffect(() => {
     if (env.authRequired && !authToken) {
       return;
     }
 
-    getNotionStatus(authToken)
-      .then((status) => setNotionStatus(status))
-      .catch(() => {
-        setNotionStatus({
-          connected: false,
-          status: "disconnected",
-          targetParentPageIdConfigured: false,
-          targetDatabaseIdConfigured: false,
-        });
-      });
+    void refreshNotionStatus();
+  }, [authToken]);
+
+  useEffect(() => {
+    const handleWindowFocus = () => {
+      if (env.authRequired && !authToken) {
+        return;
+      }
+      void refreshNotionStatus();
+    };
+
+    window.addEventListener("focus", handleWindowFocus);
+    return () => {
+      window.removeEventListener("focus", handleWindowFocus);
+    };
   }, [authToken]);
 
   async function handleSend(question: string) {
@@ -155,7 +174,7 @@ export default function ChatPanel({ dashboardContext, authToken, userDisplayName
         },
         authToken,
       );
-      window.location.href = authorizationUrl;
+      window.open(authorizationUrl, "_blank", "noopener,noreferrer");
     } catch (unknownError) {
       setError(unknownError instanceof Error ? unknownError.message : "Notion接続に失敗しました。");
     } finally {
