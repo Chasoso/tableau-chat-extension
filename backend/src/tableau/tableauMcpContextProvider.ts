@@ -2681,7 +2681,7 @@ function looksLikeIdentifier(value: string): boolean {
   return false;
 }
 
-function normalizeTableauContext(input: {
+export function normalizeTableauContext(input: {
   dashboardContext: GetAdditionalContextInput["dashboardContext"];
   workbook: { id?: string; name: string } | undefined;
   rawToolResults: RawMcpToolResult[];
@@ -2698,9 +2698,9 @@ function normalizeTableauContext(input: {
   const rawDatasourceCandidates = extractDatasourceCandidatesFromRawToolResults(input.rawToolResults);
   const listDatasourcesCalled = input.rawToolResults.some((result) => result.toolName === "list-datasources");
   const searchContentCalled = input.rawToolResults.some((result) => result.toolName === "search-content");
-  const datasources = dedupeDatasourceObjects([
-    ...((input.datasources as TableauDatasourceRef[]) ?? []),
-    ...rawDatasourceCandidates.map((candidate) => ({
+  const resolvedDatasources = dedupeDatasourceObjects((input.datasources as TableauDatasourceRef[]) ?? []);
+  const fallbackDatasources = dedupeDatasourceObjects(
+    rawDatasourceCandidates.map((candidate) => ({
       type: "datasource" as const,
       name: candidate.name,
       id: candidate.id,
@@ -2709,7 +2709,9 @@ function normalizeTableauContext(input: {
       projectName: candidate.projectName,
       workbookName: candidate.workbookName,
     })),
-  ]);
+  );
+  // Hotfix: do not re-expand to site-wide datasource candidates when narrowed matches already exist.
+  const datasources = resolvedDatasources.length ? resolvedDatasources : fallbackDatasources;
 
   const projects = dedupeProjects(
     extractProjectRefsFromRawToolResults(input.rawToolResults, datasources).concat(
@@ -2723,6 +2725,9 @@ function normalizeTableauContext(input: {
   const project = projects[0];
 
   logInfo("tableau.mcp.datasource.normalization", {
+    datasourceSelectionSource: resolvedDatasources.length ? "resolved" : "fallback_raw_candidates",
+    resolvedDatasourceCount: resolvedDatasources.length,
+    fallbackDatasourceCount: fallbackDatasources.length,
     extractedDatasourceCount: datasources.length,
     extractedProjectCount: projects.length,
     excludedProjectAsDatasourceCount: projects.filter((projectRef) =>

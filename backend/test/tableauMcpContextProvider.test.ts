@@ -10,6 +10,7 @@ import {
   extractWorkbookFromToolResults,
   inferPlannedToolArguments,
   isMcpErrorResult,
+  normalizeTableauContext,
   resolveDatasourceIdentifier,
 } from "../src/tableau/tableauMcpContextProvider";
 import type { ClassifiedQuestionIntent } from "../src/services/tableauMcpToolPlanner";
@@ -544,5 +545,45 @@ describe("TableauMcpContextProvider extraction helpers", () => {
       remainingToolBudget: 0,
     });
     expect(selection).toBeUndefined();
+  });
+
+  it("keeps narrowed datasource matches and avoids re-expanding to list-datasources full set", () => {
+    const normalized = normalizeTableauContext({
+      dashboardContext: {
+        ...baseInput.dashboardContext,
+        workbookName: "Tableau Public Insights",
+      },
+      workbook: { name: "Tableau Public Insights", id: "wb-1" },
+      datasources: [
+        {
+          type: "datasource",
+          name: "Tableau Public Per Day(2025/04-)",
+          id: "ds-target",
+          luid: "ds-target",
+          projectName: "Sandbox",
+        },
+      ],
+      rawToolResults: [
+        {
+          toolName: "list-datasources",
+          result: {
+            content: [
+              {
+                text: JSON.stringify([
+                  { name: "Tableau Public Per Day(2025/04-)", id: "ds-target", project: { name: "Sandbox" } },
+                  { name: "Superstore Datasource", id: "ds-other-1", project: { name: "Sandbox" } },
+                  { name: "Admin Insights", id: "ds-other-2", project: { name: "Sandbox" } },
+                ]),
+              },
+            ],
+          },
+        },
+      ],
+    });
+
+    expect(normalized.datasources).toHaveLength(1);
+    expect(normalized.datasources[0]?.name).toBe("Tableau Public Per Day(2025/04-)");
+    expect(normalized.datasources[0]?.id).toBe("ds-target");
+    expect(normalized.datasources[0]?.luid).toBe("ds-target");
   });
 });
