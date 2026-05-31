@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from "react";
 import { sendChatQuestion } from "../api/chatApi";
 import { enrichDashboardContext } from "../api/contextApi";
 import {
-  disconnectNotion,
   getNotionStatus,
   savePostIdeaToNotion,
   startNotionConnect,
@@ -164,23 +163,6 @@ export default function ChatPanel({ dashboardContext, authToken, userDisplayName
     }
   }
 
-  async function handleDisconnectNotion() {
-    try {
-      setNotionLoading(true);
-      await disconnectNotion(authToken);
-      setNotionStatus({
-        connected: false,
-        status: "disconnected",
-        targetParentPageIdConfigured: notionStatus?.targetParentPageIdConfigured ?? false,
-        targetDatabaseIdConfigured: notionStatus?.targetDatabaseIdConfigured ?? false,
-      });
-    } catch (unknownError) {
-      setError(unknownError instanceof Error ? unknownError.message : "Notion切断に失敗しました。");
-    } finally {
-      setNotionLoading(false);
-    }
-  }
-
   async function handleSaveToNotion() {
     if (!notionDraft) {
       return;
@@ -207,28 +189,6 @@ export default function ChatPanel({ dashboardContext, authToken, userDisplayName
         {userDisplayName ? <span className="user-pill">{userDisplayName}</span> : null}
       </header>
 
-      <section className="notion-status-panel" aria-label="Notion integration status">
-        <div>
-          <strong>Notion</strong>
-          <p>
-            {notionStatus?.connected
-              ? `Connected: ${notionStatus.workspaceName ?? "workspace"}`
-              : "Not connected"}
-          </p>
-        </div>
-        <div className="notion-status-actions">
-          {notionStatus?.connected ? (
-            <button type="button" disabled={notionLoading} onClick={() => void handleDisconnectNotion()}>
-              Disconnect
-            </button>
-          ) : (
-            <button type="button" disabled={notionLoading} onClick={() => void handleConnectNotion()}>
-              Connect Notion
-            </button>
-          )}
-        </div>
-      </section>
-
       <div className={messages.length === 0 ? "chat-body has-starters" : "chat-body no-starters"}>
         {messages.length === 0 ? (
           <section className="question-starters" aria-label="suggested questions">
@@ -247,6 +207,13 @@ export default function ChatPanel({ dashboardContext, authToken, userDisplayName
       </div>
 
       <div className="chat-footer">
+        {!notionStatus?.connected ? (
+          <div className="notion-connect-row">
+            <button type="button" className="notion-connect-button" disabled={notionLoading} onClick={() => void handleConnectNotion()}>
+              Connect to Notion
+            </button>
+          </div>
+        ) : null}
         {notionDraft ? (
           <section className="notion-draft-card" aria-label="Notion post idea preview">
             <h2>Notion保存プレビュー</h2>
