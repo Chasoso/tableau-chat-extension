@@ -21,6 +21,15 @@ type NotionTokenResponse = {
   duplicated_template_id?: string;
 };
 
+type OAuthMetadata = {
+  issuer?: string;
+  authorization_endpoint?: string;
+  token_endpoint?: string;
+  code_challenge_methods_supported?: string[];
+};
+
+let cachedMcpOAuthMetadata: OAuthMetadata | null = null;
+
 export class NotionOAuthService {
   constructor(private readonly repository = new NotionRepository()) {}
 
@@ -30,6 +39,10 @@ export class NotionOAuthService {
   }): Promise<{ authorizationUrl: string }> {
     const config = getConfig();
     validateOauthConfiguration();
+    const oauthMetadata = await discoverMcpOAuthMetadata(config.notion.mcpUrl, {
+      fallbackAuthorizationEndpoint: config.notion.oauthAuthorizeUrl,
+      fallbackTokenEndpoint: config.notion.oauthTokenUrl,
+    });
 
     const codeVerifier = createCodeVerifier();
     const state = randomUUID();
@@ -52,7 +65,7 @@ export class NotionOAuthService {
     });
 
     const codeChallenge = createCodeChallenge(codeVerifier);
-    const authorizeUrl = new URL(config.notion.oauthAuthorizeUrl);
+    const authorizeUrl = new URL(oauthMetadata.authorization_endpoint!);
     authorizeUrl.searchParams.set("owner", "user");
     authorizeUrl.searchParams.set("client_id", config.notion.oauthClientId!);
     authorizeUrl.searchParams.set("redirect_uri", config.notion.redirectUri);
@@ -224,7 +237,11 @@ function validateOauthConfiguration(): void {
 
 async function exchangeAuthorizationCode(input: { code: string; codeVerifier: string }): Promise<NotionTokenResponse> {
   const config = getConfig().notion;
-  const response = await fetch(config.oauthTokenUrl, {
+  const oauthMetadata = await discoverMcpOAuthMetadata(config.mcpUrl, {
+    fallbackAuthorizationEndpoint: config.oauthAuthorizeUrl,
+    fallbackTokenEndpoint: config.oauthTokenUrl,
+  });
+  const response = await fetch(oauthMetadata.token_endpoint!, {
     method: "POST",
     headers: {
       Authorization: `Basic ${Buffer.from(`${config.oauthClientId}:${config.oauthClientSecret}`).toString("base64")}`,
@@ -248,7 +265,11 @@ async function exchangeAuthorizationCode(input: { code: string; codeVerifier: st
 
 async function refreshNotionToken(refreshToken: string): Promise<NotionTokenResponse> {
   const config = getConfig().notion;
-  const response = await fetch(config.oauthTokenUrl, {
+  const oauthMetadata = await discoverMcpOAuthMetadata(config.mcpUrl, {
+    fallbackAuthorizationEndpoint: config.oauthAuthorizeUrl,
+    fallbackTokenEndpoint: config.oauthTokenUrl,
+  });
+  const response = await fetch(oauthMetadata.token_endpoint!, {
     method: "POST",
     headers: {
       Authorization: `Basic ${Buffer.from(`${config.oauthClientId}:${config.oauthClientSecret}`).toString("base64")}`,
@@ -282,4 +303,60 @@ function toBase64Url(input: Buffer): string {
     .replace(/\+/g, "-")
     .replace(/\//g, "_")
     .replace(/=+$/g, "");
+}
+
+async function discoverMcpOAuthMetadata(
+  mcpServerUrl: string,
+  fallback: { fallbackAuthorizationEndpoint: string; fallbackTokenEndpoint: string },
+): Promise<OAuthMetadata> {
+  if (cachedMcpOAuthMetadata?.authorization_endpoint && cachedMcpOAuthMetadata?.token_endpoint) {
+    return cachedMcpOAuthMetadata;
+  }
+
+  try {
+    const protectedResourceUrl = new URL("/.well-known/oauth-protected-resource", mcpServerUrl);
+    const protectedResourceResponse = await fetch(protectedResourceUrl.toString());
+    if (!protectedResourceResponse.ok) {
+      throw new Error(`protected-resource-metadata status ${protectedResourceResponse.status}`);
+    }
+
+    const protectedResource = (await protectedResourceResponse.json()) as { authorization_servers?: string[] };
+    const authServer = Array.isArray(protectedResource.authorization_servers)
+      ? protectedResource.authorization_servers[0]
+      : undefined;
+    if (!authServer) {
+      throw new Error("authorization_servers is missing");
+    }
+
+    const oauthMetadataUrl = new URL("/.well-known/oauth-authorization-server", authServer);
+    const oauthMetadataResponse = await fetch(oauthMetadataUrl.toString());
+    if (!oauthMetadataResponse.ok) {
+      throw new Error(`oauth-authorization-server status ${oauthMetadataResponse.status}`);
+    }
+
+    const metadata = (await oauthMetadataResponse.json()) as OAuthMetadata;
+    if (!metadata.authorization_endpoint || !metadata.token_endpoint) {
+      throw new Error("authorization_endpoint or token_endpoint is missing");
+    }
+
+    cachedMcpOAuthMetadata = metadata;
+    logInfo("notion.oauth.discovery.completed", {
+      hasIssuer: Boolean(metadata.issuer),
+      authorizationEndpointHostHash: safeHash(new URL(metadata.authorization_endpoint).host),
+      tokenEndpointHostHash: safeHash(new URL(metadata.token_endpoint).host),
+      mcpUrlHostHash: safeHash(new URL(mcpServerUrl).host),
+    });
+    return metadata;
+  } catch (error) {
+    logWarn("notion.oauth.discovery.fallback", {
+      ...safeErrorDetails(error),
+      mcpUrlHostHash: safeHash(new URL(mcpServerUrl).host),
+    });
+    const fallbackMetadata: OAuthMetadata = {
+      authorization_endpoint: fallback.fallbackAuthorizationEndpoint,
+      token_endpoint: fallback.fallbackTokenEndpoint,
+    };
+    cachedMcpOAuthMetadata = fallbackMetadata;
+    return fallbackMetadata;
+  }
 }
