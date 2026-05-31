@@ -319,31 +319,37 @@ async function exchangeAuthorizationCode(input: {
   const method = input.tokenEndpointAuthMethod ?? inferTokenEndpointAuthMethod({
     clientSecret: input.clientSecret ?? config.oauthClientSecret,
   });
-  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  const headers: Record<string, string> = { "Content-Type": "application/x-www-form-urlencoded" };
   if (method === "client_secret_basic") {
     headers.Authorization = `Basic ${Buffer.from(`${clientId}:${input.clientSecret ?? config.oauthClientSecret ?? ""}`).toString("base64")}`;
   }
 
-  const body: Record<string, string> = {
+  const body = new URLSearchParams({
     grant_type: "authorization_code",
     code: input.code,
     redirect_uri: config.redirectUri,
     code_verifier: input.codeVerifier,
     client_id: clientId,
     resource: input.resource || oauthMetadata.resource || deriveResourceFromMcpUrl(config.mcpUrl),
-  };
+  });
   if (method === "client_secret_post" && (input.clientSecret ?? config.oauthClientSecret)) {
-    body.client_secret = input.clientSecret ?? config.oauthClientSecret ?? "";
+    body.set("client_secret", input.clientSecret ?? config.oauthClientSecret ?? "");
   }
 
   const response = await fetch(tokenEndpoint, {
     method: "POST",
     headers,
-    body: JSON.stringify(body),
+    body: body.toString(),
   });
 
   if (!response.ok) {
-    throw new Error(`Notion OAuth token exchange failed with status ${response.status}.`);
+    const raw = await response.text().catch(() => "");
+    logWarn("notion.oauth.token_exchange.failed", {
+      statusCode: response.status,
+      responseBodyHash: safeHash(raw),
+      responseBodyLength: raw.length,
+    });
+    throw new Error(`Notion OAuth token exchange failed with status ${response.status}. ${truncateForError(raw)}`);
   }
 
   return (await response.json()) as NotionTokenResponse;
@@ -371,29 +377,35 @@ async function refreshNotionToken(input: {
   const method = input.tokenEndpointAuthMethod ?? inferTokenEndpointAuthMethod({
     clientSecret: input.clientSecret ?? config.oauthClientSecret,
   });
-  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  const headers: Record<string, string> = { "Content-Type": "application/x-www-form-urlencoded" };
   if (method === "client_secret_basic") {
     headers.Authorization = `Basic ${Buffer.from(`${clientId}:${input.clientSecret ?? config.oauthClientSecret ?? ""}`).toString("base64")}`;
   }
 
-  const body: Record<string, string> = {
+  const body = new URLSearchParams({
     grant_type: "refresh_token",
     refresh_token: input.refreshToken,
     client_id: clientId,
     resource: input.resource || oauthMetadata.resource || deriveResourceFromMcpUrl(config.mcpUrl),
-  };
+  });
   if (method === "client_secret_post" && (input.clientSecret ?? config.oauthClientSecret)) {
-    body.client_secret = input.clientSecret ?? config.oauthClientSecret ?? "";
+    body.set("client_secret", input.clientSecret ?? config.oauthClientSecret ?? "");
   }
 
   const response = await fetch(tokenEndpoint, {
     method: "POST",
     headers,
-    body: JSON.stringify(body),
+    body: body.toString(),
   });
 
   if (!response.ok) {
-    throw new Error(`Notion OAuth refresh failed with status ${response.status}.`);
+    const raw = await response.text().catch(() => "");
+    logWarn("notion.oauth.refresh.failed", {
+      statusCode: response.status,
+      responseBodyHash: safeHash(raw),
+      responseBodyLength: raw.length,
+    });
+    throw new Error(`Notion OAuth refresh failed with status ${response.status}. ${truncateForError(raw)}`);
   }
 
   return (await response.json()) as NotionTokenResponse;
@@ -535,6 +547,14 @@ async function decryptOptionalToken(input: {
 function deriveResourceFromMcpUrl(mcpServerUrl: string): string {
   const url = new URL(mcpServerUrl);
   return `${url.protocol}//${url.host}`;
+}
+
+function truncateForError(input: string): string {
+  const trimmed = input.trim();
+  if (!trimmed) {
+    return "";
+  }
+  return trimmed.length > 300 ? `${trimmed.slice(0, 300)}...` : trimmed;
 }
 
 async function discoverMcpOAuthMetadata(
