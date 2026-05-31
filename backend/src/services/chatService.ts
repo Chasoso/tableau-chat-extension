@@ -106,6 +106,7 @@ export class ChatService {
       answer: sanitizedAnswer,
       sessionId,
       messageId,
+      notionPostIdeaDraft: buildNotionPostIdeaDraft(request.question, sanitizedAnswer),
       dashboardContextPatch,
       debug: {
         usedMock: this.answerGenerator.name === "mock",
@@ -157,6 +158,26 @@ export class ChatService {
       },
     };
   }
+}
+
+function buildNotionPostIdeaDraft(question: string, answer: string): ChatResponse["notionPostIdeaDraft"] | undefined {
+  const shouldBuildDraft = /(notion|保存|投稿|ポスト|idea|アイデア)/i.test(question);
+  if (!shouldBuildDraft) {
+    return undefined;
+  }
+
+  const shortAnswer = answer.replace(/\s+/g, " ").trim();
+  const reason = shortAnswer.slice(0, 260) || "Tableau MCP analysis based suggestion.";
+  const titleSeed = question.replace(/[「」"']/g, "").trim();
+  const title = titleSeed.length > 80 ? `${titleSeed.slice(0, 80)}...` : titleSeed || "Tableau MCP 分析メモ";
+
+  return {
+    title,
+    reason,
+    suggestedPostText: shortAnswer.slice(0, 1000),
+    source: "Tableau MCP",
+    tags: ["Tableau", "MCP", "X Analytics"],
+  };
 }
 
 function clipForDebugLog(value: string): string {

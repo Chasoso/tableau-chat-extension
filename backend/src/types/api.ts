@@ -2,6 +2,8 @@ export type ApiGatewayProxyEvent = {
   httpMethod?: string;
   rawPath?: string;
   path?: string;
+  rawQueryString?: string;
+  queryStringParameters?: Record<string, string | undefined>;
   headers?: Record<string, string | undefined>;
   requestContext?: {
     requestId?: string;

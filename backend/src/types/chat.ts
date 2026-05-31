@@ -23,6 +23,20 @@ export type ChatResponse = {
   answer: string;
   sessionId: string;
   messageId: string;
+  notionPostIdeaDraft?: {
+    title: string;
+    reason: string;
+    suggestedPostText: string;
+    metricSummary?: {
+      impressions?: number;
+      engagementRate?: number;
+      bookmarkRate?: number;
+      profileVisitRate?: number;
+    };
+    referencePostUrl?: string;
+    source?: string;
+    tags?: string[];
+  };
   dashboardContextPatch?: DashboardContextPatch;
   debug?: {
     usedMock: boolean;

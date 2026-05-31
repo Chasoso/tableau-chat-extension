@@ -143,6 +143,46 @@ Parameters:
   ChatDebugMaxChars:
     Type: Number
     Default: 12000
+  NotionMcpEnabled:
+    Type: String
+    Default: "false"
+    AllowedValues:
+      - "true"
+      - "false"
+  NotionMcpUrl:
+    Type: String
+    Default: "https://mcp.notion.com/mcp"
+  NotionRedirectUri:
+    Type: String
+    NoEcho: true
+    Default: ""
+  NotionTokenEncryptionKeyParam:
+    Type: String
+    NoEcho: true
+    Default: "/tableau-chat-extension/notion/token-encryption-key"
+  NotionMcpAllowedTools:
+    Type: String
+    NoEcho: true
+    Default: "notion-create-pages,notion-fetch"
+  NotionDefaultTargetParentPageId:
+    Type: String
+    NoEcho: true
+    Default: ""
+  NotionDefaultTargetDatabaseId:
+    Type: String
+    NoEcho: true
+    Default: ""
+  NotionLocalDevUserId:
+    Type: String
+    Default: "local-dev-user"
+  NotionOauthClientId:
+    Type: String
+    NoEcho: true
+    Default: ""
+  NotionOauthClientSecret:
+    Type: String
+    NoEcho: true
+    Default: ""
 
 Resources:
   ChatHistoryTable:
@@ -160,6 +200,41 @@ Resources:
           KeyType: HASH
         - AttributeName: sk
           KeyType: RANGE
+      SSESpecification:
+        SSEEnabled: true
+
+  NotionConnectionsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub "${AWS::StackName}-notion-connections"
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: userId
+          AttributeType: S
+        - AttributeName: connectionId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: userId
+          KeyType: HASH
+        - AttributeName: connectionId
+          KeyType: RANGE
+      SSESpecification:
+        SSEEnabled: true
+
+  NotionOAuthStatesTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub "${AWS::StackName}-notion-oauth-states"
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: state
+          AttributeType: S
+      KeySchema:
+        - AttributeName: state
+          KeyType: HASH
+      TimeToLiveSpecification:
+        AttributeName: expiresAt
+        Enabled: true
       SSESpecification:
         SSEEnabled: true
 
@@ -203,6 +278,19 @@ Resources:
                   - dynamodb:PutItem
                   - dynamodb:Query
                 Resource: !GetAtt ChatHistoryTable.Arn
+              - Effect: Allow
+                Action:
+                  - dynamodb:GetItem
+                  - dynamodb:PutItem
+                  - dynamodb:UpdateItem
+                  - dynamodb:DeleteItem
+                Resource:
+                  - !GetAtt NotionConnectionsTable.Arn
+                  - !GetAtt NotionOAuthStatesTable.Arn
+              - Effect: Allow
+                Action:
+                  - ssm:GetParameter
+                Resource: !Sub "arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter${NotionTokenEncryptionKeyParam}"
               - Effect: Allow
                 Action:
                   - bedrock:InvokeModel
@@ -268,6 +356,18 @@ Resources:
           CHAT_MEMORY_MESSAGE_LIMIT: !Sub "${ChatMemoryMessageLimit}"
           LOG_LEVEL: !Ref LogLevel
           CHAT_DEBUG_MAX_CHARS: !Sub "${ChatDebugMaxChars}"
+          NOTION_MCP_ENABLED: !Ref NotionMcpEnabled
+          NOTION_MCP_URL: !Ref NotionMcpUrl
+          NOTION_REDIRECT_URI: !Ref NotionRedirectUri
+          NOTION_CONNECTIONS_TABLE: !Ref NotionConnectionsTable
+          NOTION_OAUTH_STATES_TABLE: !Ref NotionOAuthStatesTable
+          NOTION_TOKEN_ENCRYPTION_KEY_PARAM: !Ref NotionTokenEncryptionKeyParam
+          NOTION_MCP_ALLOWED_TOOLS: !Ref NotionMcpAllowedTools
+          NOTION_DEFAULT_TARGET_PARENT_PAGE_ID: !Ref NotionDefaultTargetParentPageId
+          NOTION_DEFAULT_TARGET_DATABASE_ID: !Ref NotionDefaultTargetDatabaseId
+          NOTION_LOCAL_DEV_USER_ID: !Ref NotionLocalDevUserId
+          NOTION_OAUTH_CLIENT_ID: !Ref NotionOauthClientId
+          NOTION_OAUTH_CLIENT_SECRET: !Ref NotionOauthClientSecret
 
   HealthFunction:
     Type: AWS::Lambda::Function
@@ -346,6 +446,48 @@ Resources:
       RouteKey: "GET /health"
       Target: !Sub "integrations/${HealthIntegration}"
 
+  NotionStatusRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref HttpApi
+      RouteKey: "GET /notion/status"
+      Target: !Sub "integrations/${ChatIntegration}"
+
+  NotionConnectRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref HttpApi
+      RouteKey: "POST /notion/connect"
+      Target: !Sub "integrations/${ChatIntegration}"
+
+  NotionCallbackRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref HttpApi
+      RouteKey: "GET /notion/callback"
+      Target: !Sub "integrations/${ChatIntegration}"
+
+  NotionDisconnectRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref HttpApi
+      RouteKey: "POST /notion/disconnect"
+      Target: !Sub "integrations/${ChatIntegration}"
+
+  NotionSettingsRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref HttpApi
+      RouteKey: "POST /notion/settings"
+      Target: !Sub "integrations/${ChatIntegration}"
+
+  NotionCreatePostIdeaRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref HttpApi
+      RouteKey: "POST /notion/create-post-idea"
+      Target: !Sub "integrations/${ChatIntegration}"
+
   ChatInvokePermission:
     Type: AWS::Lambda::Permission
     Properties:
@@ -361,6 +503,54 @@ Resources:
       FunctionName: !Ref ChatFunction
       Principal: apigateway.amazonaws.com
       SourceArn: !Sub "arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${HttpApi}/*/*/context"
+
+  NotionStatusInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref ChatFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub "arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${HttpApi}/*/*/notion/status"
+
+  NotionConnectInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref ChatFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub "arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${HttpApi}/*/*/notion/connect"
+
+  NotionCallbackInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref ChatFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub "arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${HttpApi}/*/*/notion/callback"
+
+  NotionDisconnectInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref ChatFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub "arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${HttpApi}/*/*/notion/disconnect"
+
+  NotionSettingsInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref ChatFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub "arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${HttpApi}/*/*/notion/settings"
+
+  NotionCreatePostIdeaInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref ChatFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub "arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${HttpApi}/*/*/notion/create-post-idea"
 
   HealthInvokePermission:
     Type: AWS::Lambda::Permission

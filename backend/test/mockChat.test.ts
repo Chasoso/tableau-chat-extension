@@ -270,4 +270,28 @@ describe("ChatService with mock provider", () => {
     expect(sanitized).not.toContain("SELECT ");
     expect(sanitized).toContain("安全制約により集計クエリを実行できなかった");
   });
+
+  it("creates a notion draft preview when the question asks to save into Notion", async () => {
+    const repository = new InMemoryChatHistoryRepository();
+    const service = new ChatService(new MockTableauContextProvider(), new MockAnswerGenerator(), repository);
+
+    const response = await service.generateAnswer({
+      question: "この分析をNotionに保存したい",
+      dashboardContext: {
+        dashboardName: "Mock Dashboard",
+        workbookName: "Mock Workbook",
+        worksheets: [{ name: "Sheet 1" }],
+        filters: [],
+        parameters: [],
+        capturedAt: new Date().toISOString(),
+      },
+      clientContext: {
+        source: "tableau-extension",
+      },
+    });
+
+    expect(response.notionPostIdeaDraft).toBeDefined();
+    expect(response.notionPostIdeaDraft?.title).toContain("Notion");
+    expect(response.notionPostIdeaDraft?.suggestedPostText.length ?? 0).toBeGreaterThan(0);
+  });
 });

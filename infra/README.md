@@ -32,6 +32,8 @@ The template intentionally does not output API Gateway URLs, CloudFront domains,
 - `TABLEAU_MCP_ALLOWED_TOOLS`: optional allowlist
 - `LOG_LEVEL`: default `info` (`debug` / `info` / `warn` / `error`)
 - `CHAT_DEBUG_MAX_CHARS`: default `12000` for debug chat message log truncation
+- `NOTION_MCP_ENABLED`: default `false` to keep Notion integration disabled unless explicitly enabled
+- `NOTION_TOKEN_ENCRYPTION_KEY_PARAM`: SSM SecureString parameter name for Notion token AES key
 
 ## 日本語
 

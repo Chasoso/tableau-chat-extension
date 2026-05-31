@@ -70,6 +70,18 @@ jobs:
       CHAT_MEMORY_MESSAGE_LIMIT: ${{ vars.CHAT_MEMORY_MESSAGE_LIMIT || '10' }}
       LOG_LEVEL: ${{ vars.LOG_LEVEL || 'info' }}
       CHAT_DEBUG_MAX_CHARS: ${{ vars.CHAT_DEBUG_MAX_CHARS || '12000' }}
+      NOTION_MCP_ENABLED: ${{ vars.NOTION_MCP_ENABLED || 'false' }}
+      NOTION_MCP_URL: ${{ vars.NOTION_MCP_URL || 'https://mcp.notion.com/mcp' }}
+      NOTION_REDIRECT_URI: ${{ secrets.NOTION_REDIRECT_URI }}
+      NOTION_CONNECTIONS_TABLE: ${{ vars.NOTION_CONNECTIONS_TABLE || '' }}
+      NOTION_OAUTH_STATES_TABLE: ${{ vars.NOTION_OAUTH_STATES_TABLE || '' }}
+      NOTION_TOKEN_ENCRYPTION_KEY_PARAM: ${{ vars.NOTION_TOKEN_ENCRYPTION_KEY_PARAM || '/tableau-chat-extension/notion/token-encryption-key' }}
+      NOTION_MCP_ALLOWED_TOOLS: ${{ vars.NOTION_MCP_ALLOWED_TOOLS || 'notion-create-pages,notion-fetch' }}
+      NOTION_DEFAULT_TARGET_PARENT_PAGE_ID: ${{ secrets.NOTION_DEFAULT_TARGET_PARENT_PAGE_ID }}
+      NOTION_DEFAULT_TARGET_DATABASE_ID: ${{ secrets.NOTION_DEFAULT_TARGET_DATABASE_ID }}
+      NOTION_LOCAL_DEV_USER_ID: ${{ vars.NOTION_LOCAL_DEV_USER_ID || 'local-dev-user' }}
+      NOTION_OAUTH_CLIENT_ID: ${{ secrets.NOTION_OAUTH_CLIENT_ID }}
+      NOTION_OAUTH_CLIENT_SECRET: ${{ secrets.NOTION_OAUTH_CLIENT_SECRET }}
 
     steps:
       - name: Mask configured values
@@ -122,7 +134,17 @@ jobs:
             "$BEDROCK_TEMPERATURE" \
             "$CHAT_MEMORY_MESSAGE_LIMIT" \
             "$LOG_LEVEL" \
-            "$CHAT_DEBUG_MAX_CHARS"; do
+            "$CHAT_DEBUG_MAX_CHARS" \
+            "$NOTION_MCP_ENABLED" \
+            "$NOTION_MCP_URL" \
+            "$NOTION_REDIRECT_URI" \
+            "$NOTION_TOKEN_ENCRYPTION_KEY_PARAM" \
+            "$NOTION_MCP_ALLOWED_TOOLS" \
+            "$NOTION_DEFAULT_TARGET_PARENT_PAGE_ID" \
+            "$NOTION_DEFAULT_TARGET_DATABASE_ID" \
+            "$NOTION_LOCAL_DEV_USER_ID" \
+            "$NOTION_OAUTH_CLIENT_ID" \
+            "$NOTION_OAUTH_CLIENT_SECRET"; do
             if [ -n "${value:-}" ]; then
               echo "::add-mask::$value"
             fi
@@ -311,7 +333,17 @@ jobs:
               BedrockTemperature="$BEDROCK_TEMPERATURE" \
               ChatMemoryMessageLimit="$CHAT_MEMORY_MESSAGE_LIMIT" \
               LogLevel="$LOG_LEVEL" \
-              ChatDebugMaxChars="$CHAT_DEBUG_MAX_CHARS"
+              ChatDebugMaxChars="$CHAT_DEBUG_MAX_CHARS" \
+              NotionMcpEnabled="$NOTION_MCP_ENABLED" \
+              NotionMcpUrl="$NOTION_MCP_URL" \
+              NotionRedirectUri="$NOTION_REDIRECT_URI" \
+              NotionTokenEncryptionKeyParam="$NOTION_TOKEN_ENCRYPTION_KEY_PARAM" \
+              NotionMcpAllowedTools="$NOTION_MCP_ALLOWED_TOOLS" \
+              NotionDefaultTargetParentPageId="$NOTION_DEFAULT_TARGET_PARENT_PAGE_ID" \
+              NotionDefaultTargetDatabaseId="$NOTION_DEFAULT_TARGET_DATABASE_ID" \
+              NotionLocalDevUserId="$NOTION_LOCAL_DEV_USER_ID" \
+              NotionOauthClientId="$NOTION_OAUTH_CLIENT_ID" \
+              NotionOauthClientSecret="$NOTION_OAUTH_CLIENT_SECRET"
 
       - name: Upload frontend and invalidate cache
         shell: bash

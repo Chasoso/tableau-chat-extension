@@ -189,6 +189,95 @@ For the selected PoC model:
 
 The current implementation sends text context to Bedrock. Screenshot/image input is the next step because Nova 2 Lite supports multimodal use cases, but the first implementation keeps data minimized.
 
+### Notion MCP PoC (Phase 2)
+
+This PoC adds a backend-managed Notion integration for low-cost small-team usage.
+
+- OAuth and token handling stay in Lambda only.
+- Frontend receives only status, workspace name, and saved page URL.
+- Notion access/refresh tokens are encrypted with AES-256-GCM before DynamoDB storage.
+- Encryption key is loaded from SSM Parameter Store SecureString at runtime.
+- No AWS Secrets Manager dependency in this phase.
+
+#### Notion Environment Variables
+
+- `NOTION_MCP_ENABLED=true|false`
+- `NOTION_MCP_URL=https://mcp.notion.com/mcp`
+- `NOTION_REDIRECT_URI=<https callback URL to /notion/callback>`
+- `NOTION_CONNECTIONS_TABLE=<dynamodb table name>`
+- `NOTION_OAUTH_STATES_TABLE=<dynamodb table name>`
+- `NOTION_TOKEN_ENCRYPTION_KEY_PARAM=/tableau-chat-extension/notion/token-encryption-key`
+- `NOTION_MCP_ALLOWED_TOOLS=notion-create-pages,notion-fetch`
+- `NOTION_DEFAULT_TARGET_PARENT_PAGE_ID=<optional default parent page>`
+- `NOTION_DEFAULT_TARGET_DATABASE_ID=<optional default database>`
+- `NOTION_LOCAL_DEV_USER_ID=local-dev-user`
+- `NOTION_OAUTH_CLIENT_ID=<notion oauth client id>`
+- `NOTION_OAUTH_CLIENT_SECRET=<notion oauth client secret>`
+
+#### New Notion APIs
+
+- `GET /notion/status`
+- `POST /notion/connect`
+- `GET /notion/callback`
+- `POST /notion/disconnect`
+- `POST /notion/settings`
+- `POST /notion/create-post-idea`
+
+#### Authentication and User Boundary
+
+- With Cognito enabled, Notion connection records are keyed by Cognito `sub`.
+- With Cognito disabled (`AUTH_REQUIRED=false`), fallback user id is `NOTION_LOCAL_DEV_USER_ID` (default `local-dev-user`) for local PoC.
+
+#### Required AWS Setup (Low-Cost Pattern)
+
+1. Create SSM SecureString key (32-byte key recommended, base64 encoded):
+
+```bash
+openssl rand -base64 32
+aws ssm put-parameter \
+  --name /tableau-chat-extension/notion/token-encryption-key \
+  --type SecureString \
+  --value "<base64-key>" \
+  --overwrite
+```
+
+2. Provision DynamoDB tables for Notion connections and OAuth states.
+   - Connections table key: `userId` (PK), `connectionId` (SK).
+   - OAuth states table key: `state` (PK), with TTL on `expiresAt`.
+
+3. Grant Lambda IAM:
+   - `ssm:GetParameter` only for `NOTION_TOKEN_ENCRYPTION_KEY_PARAM`
+   - `dynamodb:GetItem|PutItem|UpdateItem|DeleteItem` on Notion tables
+
+#### Chat UX (Two-Step Save)
+
+1. Chat generates analysis answer and `notionPostIdeaDraft` preview.
+2. Only when user clicks `Notionに保存`, frontend calls `POST /notion/create-post-idea`.
+
+The app never writes to Notion directly from a plain chat question without explicit user approval.
+
+#### Security Notes (PoC)
+
+- Never log access token, refresh token, OAuth code, PKCE verifier, or encryption key.
+- Never return token values from API.
+- Never store token values in frontend localStorage/sessionStorage.
+- Restrict Notion MCP tools with allowlist (`notion-create-pages`, `notion-fetch`).
+
+PoC note:
+"This PoC prioritizes low cost by using SSM Parameter Store Standard SecureString and DynamoDB instead of Secrets Manager. Notion OAuth tokens are stored in DynamoDB only after backend AES-256-GCM encryption. For production, add stronger key management, auditing, and permission controls."
+
+#### Manual Test Checklist (Notion)
+
+1. `GET /notion/status` before connect returns `connected=false`.
+2. `POST /notion/connect` returns `authorizationUrl`.
+3. Complete OAuth and confirm callback creates one item in `NotionConnections`.
+4. Verify DynamoDB token fields are ciphertext/iv/authTag and not plaintext token.
+5. `GET /notion/status` after connect returns `connected=true` and `workspaceName`.
+6. Chat a request that includes Notion save intent and confirm preview appears in UI.
+7. Click `Notionに保存` and confirm `pageUrl` is returned and link opens.
+8. `POST /notion/disconnect` removes connection and `status` becomes disconnected.
+9. Force expired token and verify refresh path runs; on refresh failure, status becomes `refresh_failed`.
+
 ### AWS Deployment
 
 `.github/workflows/deploy-aws.yml` builds the backend and frontend, deploys `infra/cloudformation.yaml`, uploads frontend assets to S3, and invalidates CloudFront. Sensitive values should be stored in GitHub Secrets or repository Variables, and the workflow masks account-specific IDs and URLs in logs.

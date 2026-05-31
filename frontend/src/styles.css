@@ -115,6 +115,44 @@ button {
   line-height: 1.35;
 }
 
+.notion-status-panel {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 12px;
+  border-bottom: 1px solid #edf2f6;
+  background: #f7fafc;
+}
+
+.notion-status-panel strong {
+  display: block;
+  color: #102f43;
+  font-size: 12px;
+}
+
+.notion-status-panel p {
+  margin: 2px 0 0;
+  color: #5e6f82;
+  font-size: 11px;
+}
+
+.notion-status-actions button {
+  border: 1px solid #ced8e1;
+  border-radius: 10px;
+  padding: 6px 10px;
+  background: #ffffff;
+  color: #204a66;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.notion-status-actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
 .user-pill {
   max-width: 120px;
   overflow: hidden;
@@ -345,6 +383,54 @@ button {
   padding: 10px 12px 12px;
   border-top: 1px solid #edf2f6;
   background: rgba(255, 255, 255, 0.98);
+}
+
+.notion-draft-card {
+  display: grid;
+  gap: 6px;
+  padding: 10px;
+  border: 1px solid #dce8f1;
+  border-radius: 10px;
+  background: #f8fbfe;
+}
+
+.notion-draft-card h2 {
+  margin: 0;
+  color: #14384f;
+  font-size: 12px;
+}
+
+.notion-draft-card p {
+  margin: 0;
+  color: #2c4b62;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.notion-draft-card .draft-title {
+  font-weight: 700;
+}
+
+.notion-save-button {
+  justify-self: start;
+  border: 0;
+  border-radius: 10px;
+  padding: 7px 10px;
+  background: #1f8b5d;
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.notion-save-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.notion-draft-card .draft-note {
+  color: #4e6478;
+  font-size: 11px;
 }
 
 .error-banner {

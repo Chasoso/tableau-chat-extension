@@ -47,6 +47,11 @@ Store these as GitHub Secrets:
 | `TABLEAU_MCP_SERVER_URL` | Optional only for HTTP MCP mode. |
 | `TABLEAU_MCP_COMMAND` | Optional override for MCP command. Usually empty. |
 | `TABLEAU_MCP_ARGS` | Optional override for MCP args. Usually empty. |
+| `NOTION_REDIRECT_URI` | Notion OAuth callback URL (`/notion/callback`). |
+| `NOTION_DEFAULT_TARGET_PARENT_PAGE_ID` | Optional default Notion parent page for page creation. |
+| `NOTION_DEFAULT_TARGET_DATABASE_ID` | Optional default Notion database/data source ID. |
+| `NOTION_OAUTH_CLIENT_ID` | Notion OAuth client ID. |
+| `NOTION_OAUTH_CLIENT_SECRET` | Notion OAuth client secret. |
 
 ### GitHub Variables
 
@@ -77,6 +82,11 @@ These can be repository Variables if acceptable:
 | `CHAT_MEMORY_MESSAGE_LIMIT` | `10` | Number of recent same-session messages injected into the prompt for the same authenticated user. |
 | `LOG_LEVEL` | `info` | Backend log threshold (`debug`, `info`, `warn`, `error`). |
 | `CHAT_DEBUG_MAX_CHARS` | `12000` | Max characters for debug-level chat input/output logs. |
+| `NOTION_MCP_ENABLED` | `false` | Enable backend Notion MCP integration routes. |
+| `NOTION_MCP_URL` | `https://mcp.notion.com/mcp` | Notion MCP endpoint. |
+| `NOTION_TOKEN_ENCRYPTION_KEY_PARAM` | `/tableau-chat-extension/notion/token-encryption-key` | SSM SecureString parameter name for AES key. |
+| `NOTION_MCP_ALLOWED_TOOLS` | `notion-create-pages,notion-fetch` | Allowed Notion MCP tools. |
+| `NOTION_LOCAL_DEV_USER_ID` | `local-dev-user` | Local fallback user id when auth is disabled. |
 
 ### CloudFormation Execution Role Additions
 

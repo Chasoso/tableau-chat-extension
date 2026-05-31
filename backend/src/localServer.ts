@@ -11,17 +11,22 @@ const server = createServer(async (request, response) => {
   request.on("data", (chunk) => chunks.push(Buffer.from(chunk)));
   request.on("end", async () => {
     const body = Buffer.concat(chunks).toString("utf8");
+    const requestUrl = new URL(request.url ?? "/", `http://${request.headers.host ?? "localhost"}`);
     const event: ApiGatewayProxyEvent = {
       httpMethod: request.method,
-      rawPath: request.url?.split("?")[0],
+      rawPath: requestUrl.pathname,
+      rawQueryString: requestUrl.search ? requestUrl.search.slice(1) : "",
+      queryStringParameters: Object.fromEntries(requestUrl.searchParams.entries()),
       headers: Object.fromEntries(Object.entries(request.headers).map(([key, value]) => [key, String(value)])),
       body: body || null,
     };
 
     const result =
-      request.url?.startsWith("/health")
+      requestUrl.pathname.startsWith("/health")
         ? await healthHandler()
-        : request.url?.startsWith("/chat") || request.url?.startsWith("/context")
+        : requestUrl.pathname.startsWith("/chat") ||
+            requestUrl.pathname.startsWith("/context") ||
+            requestUrl.pathname.startsWith("/notion")
           ? await chatHandler(event)
           : {
               statusCode: 404,

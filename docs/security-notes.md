@@ -70,6 +70,15 @@ Before sending data to an LLM:
 - Return `401` for unauthenticated requests and `403` for authenticated-but-not-allowed requests.
 - Error messages should be safe and should not expose internal tokens, secrets, or provider payloads.
 
+### Notion MCP (Phase 2 PoC)
+
+- Keep Notion OAuth flow and token refresh on backend only.
+- Do not expose Notion access token, refresh token, OAuth authorization code, PKCE code_verifier, or encryption keys to frontend.
+- Encrypt Notion tokens before DynamoDB persistence using AES-256-GCM.
+- Load encryption key from SSM Parameter Store SecureString (`NOTION_TOKEN_ENCRYPTION_KEY_PARAM`) with decryption in Lambda runtime memory only.
+- Keep Notion MCP tool allowlist minimal (`notion-create-pages`, `notion-fetch`) until stronger governance is added.
+- Only write to Notion after explicit user approval (preview + save button flow).
+
 ## 日本語
 
 ### Secret

@@ -4,10 +4,13 @@ import { logError, logInfo, logWarn, safeErrorDetails, safeHash } from "../loggi
 import { createChatService } from "../services/chatService";
 import type { ApiGatewayProxyEvent, ApiGatewayProxyResult } from "../types/api";
 import type { ChatRequest, ContextRequest } from "../types/chat";
+import { handleNotionRoute } from "./notionHandler";
 
 export async function handler(event: ApiGatewayProxyEvent): Promise<ApiGatewayProxyResult> {
   const requestId = event.requestContext?.requestId;
   const method = event.httpMethod ?? event.requestContext?.http?.method;
+  const routePath = getRoutePath(event);
+  const isNotionCallbackRoute = routePath.startsWith("/notion/callback");
 
   if (method === "OPTIONS") {
     return jsonResponse(204, {});
@@ -15,7 +18,7 @@ export async function handler(event: ApiGatewayProxyEvent): Promise<ApiGatewayPr
 
   try {
     logInfo("chat.request.received", { requestId, method });
-    const authResult = await authenticateRequest(event.headers);
+    const authResult = isNotionCallbackRoute ? { ok: true as const, user: undefined } : await authenticateRequest(event.headers);
     if (!authResult.ok) {
       logWarn("chat.auth.rejected", { requestId, statusCode: authResult.statusCode });
       return jsonResponse(authResult.statusCode, { message: authResult.message });
@@ -28,7 +31,10 @@ export async function handler(event: ApiGatewayProxyEvent): Promise<ApiGatewayPr
       tokenUse: authResult.user?.tokenUse,
     });
 
-    const routePath = getRoutePath(event);
+    if (routePath.startsWith("/notion")) {
+      return handleNotionRoute(event, authResult.user);
+    }
+
     const request = parseRequest(event.body);
 
     if (routePath === "/context") {

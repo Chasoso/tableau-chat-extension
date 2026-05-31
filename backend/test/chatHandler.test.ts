@@ -3,9 +3,11 @@ import { handler } from "../src/handlers/chatHandler";
 
 describe("chatHandler", () => {
   const originalAuthRequired = process.env.AUTH_REQUIRED;
+  const originalNotionEnabled = process.env.NOTION_MCP_ENABLED;
 
   beforeEach(() => {
     delete process.env.AUTH_REQUIRED;
+    delete process.env.NOTION_MCP_ENABLED;
   });
 
   afterEach(() => {
@@ -13,6 +15,12 @@ describe("chatHandler", () => {
       delete process.env.AUTH_REQUIRED;
     } else {
       process.env.AUTH_REQUIRED = originalAuthRequired;
+    }
+
+    if (originalNotionEnabled === undefined) {
+      delete process.env.NOTION_MCP_ENABLED;
+    } else {
+      process.env.NOTION_MCP_ENABLED = originalNotionEnabled;
     }
   });
 
@@ -55,5 +63,34 @@ describe("chatHandler", () => {
 
     expect(response.statusCode).toBe(401);
     expect(JSON.parse(response.body).message).toBe("Authentication is required.");
+  });
+
+  it("returns 403 for notion routes when notion integration is disabled", async () => {
+    process.env.NOTION_MCP_ENABLED = "false";
+    const response = await handler({
+      httpMethod: "GET",
+      rawPath: "/notion/status",
+      headers: {},
+    });
+
+    expect(response.statusCode).toBe(403);
+    expect(JSON.parse(response.body).message).toContain("disabled");
+  });
+
+  it("does not require authorization header for notion callback route", async () => {
+    process.env.AUTH_REQUIRED = "true";
+    process.env.NOTION_MCP_ENABLED = "true";
+
+    const response = await handler({
+      httpMethod: "GET",
+      rawPath: "/notion/callback",
+      queryStringParameters: {
+        code: "dummy",
+        state: "dummy",
+      },
+      headers: {},
+    });
+
+    expect(response.statusCode).not.toBe(401);
   });
 });
