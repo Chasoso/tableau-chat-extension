@@ -75,6 +75,7 @@ export class NotionMcpClient {
           logWarn("notion.mcp.create_pages.attempt_failed", {
             parentType: parent.type,
             parentHash: safeHash(parent.value),
+            errorCategory: categorizeNotionMcpError(error),
             ...safeErrorDetails(error),
           });
         }
@@ -82,12 +83,32 @@ export class NotionMcpClient {
 
       throw lastError instanceof Error ? lastError : new Error("Notion page creation failed.");
     } catch (error) {
-      logWarn("notion.mcp.create_pages.failed", safeErrorDetails(error));
+      logWarn("notion.mcp.create_pages.failed", {
+        errorCategory: categorizeNotionMcpError(error),
+        ...safeErrorDetails(error),
+      });
       throw error;
     } finally {
       await transport.close().catch(() => undefined);
     }
   }
+}
+
+export function categorizeNotionMcpError(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  if (/invalid_token|Invalid access token/i.test(message)) {
+    return "invalid_token";
+  }
+  if (/forbidden|insufficient/i.test(message)) {
+    return "insufficient_permission";
+  }
+  if (/object_not_found|Could not find page|Could not find database/i.test(message)) {
+    return "target_not_found";
+  }
+  if (/timed out|timeout/i.test(message)) {
+    return "timeout";
+  }
+  return "unknown";
 }
 
 function resolveAllowedNotionTools(configuredTools: string[], discoveredToolNames: string[]): Set<string> {

@@ -3,7 +3,7 @@ import { logDebug } from "../logging";
 import { getDefaultNotionConnectionId, NotionRepository } from "../repositories/notionRepository";
 import type { AuthenticatedUser } from "../types/auth";
 import type { CreateNotionPostIdeaRequest, NotionPostIdeaSaveResponse, NotionStatusResponse } from "../types/notion";
-import { NotionMcpClient } from "./notionMcpClient";
+import { categorizeNotionMcpError, NotionMcpClient } from "./notionMcpClient";
 import { NotionOAuthService } from "./notionOAuthService";
 
 export class NotionService {
@@ -82,29 +82,41 @@ export class NotionService {
     const markdownBody = buildPostIdeaMarkdown(payload);
     let created;
     try {
-      created = await this.notionMcpClient.createPostIdeaPage({
-        accessToken,
-        title: payload.title,
-        markdownBody,
-        targetParentPageId,
-        targetDatabaseId,
-      });
-    } catch (error) {
-      if (!isInvalidTokenError(error)) {
-        throw error;
-      }
+      try {
+        created = await this.notionMcpClient.createPostIdeaPage({
+          accessToken,
+          title: payload.title,
+          markdownBody,
+          targetParentPageId,
+          targetDatabaseId,
+        });
+      } catch (error) {
+        if (!isInvalidTokenError(error)) {
+          throw error;
+        }
 
-      logDebug("notion.create_post_idea.retry_after_token_refresh", {
-        userIdPresent: Boolean(userId),
-      });
-      const refreshed = await this.oauthService.getConnectionForUse(userId, { forceRefresh: true });
-      created = await this.notionMcpClient.createPostIdeaPage({
-        accessToken: refreshed.accessToken,
-        title: payload.title,
-        markdownBody,
-        targetParentPageId,
-        targetDatabaseId,
-      });
+        logDebug("notion.create_post_idea.retry_after_token_refresh", {
+          userIdPresent: Boolean(userId),
+        });
+        const refreshed = await this.oauthService.getConnectionForUse(userId, { forceRefresh: true });
+        created = await this.notionMcpClient.createPostIdeaPage({
+          accessToken: refreshed.accessToken,
+          title: payload.title,
+          markdownBody,
+          targetParentPageId,
+          targetDatabaseId,
+        });
+      }
+    } catch (error) {
+      if (categorizeNotionMcpError(error) === "invalid_token") {
+        await this.repository.putConnection({
+          ...connection,
+          status: "refresh_failed",
+          updatedAt: new Date().toISOString(),
+        });
+        throw new Error("Notion access token is invalid after refresh. Please reconnect Notion.");
+      }
+      throw error;
     }
 
     logDebug("notion.create_post_idea.completed", {
