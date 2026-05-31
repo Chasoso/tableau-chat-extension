@@ -92,6 +92,22 @@ Observed tool outputs are recorded as MCP observations (`tool`, `purpose`, `args
 
 Cost note: tool planning adds a Bedrock planning call, and data-oriented questions may use one follow-up planning pass after datasource metadata is observed. Keep planner responses short with `TABLEAU_MCP_PLANNER_MAX_OUTPUT_TOKENS`, use aggregate queries, and raise `TABLEAU_MCP_MAX_TOOL_CALLS` only when the question genuinely requires datasource metadata or query execution.
 
+### Bedrock Prompt/Response Debug (PoC)
+
+For PoC investigation, you can log Bedrock prompt/response previews to CloudWatch:
+
+- `BEDROCK_DEBUG_LOG_PROMPT_EXCHANGE=true`
+- `BEDROCK_DEBUG_MAX_CHARS=12000`
+
+When enabled, the backend logs:
+
+- `answer.bedrock.prompt_debug`
+- `answer.bedrock.response_debug`
+- `tableau.mcp.tool_planner.prompt_debug`
+- `tableau.mcp.tool_planner.response_debug`
+
+Keep this disabled in production because prompts may include user-entered text and dashboard context details.
+
 TODO:
 
 - Decide the exact MCP tools to allow for workbook, dashboard, datasource, and metadata lookup.
@@ -168,6 +184,22 @@ PoCでは、検証済み Cognito email を Tableau subject として Connected A
 `TABLEAU_MCP_TOOL_PLANNING_ENABLED=true` の場合、バックエンドは Bedrock に MCP tool の実行計画 JSON を作らせます。たとえば、質問がデータ値・ランキング・月次推移に関する場合は `list-datasources`、`get-datasource-metadata`、`query-datasource` などが候補になります。
 
 LLMの計画は信用しすぎず、バックエンド側で allowlist、必須引数、`query-datasource` の集計・limit 条件を検証します。コスト面では、初回 planning に加えて、データ系質問では datasource metadata 取得後に最大1回だけ再計画する場合があります。planner の token 上限を小さくし、必要な場合だけ `TABLEAU_MCP_MAX_TOOL_CALLS` を `5` から `8` 程度に増やしてください。
+
+### Bedrock プロンプト/レスポンスのDebug出力（PoC向け）
+
+PoCで挙動を検証する場合は、以下を有効にすると CloudWatch に Bedrock 入出力プレビューを出せます。
+
+- `BEDROCK_DEBUG_LOG_PROMPT_EXCHANGE=true`
+- `BEDROCK_DEBUG_MAX_CHARS=12000`
+
+主なログイベント:
+
+- `answer.bedrock.prompt_debug`
+- `answer.bedrock.response_debug`
+- `tableau.mcp.tool_planner.prompt_debug`
+- `tableau.mcp.tool_planner.response_debug`
+
+この設定は本番では無効化してください。プロンプトにはユーザー入力やダッシュボード文脈が含まれる可能性があります。
 
 TODO:
 

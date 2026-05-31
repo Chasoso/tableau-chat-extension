@@ -58,6 +58,7 @@ Useful local defaults:
 - Backend: `http://localhost:3001`
 - Chat API: `POST http://localhost:3001/chat`
 - Health API: `GET http://localhost:3001/health`
+- `LOG_LEVEL=info`: backend log threshold (`debug`, `info`, `warn`, `error`)
 
 For browser-only mock development outside Tableau:
 
@@ -181,6 +182,8 @@ For the selected PoC model:
 - `BEDROCK_FOUNDATION_MODEL_ID=amazon.nova-2-lite-v1:0`
 - `BEDROCK_MAX_OUTPUT_TOKENS=2400`
 - `BEDROCK_TEMPERATURE=0.2`
+- `BEDROCK_DEBUG_LOG_PROMPT_EXCHANGE=false`: set to `true` only in PoC debugging to log Bedrock raw prompt/response previews to CloudWatch.
+- `BEDROCK_DEBUG_MAX_CHARS=12000`: max characters logged for each Bedrock prompt/response preview.
 - `CHAT_MEMORY_MESSAGE_LIMIT=10`
 
 The current implementation sends text context to Bedrock. Screenshot/image input is the next step because Nova 2 Lite supports multimodal use cases, but the first implementation keeps data minimized.
@@ -245,6 +248,8 @@ npm install
 npm run dev
 ```
 
+必要に応じて `LOG_LEVEL` で出力レベルを制御できます（`debug` / `info` / `warn` / `error`、未指定時は `info`）。
+
 Tableau 外のブラウザでモック起動する場合:
 
 ```bash
@@ -297,6 +302,8 @@ MCP 子プロセスには、バックエンドで検証済みの Tableau subject
 - `BEDROCK_FOUNDATION_MODEL_ID=amazon.nova-2-lite-v1:0`
 - `BEDROCK_MAX_OUTPUT_TOKENS=2400`
 - `BEDROCK_TEMPERATURE=0.2`
+- `BEDROCK_DEBUG_LOG_PROMPT_EXCHANGE=false`: PoC デバッグ時のみ `true`。CloudWatch に Bedrock のプロンプト/レスポンス本文プレビューを出します。
+- `BEDROCK_DEBUG_MAX_CHARS=12000`: Bedrock プロンプト/レスポンスのログ最大文字数です。
 - `CHAT_MEMORY_MESSAGE_LIMIT=10`
 
 現時点ではテキスト化した Tableau コンテキストだけを送ります。スクリーンショット画像をBedrockへ渡す処理は次段階です。

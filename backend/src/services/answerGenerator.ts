@@ -47,6 +47,17 @@ export class BedrockAnswerGenerator implements AnswerGenerator {
         modelId: config.modelId,
         promptLength: input.prompt.length,
       });
+      if (config.debugLogPromptExchange) {
+        const promptSnapshot = clipForDebugLog(input.prompt, config.debugMaxChars);
+        logInfo("answer.bedrock.prompt_debug", {
+          region: config.region,
+          modelId: config.modelId,
+          promptLength: input.prompt.length,
+          promptPreviewLength: promptSnapshot.text.length,
+          promptPreviewTruncated: promptSnapshot.truncated,
+          promptPreview: promptSnapshot.text,
+        });
+      }
 
       const response = await this.client.send(
         new ConverseCommand({
@@ -69,6 +80,17 @@ export class BedrockAnswerGenerator implements AnswerGenerator {
         .filter(Boolean)
         .join("\n")
         .trim();
+      if (config.debugLogPromptExchange) {
+        const responseSnapshot = clipForDebugLog(answer ?? "", config.debugMaxChars);
+        logInfo("answer.bedrock.response_debug", {
+          region: config.region,
+          modelId: config.modelId,
+          responseLength: answer?.length ?? 0,
+          responsePreviewLength: responseSnapshot.text.length,
+          responsePreviewTruncated: responseSnapshot.truncated,
+          responsePreview: responseSnapshot.text,
+        });
+      }
 
       if (!answer) {
         logInfo("answer.bedrock.empty_response", {
@@ -118,6 +140,17 @@ export class BedrockAnswerGenerator implements AnswerGenerator {
       ].join("\n");
     }
   }
+}
+
+function clipForDebugLog(value: string, maxChars: number): { text: string; truncated: boolean } {
+  if (value.length <= maxChars) {
+    return { text: value, truncated: false };
+  }
+
+  return {
+    text: `${value.slice(0, maxChars)}...`,
+    truncated: true,
+  };
 }
 
 function appendTruncationNotice(answer: string): string {

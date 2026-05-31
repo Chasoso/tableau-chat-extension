@@ -203,6 +203,8 @@ export class TableauMcpToolPlanner {
     const preferredToolNames = PREFERRED_TOOL_NAMES_FOR_INTENT[intent.intent].filter((toolName) =>
       baseAllowedToolNames.includes(toolName),
     );
+    const bedrockDebugEnabled = config.model.bedrock.debugLogPromptExchange;
+    const bedrockDebugMaxChars = config.model.bedrock.debugMaxChars;
     const prompt = buildPlannerPrompt({
       ...input,
       maxToolCalls,
@@ -227,6 +229,16 @@ export class TableauMcpToolPlanner {
         intent: intent.intent,
         intentConfidence: intent.confidence,
       });
+      if (bedrockDebugEnabled) {
+        const promptSnapshot = clipForDebugLog(prompt, bedrockDebugMaxChars);
+        logInfo("tableau.mcp.tool_planner.prompt_debug", {
+          modelId: config.model.bedrock.modelId,
+          promptLength: prompt.length,
+          promptPreviewLength: promptSnapshot.text.length,
+          promptPreviewTruncated: promptSnapshot.truncated,
+          promptPreview: promptSnapshot.text,
+        });
+      }
 
       const response = await this.client.send(
         new ConverseCommand({
@@ -250,6 +262,16 @@ export class TableauMcpToolPlanner {
           .filter(Boolean)
           .join("\n")
           .trim() ?? "";
+      if (bedrockDebugEnabled) {
+        const responseSnapshot = clipForDebugLog(text, bedrockDebugMaxChars);
+        logInfo("tableau.mcp.tool_planner.response_debug", {
+          modelId: config.model.bedrock.modelId,
+          responseLength: text.length,
+          responsePreviewLength: responseSnapshot.text.length,
+          responsePreviewTruncated: responseSnapshot.truncated,
+          responsePreview: responseSnapshot.text,
+        });
+      }
       const plan = parseToolPlanResponse(text, intent, getArgumentSanitizeOptionsFromConfig());
 
       if (!plan?.toolCalls.length) {
@@ -592,6 +614,17 @@ function readIntent(value: unknown): QuestionIntent | undefined {
 function clampNumber(value: unknown, min: number, max: number, fallback: number): number {
   const numeric = typeof value === "number" && Number.isFinite(value) ? value : fallback;
   return Math.max(min, Math.min(max, numeric));
+}
+
+function clipForDebugLog(value: string, maxChars: number): { text: string; truncated: boolean } {
+  if (value.length <= maxChars) {
+    return { text: value, truncated: false };
+  }
+
+  return {
+    text: `${value.slice(0, maxChars)}...`,
+    truncated: true,
+  };
 }
 
 function buildPlannerPrompt(

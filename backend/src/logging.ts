@@ -1,9 +1,19 @@
 import { createHash } from "node:crypto";
 
-type LogLevel = "info" | "warn" | "error";
+type LogLevel = "debug" | "info" | "warn" | "error";
+const LOG_LEVEL_PRIORITY: Record<LogLevel, number> = {
+  debug: 10,
+  info: 20,
+  warn: 30,
+  error: 40,
+};
 
 export function logInfo(event: string, details: Record<string, unknown> = {}): void {
   writeLog("info", event, details);
+}
+
+export function logDebug(event: string, details: Record<string, unknown> = {}): void {
+  writeLog("debug", event, details);
 }
 
 export function logWarn(event: string, details: Record<string, unknown> = {}): void {
@@ -37,6 +47,10 @@ export function safeErrorDetails(error: unknown): Record<string, unknown> {
 }
 
 function writeLog(level: LogLevel, event: string, details: Record<string, unknown>): void {
+  if (!shouldLog(level)) {
+    return;
+  }
+
   const payload = JSON.stringify({
     level,
     event,
@@ -54,4 +68,22 @@ function writeLog(level: LogLevel, event: string, details: Record<string, unknow
   }
 
   console.log(payload);
+}
+
+function shouldLog(level: LogLevel): boolean {
+  const configuredLevel = resolveLogLevel(process.env.LOG_LEVEL);
+  return LOG_LEVEL_PRIORITY[level] >= LOG_LEVEL_PRIORITY[configuredLevel];
+}
+
+function resolveLogLevel(value: string | undefined): LogLevel {
+  if (!value) {
+    return "info";
+  }
+
+  const normalized = value.trim().toLowerCase();
+  if (normalized === "debug" || normalized === "info" || normalized === "warn" || normalized === "error") {
+    return normalized;
+  }
+
+  return "info";
 }

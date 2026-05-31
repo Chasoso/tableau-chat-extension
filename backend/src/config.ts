@@ -10,6 +10,8 @@ export type AppConfig = {
       modelId: string;
       maxOutputTokens: number;
       temperature: number;
+      debugLogPromptExchange: boolean;
+      debugMaxChars: number;
     };
   };
   auth: {
@@ -65,6 +67,8 @@ export function getConfig(): AppConfig {
         modelId: process.env.BEDROCK_MODEL_ID ?? "us.amazon.nova-2-lite-v1:0",
         maxOutputTokens: Number(process.env.BEDROCK_MAX_OUTPUT_TOKENS ?? 2400),
         temperature: Number(process.env.BEDROCK_TEMPERATURE ?? 0.2),
+        debugLogPromptExchange: process.env.BEDROCK_DEBUG_LOG_PROMPT_EXCHANGE === "true",
+        debugMaxChars: parsePositiveInt(process.env.BEDROCK_DEBUG_MAX_CHARS, 12000),
       },
     },
     auth: {
