@@ -60,6 +60,8 @@ export class NotionOAuthService {
     authorizeUrl.searchParams.set("state", state);
     authorizeUrl.searchParams.set("code_challenge", codeChallenge);
     authorizeUrl.searchParams.set("code_challenge_method", "S256");
+    // Request an access token audience scoped to Notion MCP resource.
+    authorizeUrl.searchParams.set("resource", config.notion.mcpUrl);
 
     return { authorizationUrl: authorizeUrl.toString() };
   }
@@ -233,6 +235,7 @@ async function exchangeAuthorizationCode(input: { code: string; codeVerifier: st
       code: input.code,
       redirect_uri: config.redirectUri,
       code_verifier: input.codeVerifier,
+      resource: config.mcpUrl,
     }),
   });
 
@@ -254,6 +257,7 @@ async function refreshNotionToken(refreshToken: string): Promise<NotionTokenResp
     body: JSON.stringify({
       grant_type: "refresh_token",
       refresh_token: refreshToken,
+      resource: config.mcpUrl,
     }),
   });
 
