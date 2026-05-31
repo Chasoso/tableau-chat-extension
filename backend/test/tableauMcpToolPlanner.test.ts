@@ -116,6 +116,25 @@ describe("tableauMcpToolPlanner", () => {
     expect(intent.intent).toBe("metadata_lookup");
   });
 
+  it("prioritizes data_analysis when the question asks for ranked query results", () => {
+    const intent = classifyQuestionIntent(
+      "viewCountが最も多いworkbookは何か、データソースをクエリして求めてください。",
+      {
+        dashboardName: "Statistics",
+        workbookName: "Tableau Public Insights",
+        worksheets: [{ name: "Views" }],
+        filters: [],
+        parameters: [],
+        dataSources: [{ name: "Tableau Public Per Day(2025/04-)" }],
+        capturedAt: "2026-05-31T00:00:00.000Z",
+      },
+      ["list-datasources", "get-datasource-metadata", "query-datasource"],
+    );
+
+    expect(intent.intent).toBe("data_analysis");
+    expect(intent.needsMcp).toBe(true);
+  });
+
   it("keeps tool freedom in soft intent filter mode", () => {
     const allowed = filterAllowedToolNamesByIntent(
       ["list-views", "list-datasources", "search-content"],

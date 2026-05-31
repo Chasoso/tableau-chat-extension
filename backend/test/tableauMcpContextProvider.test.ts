@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildDataAnalysisQueryRecoverySelection,
   buildMetadataIdentifierRecoverySelection,
   buildRuleBasedInitialSelections,
   buildMcpErrorMessage,
@@ -590,6 +591,90 @@ describe("TableauMcpContextProvider extraction helpers", () => {
       remainingToolBudget: 0,
     });
     expect(selection).toBeUndefined();
+  });
+
+  it("enqueues query-datasource recovery for aggregate analysis after datasource metadata is resolved", () => {
+    const intent: ClassifiedQuestionIntent = {
+      intent: "metadata_lookup",
+      confidence: 0.85,
+      reasonBrief: "Need datasource metadata first.",
+      answerableFromDashboardContext: false,
+      needsMcp: true,
+      maxToolCalls: 5,
+    };
+    const tools = [
+      {
+        name: "query-datasource",
+        inputSchema: {
+          type: "object",
+          required: ["datasourceLuid", "query"],
+          properties: {
+            datasourceLuid: { type: "string" },
+            query: { type: "object" },
+            limit: { type: "number" },
+          },
+        },
+      },
+      { name: "list-datasources", inputSchema: { type: "object", properties: { limit: { type: "number" } } } },
+      { name: "get-datasource-metadata", inputSchema: { type: "object", properties: { datasourceLuid: { type: "string" } } } },
+    ];
+
+    const selection = buildDataAnalysisQueryRecoverySelection({
+      tools,
+      allowedToolNames: tools.map((tool) => tool.name),
+      input: {
+        ...baseInput,
+        question: "viewCountが最も多いworkbookは何か、データソースをクエリして求めてください。",
+        dashboardContext: {
+          ...baseInput.dashboardContext,
+          dataSources: [{ name: "Tableau Public Per Day(2025/04-)" }],
+        },
+      },
+      intent,
+      calledToolNames: new Set(["list-datasources", "get-datasource-metadata"]),
+      rawToolResults: [
+        {
+          toolName: "list-datasources",
+          result: {
+            content: [
+              {
+                text: JSON.stringify([
+                  {
+                    name: "Tableau Public Per Day(2025/04-)",
+                    id: "ds-123",
+                    project: { name: "Sandbox" },
+                  },
+                ]),
+              },
+            ],
+          },
+        },
+        {
+          toolName: "get-datasource-metadata",
+          result: {
+            content: [
+              {
+                text: JSON.stringify({
+                  datasourceModel: {
+                    name: "Tableau Public Per Day(2025/04-)",
+                    fields: [{ name: "workbook_title" }, { name: "workbook_viewCount" }],
+                  },
+                }),
+              },
+            ],
+          },
+        },
+      ],
+      observations: [],
+      remainingToolBudget: 2,
+    });
+
+    expect(selection?.status).toBe("ready");
+    if (selection?.status === "ready") {
+      expect(selection.tool.name).toBe("query-datasource");
+      expect(selection.arguments.datasourceLuid).toBe("ds-123");
+      expect(selection.arguments.limit).toBe(1);
+    }
   });
 
   it("keeps narrowed datasource matches and avoids re-expanding to list-datasources full set", () => {

@@ -148,6 +148,7 @@ export class TableauMcpContextProvider implements TableauContextProvider {
       const recoverablePreconditionSuggestions = new Set<string>();
       let hasRecoverablePreconditionFailure = false;
       let fallbackReason: string | undefined;
+      const analysisIntentQuestion = isAggregateAnalysisQuestion(input.question);
 
       logInfo("tableau.mcp.intent.classified", {
         intent: intent.intent,
@@ -164,6 +165,24 @@ export class TableauMcpContextProvider implements TableauContextProvider {
       while (intent.needsMcp && executedToolCallCount < effectiveMaxToolCalls) {
         if (!toolQueue.length) {
           const remainingToolBudget = effectiveMaxToolCalls - executedToolCallCount;
+          const analysisRecoverySelection = buildDataAnalysisQueryRecoverySelection({
+            tools,
+            allowedToolNames,
+            input,
+            intent,
+            calledToolNames,
+            rawToolResults,
+            observations,
+            remainingToolBudget,
+          });
+          if (analysisRecoverySelection) {
+            toolQueue.push(analysisRecoverySelection);
+            logInfo("tableau.mcp.query.recovery_planned", {
+              reason: "analysis_question_with_resolved_datasource_identifier",
+              remainingToolBudget,
+            });
+            continue;
+          }
           const metadataRecoverySelection = buildMetadataIdentifierRecoverySelection({
             tools,
             allowedToolNames,
@@ -187,6 +206,7 @@ export class TableauMcpContextProvider implements TableauContextProvider {
               calledToolNames,
               hasRecoverablePreconditionFailure,
               recoverablePreconditionSuggestions,
+              analysisIntentQuestion,
             ) &&
             executedToolCallCount < effectiveMaxToolCalls
           ) {
@@ -1361,12 +1381,84 @@ export function buildMetadataIdentifierRecoverySelection(input: {
   return undefined;
 }
 
+export function buildDataAnalysisQueryRecoverySelection(input: {
+  tools: McpTool[];
+  allowedToolNames: string[];
+  input: GetAdditionalContextInput;
+  intent: ClassifiedQuestionIntent;
+  calledToolNames: Set<string>;
+  rawToolResults: RawMcpToolResult[];
+  observations: McpObservation[];
+  remainingToolBudget: number;
+}): SelectedTool | undefined {
+  if (!["metadata_lookup", "data_analysis"].includes(input.intent.intent)) {
+    return undefined;
+  }
+
+  if (input.remainingToolBudget <= 0 || input.calledToolNames.has("query-datasource")) {
+    return undefined;
+  }
+
+  if (!isAggregateAnalysisQuestion(input.input.question)) {
+    return undefined;
+  }
+
+  const queryTool = input.tools.find((tool) => tool.name === "query-datasource");
+  if (!queryTool || !input.allowedToolNames.includes("query-datasource")) {
+    return undefined;
+  }
+
+  const knownDatasourceNames =
+    input.input.dashboardContext.dataSources?.map((datasource) => datasource.name.trim()).filter(Boolean) ?? [];
+  if (!knownDatasourceNames.length) {
+    return undefined;
+  }
+
+  const resolved = resolveDatasourceIdentifier(knownDatasourceNames, input.observations, input.tools, {
+    rawToolResults: input.rawToolResults,
+    workbookName: input.input.dashboardContext.workbookName ?? undefined,
+    dashboardName: input.input.dashboardContext.dashboardName,
+    viewName: input.input.dashboardContext.viewName ?? undefined,
+    worksheetNames: input.input.dashboardContext.worksheets.map((worksheet) => worksheet.name),
+  });
+  const selectedDatasource = selectBestResolvedDatasource(resolved);
+  if (!selectedDatasource) {
+    return undefined;
+  }
+
+  const plannedArgs = buildAggregateQueryDatasourceArgs(selectedDatasource, input.rawToolResults, input.input.question);
+  if (!plannedArgs) {
+    logInfo("tableau.mcp.query.recovery_skipped", {
+      reason: "aggregate_query_args_not_buildable",
+      resolvedDatasourceCount: resolved.length,
+    });
+    return undefined;
+  }
+
+  const args = inferPlannedToolArguments(queryTool, plannedArgs, input.input);
+  if (!args) {
+    logInfo("tableau.mcp.query.recovery_skipped", {
+      reason: "aggregate_query_args_rejected_by_safety_guards",
+      resolvedDatasourceCount: resolved.length,
+    });
+    return undefined;
+  }
+
+  return {
+    status: "ready",
+    tool: queryTool,
+    arguments: args,
+    reason: "Run a small aggregate datasource query to answer ranking/comparison analysis questions.",
+  };
+}
+
 function shouldReplanForDatasourceQuery(
   intent: ClassifiedQuestionIntent,
   toolResults: TableauMcpToolResultSummary[],
   calledToolNames: Set<string>,
   hasRecoverablePreconditionFailure: boolean,
   recoverablePreconditionSuggestions: Set<string>,
+  analysisIntentQuestion: boolean,
 ): boolean {
   if (!getConfig().tableau.mcp.toolPlanningEnabled) {
     return false;
@@ -1379,7 +1471,7 @@ function shouldReplanForDatasourceQuery(
         (result) => result.toolName === "get-datasource-metadata" && (result.status === "failed" || result.status === "skipped"),
       ));
   const dataAnalysisNeedsRecovery =
-    intent.intent === "data_analysis" &&
+    (intent.intent === "data_analysis" || (intent.intent === "metadata_lookup" && analysisIntentQuestion)) &&
     !calledToolNames.has("query-datasource") &&
     toolResults.some((result) => result.status === "success" && ["list-datasources", "get-datasource-metadata"].includes(result.toolName));
 
@@ -1404,6 +1496,12 @@ function shouldReplanForDatasourceQuery(
 function isDataQuestion(question: string): boolean {
   return /view|views|count|sum|average|avg|rank|ranking|top|bottom|trend|month|week|day|date|record|row|data|datasource|データ|集計|ランキング|推移|日|週|月/i.test(
     question,
+  );
+}
+
+function isAggregateAnalysisQuestion(question: string): boolean {
+  return /query|aggregate|max|min|highest|lowest|most|least|top|bottom|rank|ranking|compare|sum|average|avg|count|countd|trend|increase|decrease|growth|クエリ|集計|最大|最小|最も|最多|ランキング|比較|推移|増加|減少/.test(
+    question.toLowerCase(),
   );
 }
 
@@ -2760,6 +2858,104 @@ function buildDatasourceMetadataArgs(candidate: ResolvedDatasourceRef): Record<s
     datasourceId: candidate.id,
     contentUrl: candidate.contentUrl,
   };
+}
+
+function buildAggregateQueryDatasourceArgs(
+  datasourceRef: ResolvedDatasourceRef,
+  rawToolResults: RawMcpToolResult[],
+  question: string,
+): Record<string, unknown> | undefined {
+  const datasourceLuid = readString(datasourceRef.luid) ?? readString(datasourceRef.id);
+  if (!datasourceLuid) {
+    return undefined;
+  }
+
+  const datasourceForProfile: TableauDatasourceRef = {
+    type: "datasource",
+    name: datasourceRef.name,
+    ...(datasourceRef.id ? { id: datasourceRef.id } : {}),
+    ...(datasourceRef.luid ? { luid: datasourceRef.luid } : {}),
+    ...(datasourceRef.contentUrl ? { contentUrl: datasourceRef.contentUrl } : {}),
+    ...(datasourceRef.projectName ? { projectName: datasourceRef.projectName } : {}),
+    ...(datasourceRef.workbookName ? { workbookName: datasourceRef.workbookName } : {}),
+  };
+  const fieldProfiles = extractDatasourceFieldProfilesFromRawToolResults(rawToolResults, [datasourceForProfile]);
+  const fieldNames = fieldProfiles[0]?.fieldNames ?? [];
+  const metricField = chooseAggregateMetricField(fieldNames, question);
+  if (!metricField) {
+    return undefined;
+  }
+
+  const dimensionField = chooseAggregateDimensionField(fieldNames);
+  const topN = /top|most|highest|max|rank|最も|最多|最大|ランキング/.test(question.toLowerCase()) ? 1 : 10;
+  const fields: Array<Record<string, unknown>> = [];
+  if (dimensionField) {
+    fields.push({
+      fieldCaption: dimensionField,
+      fieldAlias: "Dimension",
+    });
+  }
+  fields.push({
+    fieldCaption: metricField,
+    function: "SUM",
+    fieldAlias: "Aggregated Value",
+    sortDirection: "DESC",
+    sortPriority: 1,
+  });
+
+  return {
+    datasourceLuid,
+    query: {
+      fields,
+    },
+    limit: topN,
+  };
+}
+
+function chooseAggregateDimensionField(fieldNames: string[]): string | undefined {
+  const trimmed = fieldNames.map((fieldName) => fieldName.trim()).filter(Boolean);
+  if (!trimmed.length) {
+    return undefined;
+  }
+
+  const rankedPatterns = [/workbook.*(title|name)/i, /(title|name)$/i, /(name|title)/i];
+  for (const pattern of rankedPatterns) {
+    const hit = trimmed.find((fieldName) => pattern.test(fieldName));
+    if (hit) {
+      return hit;
+    }
+  }
+
+  return trimmed[0];
+}
+
+function chooseAggregateMetricField(fieldNames: string[], question: string): string | undefined {
+  const trimmed = fieldNames.map((fieldName) => fieldName.trim()).filter(Boolean);
+  if (!trimmed.length) {
+    return undefined;
+  }
+
+  const lowerQuestion = question.toLowerCase();
+  const prioritizedPatterns: RegExp[] = [];
+  if (/view|閲覧/.test(lowerQuestion)) {
+    prioritizedPatterns.push(/view.?count/i);
+  }
+  if (/favorite|favourite|お気に入り/.test(lowerQuestion)) {
+    prioritizedPatterns.push(/favorite|favourite/i);
+  }
+  if (/reaction|リアクション/.test(lowerQuestion)) {
+    prioritizedPatterns.push(/reaction/i);
+  }
+  prioritizedPatterns.push(/count|total|number|sum|sales|profit|revenue|amount|score|rate/i);
+
+  for (const pattern of prioritizedPatterns) {
+    const hit = trimmed.find((fieldName) => pattern.test(fieldName));
+    if (hit) {
+      return hit;
+    }
+  }
+
+  return undefined;
 }
 
 function selectBestResolvedDatasource(candidates: ResolvedDatasourceRef[]): ResolvedDatasourceRef | undefined {

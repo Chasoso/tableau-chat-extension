@@ -325,23 +325,26 @@ export function classifyQuestionIntent(
 ): ClassifiedQuestionIntent {
   const normalizedQuestion = question.toLowerCase();
   const hasQuestionMark = /[?？]/.test(question);
-  const hasHowToKeywords =
-    /how to|how do i|steps|procedure|使い方|方法|どうやって|やり方|手順/.test(normalizedQuestion);
-  const hasFilterKeywords = /filter|filtered|selection|selected mark|parameter|where|slice|drill|絞り込み|フィルター|選択|パラメーター/.test(
+  const hasHowToKeywords = /how to|how do i|steps|procedure|使い方|やり方|方法|手順/.test(normalizedQuestion);
+  const hasFilterKeywords = /filter|filtered|selection|selected mark|parameter|where|slice|drill|フィルタ|絞り込み|パラメータ/.test(
     normalizedQuestion,
   );
-  const hasMetadataKeywords =
-    /field|schema|column|metric definition|datasource|data source|metadata|workbook id|view id|フィールド|データソース|メタデータ/.test(
+  const hasMetadataKeywords = /field|schema|column|metric definition|datasource|data source|metadata|workbook id|view id|フィールド|列|メタデータ|データソース/.test(
+    normalizedQuestion,
+  );
+  const hasAnalysisKeywords = /sum|average|avg|count|countd|rank|ranking|top|bottom|trend|month|week|day|compare|increase|decrease|growth|集計|ランキング|推移|増加|減少|比較/.test(
+    normalizedQuestion,
+  );
+  const hasStrongAnalysisKeywords =
+    /query|aggregate|max|min|highest|lowest|most|least|top|bottom|rank|ranking|compare|sum|average|avg|count|countd|trend|increase|decrease|growth|クエリ|集計|最大|最小|最も|最多|ランキング|比較|推移|増加|減少/.test(
       normalizedQuestion,
     );
-  const hasAnalysisKeywords =
-    /sum|average|avg|count|countd|rank|ranking|top|bottom|trend|month|week|day|compare|increase|decrease|growth|推移|傾向|集計|ランキング|増減/.test(
-      normalizedQuestion,
-    );
-  const hasContentSearchKeywords =
-    /search|find|locate|where is|which workbook|which view|content|asset|コンテンツ|探し|検索|どこ/.test(normalizedQuestion);
-  const hasDashboardExplanationKeywords =
-    /what is this dashboard|describe this dashboard|overview|summary|このダッシュボード|概要|説明/.test(normalizedQuestion);
+  const hasContentSearchKeywords = /search|find|locate|where is|which workbook|which view|content|asset|探す|検索|どこ/.test(
+    normalizedQuestion,
+  );
+  const hasDashboardExplanationKeywords = /what is this dashboard|describe this dashboard|overview|summary|このダッシュボード|概要|要約|説明/.test(
+    normalizedQuestion,
+  );
 
   const knownDatasourceMentioned =
     dashboardContext.dataSources?.some((dataSource) => normalizedQuestion.includes(dataSource.name.toLowerCase())) ?? false;
@@ -364,6 +367,10 @@ export function classifyQuestionIntent(
     intent = "how_to_use_tableau";
     confidence = hasFilterKeywords || hasMetadataKeywords ? 0.72 : 0.82;
     reasonBrief = "The question asks procedural Tableau usage guidance rather than dashboard data retrieval.";
+  } else if (hasStrongAnalysisKeywords && (hasQueryTool || knownDatasourceMentioned || hasMetadataKeywords)) {
+    intent = "data_analysis";
+    confidence = hasQueryTool ? 0.89 : 0.8;
+    reasonBrief = "The question asks for computed or ranked results, so aggregated datasource query should be prioritized.";
   } else if (hasFilterKeywords && !hasMetadataKeywords && !hasAnalysisKeywords) {
     intent = "filter_or_selection_state";
     confidence = 0.82;
@@ -691,3 +698,4 @@ function buildToolSummaries(tools: McpToolForPlanning[], allowedToolNames: strin
       properties: Object.keys(tool.inputSchema?.properties ?? {}).slice(0, 20),
     }));
 }
+
