@@ -434,6 +434,52 @@ describe("TableauMcpContextProvider extraction helpers", () => {
     expect(args).toBeUndefined();
   });
 
+  it("allows aggregate query args even when datasource has author-prefixed fields", () => {
+    const queryTool = {
+      name: "query-datasource",
+      inputSchema: {
+        type: "object",
+        required: ["datasourceLuid", "query"],
+        properties: {
+          datasourceLuid: { type: "string" },
+          query: { type: "object" },
+          limit: { type: "number" },
+        },
+      },
+    };
+    const args = inferPlannedToolArguments(
+      queryTool,
+      {
+        datasourceLuid: "ds-123",
+        query: {
+          fields: [
+            { fieldCaption: "workbook_title" },
+            { fieldCaption: "workbook_viewCount", function: "SUM" },
+          ],
+        },
+        limit: 1,
+      },
+      {
+        ...baseInput,
+        dashboardContext: {
+          ...baseInput.dashboardContext,
+          dataSources: [{ name: "Tableau Public Per Day(2025/04-)", id: "ds-123" }],
+        },
+      },
+    );
+
+    expect(args).toEqual({
+      datasourceLuid: "ds-123",
+      query: {
+        fields: [
+          { fieldCaption: "workbook_title" },
+          { fieldCaption: "workbook_viewCount", function: "SUM" },
+        ],
+      },
+      limit: 1,
+    });
+  });
+
   it("treats multiple close datasource matches as ambiguous", () => {
     const rawToolResults = [
       {

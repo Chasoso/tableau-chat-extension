@@ -174,6 +174,25 @@ export function sanitizeUserFacingAnswer(
   additionalContext: Awaited<ReturnType<TableauContextProvider["getAdditionalContext"]>>,
 ): string {
   const answerAfterFieldValidation = sanitizeHallucinatedFieldMentions(answer, request, additionalContext);
+  const queryExecutionMissing =
+    additionalContext.mcpExecutionDebug?.intent === "data_analysis" && !hasSuccessfulDatasourceQuery(additionalContext);
+  const looksLikeManualQueryInstruction =
+    /```sql|select\s+.+\s+from|datasource query|クエリを実行|query\s+to\s+run|以下のクエリ|execute the query/i.test(
+      answerAfterFieldValidation,
+    );
+  if (queryExecutionMissing && looksLikeManualQueryInstruction) {
+    const datasourceNames =
+      additionalContext.normalizedContext?.datasources?.map((datasource) => datasource.name).filter(Boolean) ??
+      request.dashboardContext.dataSources?.map((datasource) => datasource.name).filter(Boolean) ??
+      [];
+    const datasourceText = datasourceNames.length ? datasourceNames.join("、") : "対象データソース";
+    return [
+      `このダッシュボードで確認できているデータソースは ${datasourceText} です。`,
+      "ただし、今回の処理では安全制約により集計クエリを実行できなかったため、最終的なランキング結果までは確定できませんでした。",
+      "次は、開発者向けの確認として安全制約で除外されたフィールド判定（機微情報判定）が厳しすぎないかを確認するのがよいです。",
+    ].join("");
+  }
+
   const containsInternalToolInstruction = /(get-datasource-metadata|query-datasource|datasource-id|datasource id)/i.test(
     answerAfterFieldValidation,
   );
@@ -321,6 +340,14 @@ function hasResolvedMetadata(additionalContext: Awaited<ReturnType<TableauContex
   }
 
   return Boolean(additionalContext.metadata);
+}
+
+function hasSuccessfulDatasourceQuery(
+  additionalContext: Awaited<ReturnType<TableauContextProvider["getAdditionalContext"]>>,
+): boolean {
+  return (
+    additionalContext.mcpToolResults?.some((result) => result.toolName === "query-datasource" && result.status === "success") ?? false
+  );
 }
 
 function buildDashboardContextPatch(

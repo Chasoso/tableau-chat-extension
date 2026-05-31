@@ -1156,7 +1156,9 @@ function validateQueryDatasourceArguments(
   }
 
   const knownDatasourceIds = new Set(
-    input.dashboardContext.dataSources?.map((datasource) => datasource.id).filter((id): id is string => Boolean(id)) ?? [],
+    input.dashboardContext.dataSources
+      ?.map((datasource) => readString(datasource.id))
+      .filter((id): id is string => Boolean(id && looksLikeIdentifier(id))) ?? [],
   );
   if (knownDatasourceIds.size > 0 && !knownDatasourceIds.has(datasourceLuid)) {
     return undefined;
@@ -1225,7 +1227,8 @@ function containsAggregateField(fields: unknown[]): boolean {
 }
 
 function containsSensitiveFieldName(fields: unknown[]): boolean {
-  const sensitivePattern = /(email|e-mail|phone|tel|mobile|address|ssn|social|credit|card|token|secret|password|cookie|auth|user\s?id|employee\s?id)/i;
+  const sensitivePattern =
+    /(email|e-mail|phone|tel|mobile|address|ssn|social|credit[\s_-]*card|token|secret|password|cookie|authorization|bearer|api[\s_-]*key|\buser[\s_-]*id\b|\bemployee[\s_-]*id\b)/i;
   return fields.some((field) => {
     if (!field || typeof field !== "object" || Array.isArray(field)) {
       return false;
@@ -1241,7 +1244,8 @@ function containsSensitiveFieldNameFromFilters(filters: unknown): boolean {
     return false;
   }
 
-  const sensitivePattern = /(email|phone|address|ssn|credit|card|token|secret|password|cookie|auth)/i;
+  const sensitivePattern =
+    /(email|phone|address|ssn|credit[\s_-]*card|token|secret|password|cookie|authorization|bearer|api[\s_-]*key|\buser[\s_-]*id\b|\bemployee[\s_-]*id\b)/i;
   return filters.some((filter) => {
     if (!filter || typeof filter !== "object" || Array.isArray(filter)) {
       return false;

@@ -217,4 +217,57 @@ describe("ChatService with mock provider", () => {
     expect(sanitized).toContain("workbook_viewCount");
     expect(sanitized).not.toContain("workbook_reactionCounts_LAUGH");
   });
+
+  it("removes manual query instructions when data-analysis query was not executed", () => {
+    const sanitized = sanitizeUserFacingAnswer(
+      [
+        "このデータソースから最上位を求めるには次のクエリを実行してください。",
+        "```sql",
+        "SELECT workbook_title, workbook_viewCount FROM datasource ORDER BY workbook_viewCount DESC LIMIT 1;",
+        "```",
+      ].join("\n"),
+      {
+        question: "viewCountが最も多いworkbookは何か、データソースをクエリして求めてください。",
+        dashboardContext: {
+          dashboardName: "Statistics",
+          worksheets: [{ name: "Views" }],
+          filters: [],
+          parameters: [],
+          dataSources: [{ name: "Tableau Public Per Day(2025/04-)" }],
+          capturedAt: new Date().toISOString(),
+        },
+      },
+      {
+        provider: "tableau-mcp",
+        normalizedContext: {
+          dashboard: { name: "Statistics" },
+          views: [],
+          datasources: [{ type: "datasource", name: "Tableau Public Per Day(2025/04-)" }],
+          projects: [],
+        },
+        mcpExecutionDebug: {
+          intent: "data_analysis",
+          intentConfidence: 0.89,
+          answerableFromDashboardContext: false,
+          needsMcp: true,
+          maxToolCalls: 8,
+          plannedTools: ["list-datasources", "get-datasource-metadata", "query-datasource"],
+          blockedTools: [],
+          executedTools: ["list-datasources", "get-datasource-metadata"],
+          skippedTools: [],
+          toolCallCount: 2,
+          replanUsed: true,
+          timingMs: { planning: 0, execution: 0 },
+        },
+        mcpToolResults: [
+          { toolName: "list-datasources", status: "success" },
+          { toolName: "get-datasource-metadata", status: "success" },
+        ],
+      },
+    );
+
+    expect(sanitized).not.toContain("```sql");
+    expect(sanitized).not.toContain("SELECT ");
+    expect(sanitized).toContain("安全制約により集計クエリを実行できなかった");
+  });
 });
