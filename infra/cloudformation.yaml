@@ -132,6 +132,17 @@ Parameters:
   ChatMemoryMessageLimit:
     Type: Number
     Default: 10
+  LogLevel:
+    Type: String
+    Default: "info"
+    AllowedValues:
+      - debug
+      - info
+      - warn
+      - error
+  ChatDebugMaxChars:
+    Type: Number
+    Default: 12000
 
 Resources:
   ChatHistoryTable:
@@ -255,6 +266,8 @@ Resources:
           BEDROCK_MAX_OUTPUT_TOKENS: !Sub "${BedrockMaxOutputTokens}"
           BEDROCK_TEMPERATURE: !Sub "${BedrockTemperature}"
           CHAT_MEMORY_MESSAGE_LIMIT: !Sub "${ChatMemoryMessageLimit}"
+          LOG_LEVEL: !Ref LogLevel
+          CHAT_DEBUG_MAX_CHARS: !Sub "${ChatDebugMaxChars}"
 
   HealthFunction:
     Type: AWS::Lambda::Function

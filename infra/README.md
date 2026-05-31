@@ -30,6 +30,8 @@ The template intentionally does not output API Gateway URLs, CloudFront domains,
 - `TABLEAU_MCP_TRANSPORT`: default `stdio`
 - `TABLEAU_MCP_AUTH_MODE`: default `direct-trust`
 - `TABLEAU_MCP_ALLOWED_TOOLS`: optional allowlist
+- `LOG_LEVEL`: default `info` (`debug` / `info` / `warn` / `error`)
+- `CHAT_DEBUG_MAX_CHARS`: default `12000` for debug chat message log truncation
 
 ## 日本語
 

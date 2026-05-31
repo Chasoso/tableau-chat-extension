@@ -68,6 +68,8 @@ jobs:
       BEDROCK_MAX_OUTPUT_TOKENS: ${{ vars.BEDROCK_MAX_OUTPUT_TOKENS || '2400' }}
       BEDROCK_TEMPERATURE: ${{ vars.BEDROCK_TEMPERATURE || '0.2' }}
       CHAT_MEMORY_MESSAGE_LIMIT: ${{ vars.CHAT_MEMORY_MESSAGE_LIMIT || '10' }}
+      LOG_LEVEL: ${{ vars.LOG_LEVEL || 'info' }}
+      CHAT_DEBUG_MAX_CHARS: ${{ vars.CHAT_DEBUG_MAX_CHARS || '12000' }}
 
     steps:
       - name: Mask configured values
@@ -118,7 +120,9 @@ jobs:
             "$BEDROCK_FOUNDATION_MODEL_ID" \
             "$BEDROCK_MAX_OUTPUT_TOKENS" \
             "$BEDROCK_TEMPERATURE" \
-            "$CHAT_MEMORY_MESSAGE_LIMIT"; do
+            "$CHAT_MEMORY_MESSAGE_LIMIT" \
+            "$LOG_LEVEL" \
+            "$CHAT_DEBUG_MAX_CHARS"; do
             if [ -n "${value:-}" ]; then
               echo "::add-mask::$value"
             fi
@@ -305,7 +309,9 @@ jobs:
               BedrockFoundationModelId="$BEDROCK_FOUNDATION_MODEL_ID" \
               BedrockMaxOutputTokens="$BEDROCK_MAX_OUTPUT_TOKENS" \
               BedrockTemperature="$BEDROCK_TEMPERATURE" \
-              ChatMemoryMessageLimit="$CHAT_MEMORY_MESSAGE_LIMIT"
+              ChatMemoryMessageLimit="$CHAT_MEMORY_MESSAGE_LIMIT" \
+              LogLevel="$LOG_LEVEL" \
+              ChatDebugMaxChars="$CHAT_DEBUG_MAX_CHARS"
 
       - name: Upload frontend and invalidate cache
         shell: bash

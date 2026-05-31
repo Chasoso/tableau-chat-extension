@@ -75,6 +75,8 @@ These can be repository Variables if acceptable:
 | `BEDROCK_MAX_OUTPUT_TOKENS` | `2400` | Max generated tokens. |
 | `BEDROCK_TEMPERATURE` | `0.2` | Generation temperature. |
 | `CHAT_MEMORY_MESSAGE_LIMIT` | `10` | Number of recent same-session messages injected into the prompt for the same authenticated user. |
+| `LOG_LEVEL` | `info` | Backend log threshold (`debug`, `info`, `warn`, `error`). |
+| `CHAT_DEBUG_MAX_CHARS` | `12000` | Max characters for debug-level chat input/output logs. |
 
 ### CloudFormation Execution Role Additions
 
@@ -198,6 +200,8 @@ Actionsログには AWSアカウントID、ARN、バケット名、CloudFront/AP
 | `BEDROCK_MAX_OUTPUT_TOKENS` | `2400` | 最大生成token数 |
 | `BEDROCK_TEMPERATURE` | `0.2` | temperature |
 | `CHAT_MEMORY_MESSAGE_LIMIT` | `10` | 同一認証ユーザーの同一セッションからプロンプトへ注入する直近会話件数 |
+| `LOG_LEVEL` | `info` | バックエンドログレベル（`debug` / `info` / `warn` / `error`） |
+| `CHAT_DEBUG_MAX_CHARS` | `12000` | debugログで出すチャット本文の最大文字数 |
 
 ### CloudFormation Execution Role の追加権限
 
