@@ -59,6 +59,7 @@ Useful local defaults:
 - Chat API: `POST http://localhost:3001/chat`
 - Health API: `GET http://localhost:3001/health`
 - `LOG_LEVEL=info`: backend log threshold (`debug`, `info`, `warn`, `error`)
+- `CHAT_DEBUG_MAX_CHARS=12000`: max characters for debug-level chat input/output message logs.
 
 For browser-only mock development outside Tableau:
 
@@ -249,6 +250,7 @@ npm run dev
 ```
 
 必要に応じて `LOG_LEVEL` で出力レベルを制御できます（`debug` / `info` / `warn` / `error`、未指定時は `info`）。
+`LOG_LEVEL=debug` の場合、チャット質問文と最終回答文を `chat.message.input_debug` / `chat.message.output_debug` として CloudWatch に出力します。長文は `CHAT_DEBUG_MAX_CHARS` で切り詰めます。
 
 Tableau 外のブラウザでモック起動する場合:
 

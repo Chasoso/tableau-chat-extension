@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { getConfig } from "../config";
-import { logInfo, safeHash } from "../logging";
+import { logDebug, logInfo, safeHash } from "../logging";
 import { createChatHistoryRepository, type ChatHistoryRepository } from "../repositories/chatHistoryRepository";
 import { DirectTableauApiContextProvider } from "../tableau/directTableauApiContextProvider";
 import { MockTableauContextProvider } from "../tableau/mockTableauContextProvider";
@@ -44,6 +44,12 @@ export class ChatService {
       tableauSubjectHash: safeHash(tableauSubject),
       historyCount: recentHistory.length,
     });
+    logDebug("chat.message.input_debug", {
+      sessionId,
+      messageId,
+      questionLength: request.question.length,
+      question: clipForDebugLog(request.question),
+    });
     const additionalContext = await this.contextProvider.getAdditionalContext({
       dashboardContext: request.dashboardContext,
       question: request.question,
@@ -66,6 +72,12 @@ export class ChatService {
       additionalContext,
     });
     const sanitizedAnswer = sanitizeUserFacingAnswer(answer, request, additionalContext);
+    logDebug("chat.message.output_debug", {
+      sessionId,
+      messageId,
+      answerLength: sanitizedAnswer.length,
+      answer: clipForDebugLog(sanitizedAnswer),
+    });
     const dashboardContextPatch = buildDashboardContextPatch(request, additionalContext);
     if (dashboardContextPatch?.workbookName) {
       logInfo("chat.service.dashboard_context_patch.created", {
@@ -145,6 +157,15 @@ export class ChatService {
       },
     };
   }
+}
+
+function clipForDebugLog(value: string): string {
+  const maxChars = Math.max(200, Number(process.env.CHAT_DEBUG_MAX_CHARS ?? 12000));
+  if (value.length <= maxChars) {
+    return value;
+  }
+
+  return `${value.slice(0, maxChars)}...`;
 }
 
 export function sanitizeUserFacingAnswer(
