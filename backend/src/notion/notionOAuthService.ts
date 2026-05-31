@@ -136,14 +136,17 @@ export class NotionOAuthService {
     return { redirectTo: stateRecord.redirectAfter || "/" };
   }
 
-  async getConnectionForUse(userId: string): Promise<{ connection: NotionConnectionRecord; accessToken: string }> {
+  async getConnectionForUse(
+    userId: string,
+    options?: { forceRefresh?: boolean },
+  ): Promise<{ connection: NotionConnectionRecord; accessToken: string }> {
     const record = await this.repository.getConnection(userId);
     if (!record || record.status !== "connected") {
       throw new Error("Notion is not connected.");
     }
 
     const nowEpoch = Math.floor(Date.now() / 1000);
-    const needsRefresh = Boolean(record.expiresAt && record.expiresAt - nowEpoch <= 30);
+    const needsRefresh = Boolean(options?.forceRefresh || (record.expiresAt && record.expiresAt - nowEpoch <= 30));
     if (!needsRefresh) {
       return {
         connection: record,

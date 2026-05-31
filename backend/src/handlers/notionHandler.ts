@@ -131,6 +131,30 @@ function toUserFacingMessage(error: unknown): { statusCode: number; text: string
   if (/required|missing/i.test(message)) {
     return { statusCode: 400, text: message };
   }
+  if (/notion-create-pages is not allowed/i.test(message)) {
+    return {
+      statusCode: 500,
+      text: "Notion保存設定に問題があります（許可ツール設定）。管理者に設定確認を依頼してください。",
+    };
+  }
+  if (/Notion target is not configured/i.test(message)) {
+    return {
+      statusCode: 400,
+      text: "Notion保存先が未設定です。保存先ページまたはデータベースを設定してください。",
+    };
+  }
+  if (/object_not_found|Could not find page|Could not find database|data source/i.test(message)) {
+    return {
+      statusCode: 400,
+      text: "Notion保存先IDが見つからないか、アクセス権がありません。保存先設定を確認してください。",
+    };
+  }
+  if (/unauthorized|forbidden|insufficient/i.test(message)) {
+    return {
+      statusCode: 403,
+      text: "Notion側の権限不足により保存できませんでした。連携先ページをインテグレーションに共有してください。",
+    };
+  }
   if (/disabled/i.test(message)) {
     return { statusCode: 403, text: message };
   }

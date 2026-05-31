@@ -73,15 +73,39 @@ export class NotionService {
     if (!targetParentPageId && !targetDatabaseId) {
       throw new Error("Notion target is not configured.");
     }
+    logDebug("notion.create_post_idea.started", {
+      userIdPresent: Boolean(userId),
+      hasTargetParentPageId: Boolean(targetParentPageId),
+      hasTargetDatabaseId: Boolean(targetDatabaseId),
+    });
 
     const markdownBody = buildPostIdeaMarkdown(payload);
-    const created = await this.notionMcpClient.createPostIdeaPage({
-      accessToken,
-      title: payload.title,
-      markdownBody,
-      targetParentPageId,
-      targetDatabaseId,
-    });
+    let created;
+    try {
+      created = await this.notionMcpClient.createPostIdeaPage({
+        accessToken,
+        title: payload.title,
+        markdownBody,
+        targetParentPageId,
+        targetDatabaseId,
+      });
+    } catch (error) {
+      if (!isInvalidTokenError(error)) {
+        throw error;
+      }
+
+      logDebug("notion.create_post_idea.retry_after_token_refresh", {
+        userIdPresent: Boolean(userId),
+      });
+      const refreshed = await this.oauthService.getConnectionForUse(userId, { forceRefresh: true });
+      created = await this.notionMcpClient.createPostIdeaPage({
+        accessToken: refreshed.accessToken,
+        title: payload.title,
+        markdownBody,
+        targetParentPageId,
+        targetDatabaseId,
+      });
+    }
 
     logDebug("notion.create_post_idea.completed", {
       userIdPresent: Boolean(userId),
@@ -93,6 +117,11 @@ export class NotionService {
       pageTitle: payload.title,
     };
   }
+}
+
+function isInvalidTokenError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return /invalid_token|Invalid access token|401|unauthorized/i.test(message);
 }
 
 function buildPostIdeaMarkdown(payload: CreateNotionPostIdeaRequest): string {
