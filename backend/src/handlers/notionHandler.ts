@@ -32,16 +32,26 @@ export async function handleNotionRoute(
     if (path.endsWith("/notion/callback") && method === "GET") {
       const code = event.queryStringParameters?.code;
       const state = event.queryStringParameters?.state;
-      const result = await notionService.callback(code, state);
-      return {
-        statusCode: 302,
-        headers: {
-          ...corsHeaders(),
-          Location: result.redirectTo,
-          "Content-Type": "text/plain",
-        },
-        body: "",
-      };
+      try {
+        const result = await notionService.callback(code, state);
+        return htmlResponse(
+          200,
+          buildNotionCallbackHtml({
+            ok: true,
+            redirectTo: result.redirectTo,
+          }),
+        );
+      } catch (error) {
+        const userFacing = toUserFacingMessage(error);
+        return htmlResponse(
+          userFacing.statusCode,
+          buildNotionCallbackHtml({
+            ok: false,
+            redirectTo: "/",
+            errorMessage: userFacing.text,
+          }),
+        );
+      }
     }
 
     if (path.endsWith("/notion/disconnect") && method === "POST") {
@@ -124,6 +134,53 @@ function jsonResponse(statusCode: number, payload: unknown): ApiGatewayProxyResu
     },
     body: JSON.stringify(payload),
   };
+}
+
+function htmlResponse(statusCode: number, html: string): ApiGatewayProxyResult {
+  return {
+    statusCode,
+    headers: {
+      ...corsHeaders(),
+      "Content-Type": "text/html; charset=utf-8",
+      "Cache-Control": "no-store",
+    },
+    body: html,
+  };
+}
+
+function buildNotionCallbackHtml(input: { ok: boolean; redirectTo: string; errorMessage?: string }): string {
+  const redirectToJson = JSON.stringify(input.redirectTo || "/");
+  const errorJson = JSON.stringify(input.errorMessage ?? "");
+  const okJson = input.ok ? "true" : "false";
+  return `<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Notion Connection</title>
+</head>
+<body>
+  <p>Notion connection is being completed...</p>
+  <script>
+    (function () {
+      var payload = {
+        type: "tableau-chat.notion.complete",
+        ok: ${okJson},
+        error: ${errorJson}
+      };
+      try {
+        if (window.opener && !window.opener.closed) {
+          window.opener.postMessage(payload, window.location.origin);
+          window.close();
+          return;
+        }
+      } catch (_) {}
+
+      window.location.replace(${redirectToJson});
+    })();
+  </script>
+</body>
+</html>`;
 }
 
 function corsHeaders(): Record<string, string> {

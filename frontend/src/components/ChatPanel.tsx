@@ -99,7 +99,36 @@ export default function ChatPanel({ dashboardContext, authToken, userDisplayName
   }, [authToken]);
 
   useEffect(() => {
+    const handleNotionCompleteMessage = (event: MessageEvent) => {
+      if (event.origin !== window.location.origin) {
+        return;
+      }
+
+      const payload = event.data as { type?: string; ok?: boolean; error?: string } | undefined;
+      if (!payload || payload.type !== "tableau-chat.notion.complete") {
+        return;
+      }
+
+      if (notionPopupPollerRef.current) {
+        window.clearInterval(notionPopupPollerRef.current);
+      }
+      notionPopupPollerRef.current = undefined;
+      notionPopupRef.current = null;
+
+      if (payload.ok) {
+        setError(null);
+      } else if (payload.error) {
+        setError(payload.error);
+      }
+
+      void refreshNotionStatus();
+      setNotionLoading(false);
+    };
+
+    window.addEventListener("message", handleNotionCompleteMessage);
+
     return () => {
+      window.removeEventListener("message", handleNotionCompleteMessage);
       if (notionPopupPollerRef.current) {
         window.clearInterval(notionPopupPollerRef.current);
       }
@@ -217,7 +246,12 @@ export default function ChatPanel({ dashboardContext, authToken, userDisplayName
 
         try {
           const popupUrl = currentPopup.location.href;
-          if (popupUrl.startsWith(window.location.origin)) {
+          if (popupUrl.startsWith(window.location.origin) && popupUrl.includes("/notion/callback")) {
+            // Wait for callback page postMessage so that token exchange is not interrupted.
+            return;
+          }
+          if (popupUrl.startsWith(window.location.origin) && !popupUrl.includes("/notion/callback")) {
+            // Fallback: if callback script could not postMessage, close here.
             currentPopup.close();
             window.clearInterval(notionPopupPollerRef.current);
             notionPopupPollerRef.current = undefined;
