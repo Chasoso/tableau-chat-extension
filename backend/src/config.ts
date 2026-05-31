@@ -38,6 +38,12 @@ export type AppConfig = {
       debugLogResults: boolean;
       toolPlanningEnabled: boolean;
       plannerMaxOutputTokens: number;
+      intentToolFilterMode: "strict" | "soft" | "off";
+      intentClassifierMode: "heuristic" | "hybrid";
+      argSanitizeMode: "drop" | "mask";
+      argMaxDepth: number;
+      argMaxArrayLength: number;
+      argMaxObjectKeys: number;
       metadataCacheEnabled: boolean;
       metadataCacheTtlMs: number;
       queryDatasourceMaxLimit: number;
@@ -87,6 +93,12 @@ export function getConfig(): AppConfig {
         debugLogResults: process.env.TABLEAU_MCP_DEBUG_LOG_RESULTS === "true",
         toolPlanningEnabled: process.env.TABLEAU_MCP_TOOL_PLANNING_ENABLED === "true",
         plannerMaxOutputTokens: Number(process.env.TABLEAU_MCP_PLANNER_MAX_OUTPUT_TOKENS ?? 600),
+        intentToolFilterMode: parseIntentToolFilterMode(process.env.TABLEAU_MCP_INTENT_TOOL_FILTER_MODE),
+        intentClassifierMode: parseIntentClassifierMode(process.env.TABLEAU_MCP_INTENT_CLASSIFIER_MODE),
+        argSanitizeMode: parseArgSanitizeMode(process.env.TABLEAU_MCP_ARG_SANITIZE_MODE),
+        argMaxDepth: parsePositiveInt(process.env.TABLEAU_MCP_ARG_MAX_DEPTH, 5),
+        argMaxArrayLength: parsePositiveInt(process.env.TABLEAU_MCP_ARG_MAX_ARRAY, 50),
+        argMaxObjectKeys: parsePositiveInt(process.env.TABLEAU_MCP_ARG_MAX_OBJECT_KEYS, 30),
         metadataCacheEnabled: process.env.TABLEAU_MCP_METADATA_CACHE_ENABLED !== "false",
         metadataCacheTtlMs: Number(process.env.TABLEAU_MCP_METADATA_CACHE_TTL_MS ?? 30000),
         queryDatasourceMaxLimit: Number(process.env.TABLEAU_MCP_QUERY_MAX_LIMIT ?? 50),
@@ -136,4 +148,37 @@ function parseContextProvider(value: string | undefined): AppConfig["tableau"]["
   }
 
   return "mock";
+}
+
+function parseIntentToolFilterMode(value: string | undefined): AppConfig["tableau"]["mcp"]["intentToolFilterMode"] {
+  if (value === "soft" || value === "off") {
+    return value;
+  }
+
+  return "strict";
+}
+
+function parseIntentClassifierMode(value: string | undefined): AppConfig["tableau"]["mcp"]["intentClassifierMode"] {
+  if (value === "hybrid") {
+    return value;
+  }
+
+  return "heuristic";
+}
+
+function parseArgSanitizeMode(value: string | undefined): AppConfig["tableau"]["mcp"]["argSanitizeMode"] {
+  if (value === "mask") {
+    return value;
+  }
+
+  return "drop";
+}
+
+function parsePositiveInt(value: string | undefined, fallback: number): number {
+  const parsed = Number(value ?? fallback);
+  if (!Number.isFinite(parsed) || parsed < 1) {
+    return fallback;
+  }
+
+  return Math.floor(parsed);
 }

@@ -26,6 +26,12 @@ Configuration:
 - `TABLEAU_MCP_MAX_TOOL_CALLS=3`
 - `TABLEAU_MCP_TOOL_PLANNING_ENABLED=false`: set to `true` to let Bedrock plan MCP tool calls from the user's question.
 - `TABLEAU_MCP_PLANNER_MAX_OUTPUT_TOKENS=600`
+- `TABLEAU_MCP_INTENT_TOOL_FILTER_MODE=strict`: `soft` keeps tool freedom while providing intent tool preferences.
+- `TABLEAU_MCP_INTENT_CLASSIFIER_MODE=heuristic`: `hybrid` allows Bedrock to revise intent in uncertain cases.
+- `TABLEAU_MCP_ARG_SANITIZE_MODE=drop`: `mask` keeps argument structure and redacts sensitive values.
+- `TABLEAU_MCP_ARG_MAX_DEPTH=5`
+- `TABLEAU_MCP_ARG_MAX_ARRAY=50`
+- `TABLEAU_MCP_ARG_MAX_OBJECT_KEYS=30`
 - `TABLEAU_MCP_METADATA_CACHE_ENABLED=true`
 - `TABLEAU_MCP_METADATA_CACHE_TTL_MS=30000`
 - `TABLEAU_MCP_QUERY_MAX_LIMIT=50`
@@ -119,6 +125,12 @@ TODO:
 - `TABLEAU_MCP_MAX_TOOL_CALLS=3`
 - `TABLEAU_MCP_TOOL_PLANNING_ENABLED=false`: `true` にすると、Bedrock がユーザー質問から MCP tool 実行計画を作ります。
 - `TABLEAU_MCP_PLANNER_MAX_OUTPUT_TOKENS=600`
+- `TABLEAU_MCP_INTENT_TOOL_FILTER_MODE=strict`: `soft` にすると allowlist は維持したまま、intent による強制絞り込みを緩和します。
+- `TABLEAU_MCP_INTENT_CLASSIFIER_MODE=heuristic`: `hybrid` にすると、分類が不確実な場合に Bedrock planner 側で intent 補正を許可します。
+- `TABLEAU_MCP_ARG_SANITIZE_MODE=drop`: `mask` は機密キー値を伏字化しつつ引数構造を維持します。
+- `TABLEAU_MCP_ARG_MAX_DEPTH=5`
+- `TABLEAU_MCP_ARG_MAX_ARRAY=50`
+- `TABLEAU_MCP_ARG_MAX_OBJECT_KEYS=30`
 
 `TABLEAU_MCP_COMMAND` と `TABLEAU_MCP_ARGS` を省略した場合は、Lambda に同梱された `@tableau/mcp-server` を Node.js ランタイムで起動します。
 

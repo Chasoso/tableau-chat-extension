@@ -126,6 +126,10 @@ For Lambda-local Tableau MCP:
 - `TABLEAU_MCP_DEBUG_LOG_RESULTS=false`: set to `true` only while diagnosing MCP result shapes in CloudWatch.
 - `TABLEAU_MCP_TOOL_PLANNING_ENABLED=false`: set to `true` to let Bedrock create a small JSON MCP tool plan before tool execution.
 - `TABLEAU_MCP_PLANNER_MAX_OUTPUT_TOKENS=600`: token cap for the planning call.
+- `TABLEAU_MCP_INTENT_TOOL_FILTER_MODE=strict`: `strict` keeps legacy intent-based tool filtering, `soft` keeps all allowlisted tools but adds intent tool preferences to the prompt, `off` disables intent tool filtering entirely.
+- `TABLEAU_MCP_INTENT_CLASSIFIER_MODE=heuristic`: `hybrid` allows Bedrock planner to revise intent when classifier confidence is low.
+- `TABLEAU_MCP_ARG_SANITIZE_MODE=drop`: `drop` removes sensitive-like keys, `mask` preserves argument shape while redacting sensitive values.
+- `TABLEAU_MCP_ARG_MAX_DEPTH=5`, `TABLEAU_MCP_ARG_MAX_ARRAY=50`, `TABLEAU_MCP_ARG_MAX_OBJECT_KEYS=30`: JSON argument safety caps for planner output.
 - `TABLEAU_MCP_METADATA_CACHE_ENABLED=true`: enables short-lived in-memory metadata caching per user boundary.
 - `TABLEAU_MCP_METADATA_CACHE_TTL_MS=30000`: metadata cache TTL in milliseconds.
 - `TABLEAU_MCP_QUERY_MAX_LIMIT=50`: hard cap for `query-datasource` limit.
@@ -142,6 +146,12 @@ TABLEAU_MCP_TOOL_PLANNING_ENABLED=true
 TABLEAU_MCP_PLANNER_MAX_OUTPUT_TOKENS=400
 TABLEAU_MCP_MAX_TOOL_CALLS=5
 TABLEAU_MCP_ALLOWED_TOOLS=list-workbooks,get-workbook,list-views,list-datasources,get-datasource-metadata,search-content,query-datasource
+TABLEAU_MCP_INTENT_TOOL_FILTER_MODE=soft
+TABLEAU_MCP_INTENT_CLASSIFIER_MODE=hybrid
+TABLEAU_MCP_ARG_SANITIZE_MODE=mask
+TABLEAU_MCP_ARG_MAX_DEPTH=6
+TABLEAU_MCP_ARG_MAX_ARRAY=80
+TABLEAU_MCP_ARG_MAX_OBJECT_KEYS=40
 TABLEAU_MCP_DEBUG_LOG_RESULTS=false
 TABLEAU_MCP_METADATA_CACHE_ENABLED=true
 TABLEAU_MCP_METADATA_CACHE_TTL_MS=30000
@@ -270,6 +280,10 @@ Lambda 内で Tableau MCP を stdio 起動する場合の主な設定です。
 - `TABLEAU_MCP_ALLOWED_TOOLS`: 呼び出しを許可するMCP tool名のカンマ区切り。未指定時は安全に推測できる範囲だけ呼びます。
 - `TABLEAU_MCP_MAX_TOOL_CALLS=3`
 - `TABLEAU_MCP_DEBUG_LOG_RESULTS=false`: MCP の返却構造を CloudWatch で調査するときだけ `true` にします。
+- `TABLEAU_MCP_INTENT_TOOL_FILTER_MODE=strict`: `strict` は従来どおり intent ごとの tool 強制絞り込み、`soft` は allowlist を維持しつつ prompt 上の優先ヒントに切り替え、`off` は intent 由来の絞り込みを無効化します。
+- `TABLEAU_MCP_INTENT_CLASSIFIER_MODE=heuristic`: `hybrid` にすると、分類信頼度が低いケースで Bedrock planner が intent を補正できます。
+- `TABLEAU_MCP_ARG_SANITIZE_MODE=drop`: `drop` は機密キーを除去、`mask` は引数構造を残して値だけ伏字にします。
+- `TABLEAU_MCP_ARG_MAX_DEPTH=5`, `TABLEAU_MCP_ARG_MAX_ARRAY=50`, `TABLEAU_MCP_ARG_MAX_OBJECT_KEYS=30`: planner 返却引数の安全上限です。
 
 MCP 子プロセスには、バックエンドで検証済みの Tableau subject と Lambda 環境変数から取得した Connected App 情報だけを渡します。SecretやJWTはログに出しません。本番では SSM Parameter Store SecureString または Secrets Manager への移行を検討してください。
 

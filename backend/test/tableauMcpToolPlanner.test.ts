@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { classifyQuestionIntent, parseToolPlanResponse, resolveAllowedToolNames } from "../src/services/tableauMcpToolPlanner";
+import {
+  classifyQuestionIntent,
+  filterAllowedToolNamesByIntent,
+  parseToolPlanResponse,
+  resolveAllowedToolNames,
+} from "../src/services/tableauMcpToolPlanner";
 
 describe("tableauMcpToolPlanner", () => {
   it("parses planned MCP tool calls from fenced JSON", () => {
@@ -78,5 +83,65 @@ describe("tableauMcpToolPlanner", () => {
 
     expect(intent.intent).toBe("filter_or_selection_state");
     expect(intent.needsMcp).toBe(false);
+  });
+
+  it("keeps tool freedom in soft intent filter mode", () => {
+    const allowed = filterAllowedToolNamesByIntent(
+      ["list-views", "list-datasources", "search-content"],
+      "metadata_lookup",
+      "soft",
+    );
+
+    expect(allowed).toEqual(["list-views", "list-datasources", "search-content"]);
+  });
+
+  it("restricts tools by intent in strict mode", () => {
+    const allowed = filterAllowedToolNamesByIntent(
+      ["list-views", "search-content", "query-datasource"],
+      "metadata_lookup",
+      "strict",
+    );
+
+    expect(allowed).toEqual(["list-views"]);
+  });
+
+  it("supports mask sanitize mode while preserving argument structure", () => {
+    const plan = parseToolPlanResponse(
+      JSON.stringify({
+        intent: "data_analysis",
+        confidence: 0.75,
+        needsMcp: true,
+        answerableFromDashboardContext: false,
+        reasonBrief: "Need analysis",
+        maxToolCalls: 3,
+        toolCalls: [
+          {
+            toolName: "query-datasource",
+            arguments: {
+              datasourceLuid: "abc",
+              authorization: "Bearer xyz",
+              query: {
+                fields: [{ fieldCaption: "Views", function: "SUM" }],
+              },
+            },
+          },
+        ],
+      }),
+      undefined,
+      {
+        mode: "mask",
+        maxDepth: 5,
+        maxArrayLength: 50,
+        maxObjectKeys: 30,
+      },
+    );
+
+    expect(plan?.toolCalls[0]?.arguments).toEqual({
+      datasourceLuid: "abc",
+      authorization: "__REDACTED__",
+      query: {
+        fields: [{ fieldCaption: "Views", function: "SUM" }],
+      },
+    });
   });
 });

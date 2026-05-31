@@ -3,6 +3,10 @@ import { getConfig } from "../config";
 import { logError, logInfo, logWarn, safeErrorDetails } from "../logging";
 import type { DashboardContext, QuestionIntent } from "../types/tableau";
 
+export type PlannerToolFilterMode = "strict" | "soft" | "off";
+export type PlannerIntentClassifierMode = "heuristic" | "hybrid";
+export type PlannerArgumentSanitizeMode = "drop" | "mask";
+
 export type McpToolForPlanning = {
   name: string;
   description?: string;
@@ -110,7 +114,7 @@ const DEFAULT_PLANNING_ALLOWLIST = [
   "search-content",
 ];
 
-const TOOL_NAME_FOR_INTENT: Record<QuestionIntent, string[]> = {
+const PREFERRED_TOOL_NAMES_FOR_INTENT: Record<QuestionIntent, string[]> = {
   dashboard_explanation: ["list-workbooks", "get-workbook", "list-views"],
   filter_or_selection_state: ["list-views", "get-workbook"],
   metadata_lookup: ["list-datasources", "get-datasource-metadata", "list-views", "get-workbook"],
@@ -120,6 +124,40 @@ const TOOL_NAME_FOR_INTENT: Record<QuestionIntent, string[]> = {
   unsupported: [],
 };
 
+type ArgumentSanitizeOptions = {
+  mode: PlannerArgumentSanitizeMode;
+  maxDepth: number;
+  maxArrayLength: number;
+  maxObjectKeys: number;
+};
+
+function getArgumentSanitizeOptionsFromConfig(): ArgumentSanitizeOptions {
+  const mcpConfig = getConfig().tableau.mcp;
+  return {
+    mode: mcpConfig.argSanitizeMode,
+    maxDepth: Math.max(1, mcpConfig.argMaxDepth),
+    maxArrayLength: Math.max(1, mcpConfig.argMaxArrayLength),
+    maxObjectKeys: Math.max(1, mcpConfig.argMaxObjectKeys),
+  };
+}
+
+export function filterAllowedToolNamesByIntent(
+  allowedToolNames: string[],
+  intent: QuestionIntent,
+  mode: PlannerToolFilterMode,
+): string[] {
+  if (mode !== "strict") {
+    return [...allowedToolNames];
+  }
+
+  const preferred = PREFERRED_TOOL_NAMES_FOR_INTENT[intent];
+  if (!preferred.length) {
+    return [...allowedToolNames];
+  }
+
+  return allowedToolNames.filter((toolName) => preferred.includes(toolName));
+}
+
 export class TableauMcpToolPlanner {
   constructor(
     private readonly client = new BedrockRuntimeClient({ region: getConfig().model.bedrock.region }),
@@ -128,6 +166,8 @@ export class TableauMcpToolPlanner {
   async plan(input: McpToolPlannerInput): Promise<McpToolPlan | undefined> {
     const config = getConfig();
     const mcpConfig = config.tableau.mcp;
+    const intentClassifierMode = mcpConfig.intentClassifierMode;
+    const intentToolFilterMode = mcpConfig.intentToolFilterMode;
 
     if (!mcpConfig.toolPlanningEnabled) {
       return undefined;
@@ -157,15 +197,19 @@ export class TableauMcpToolPlanner {
       };
     }
 
-    const allowedToolNames = resolveAllowedToolNames(input.tools, input.allowedToolNames).filter((toolName) =>
-      TOOL_NAME_FOR_INTENT[intent.intent].length ? TOOL_NAME_FOR_INTENT[intent.intent].includes(toolName) : true,
-    );
+    const baseAllowedToolNames = resolveAllowedToolNames(input.tools, input.allowedToolNames);
+    const allowedToolNames = filterAllowedToolNamesByIntent(baseAllowedToolNames, intent.intent, intentToolFilterMode);
     const maxToolCalls = Math.max(0, Math.min(input.maxToolCalls, intent.maxToolCalls));
+    const preferredToolNames = PREFERRED_TOOL_NAMES_FOR_INTENT[intent.intent].filter((toolName) =>
+      baseAllowedToolNames.includes(toolName),
+    );
     const prompt = buildPlannerPrompt({
       ...input,
       maxToolCalls,
       allowedToolNames,
       intent,
+      preferredToolNames,
+      allowIntentReclassification: intentClassifierMode === "hybrid",
     });
 
     const startedAt = Date.now();
@@ -175,6 +219,9 @@ export class TableauMcpToolPlanner {
         maxToolCalls,
         availableToolCount: input.tools.length,
         allowedToolCount: allowedToolNames.length,
+        baseAllowedToolCount: baseAllowedToolNames.length,
+        intentToolFilterMode,
+        intentClassifierMode,
         observationCount: input.observations?.length ?? 0,
         promptLength: prompt.length,
         intent: intent.intent,
@@ -203,7 +250,7 @@ export class TableauMcpToolPlanner {
           .filter(Boolean)
           .join("\n")
           .trim() ?? "";
-      const plan = parseToolPlanResponse(text, intent);
+      const plan = parseToolPlanResponse(text, intent, getArgumentSanitizeOptionsFromConfig());
 
       if (!plan?.toolCalls.length) {
         logWarn("tableau.mcp.tool_planner.empty_plan", {
@@ -223,6 +270,12 @@ export class TableauMcpToolPlanner {
 
       const filteredToolCalls = plan.toolCalls.filter((call) => allowedToolNames.includes(call.toolName)).slice(0, maxToolCalls);
       const blockedToolCount = Math.max(plan.toolCalls.length - filteredToolCalls.length, 0);
+      const effectiveIntent = intentClassifierMode === "hybrid" ? plan.intent : intent.intent;
+      const effectiveReasonBrief = intentClassifierMode === "hybrid" ? plan.reasonBrief : intent.reasonBrief;
+      const effectiveConfidence = intentClassifierMode === "hybrid" ? plan.confidence : intent.confidence;
+      const effectiveNeedsMcp = intentClassifierMode === "hybrid" ? plan.needsMcp : intent.needsMcp;
+      const effectiveAnswerableFromContext =
+        intentClassifierMode === "hybrid" ? plan.answerableFromDashboardContext : intent.answerableFromDashboardContext;
 
       logInfo("tableau.mcp.tool_planner.completed", {
         plannedToolCount: filteredToolCalls.length,
@@ -232,6 +285,11 @@ export class TableauMcpToolPlanner {
       });
       return {
         ...plan,
+        intent: effectiveIntent,
+        confidence: effectiveConfidence,
+        answerableFromDashboardContext: effectiveAnswerableFromContext,
+        needsMcp: effectiveNeedsMcp,
+        reasonBrief: effectiveReasonBrief,
         maxToolCalls,
         toolCalls: filteredToolCalls,
       };
@@ -251,6 +309,9 @@ export function classifyQuestionIntent(
   allowedToolNames: string[] = [],
 ): ClassifiedQuestionIntent {
   const normalizedQuestion = question.toLowerCase();
+  const hasQuestionMark = /[?？]/.test(question);
+  const hasHowToKeywords =
+    /how to|how do i|steps|procedure|使い方|方法|どうやって|やり方|手順/.test(normalizedQuestion);
   const hasFilterKeywords = /filter|filtered|selection|selected mark|parameter|where|slice|drill|絞り込み|フィルター|選択|パラメーター/.test(
     normalizedQuestion,
   );
@@ -264,8 +325,6 @@ export function classifyQuestionIntent(
     );
   const hasContentSearchKeywords =
     /search|find|locate|where is|which workbook|which view|content|asset|コンテンツ|探し|検索|どこ/.test(normalizedQuestion);
-  const hasHowToKeywords =
-    /how to|how do i|steps|procedure|使い方|方法|どうやって|やり方/.test(normalizedQuestion);
   const hasDashboardExplanationKeywords =
     /what is this dashboard|describe this dashboard|overview|summary|このダッシュボード|概要|説明/.test(normalizedQuestion);
 
@@ -273,6 +332,14 @@ export function classifyQuestionIntent(
     dashboardContext.dataSources?.some((dataSource) => normalizedQuestion.includes(dataSource.name.toLowerCase())) ?? false;
   const hasSearchTool = allowedToolNames.includes("search-content");
   const hasQueryTool = allowedToolNames.includes("query-datasource");
+  const clueCount =
+    Number(hasHowToKeywords) +
+    Number(hasFilterKeywords) +
+    Number(hasMetadataKeywords) +
+    Number(hasAnalysisKeywords) +
+    Number(hasContentSearchKeywords) +
+    Number(hasDashboardExplanationKeywords) +
+    Number(knownDatasourceMentioned);
 
   let intent: QuestionIntent = "unsupported";
   let confidence = 0.45;
@@ -280,28 +347,33 @@ export function classifyQuestionIntent(
 
   if (hasHowToKeywords) {
     intent = "how_to_use_tableau";
-    confidence = 0.8;
-    reasonBrief = "The question asks procedural Tableau usage guidance.";
-  } else if (hasFilterKeywords) {
+    confidence = hasFilterKeywords || hasMetadataKeywords ? 0.72 : 0.82;
+    reasonBrief = "The question asks procedural Tableau usage guidance rather than dashboard data retrieval.";
+  } else if (hasFilterKeywords && !hasMetadataKeywords && !hasAnalysisKeywords) {
     intent = "filter_or_selection_state";
-    confidence = 0.86;
+    confidence = 0.82;
     reasonBrief = "The question focuses on current filters, selections, or parameter state.";
   } else if (hasAnalysisKeywords || (knownDatasourceMentioned && hasQueryTool)) {
     intent = "data_analysis";
-    confidence = hasQueryTool ? 0.88 : 0.72;
+    confidence = hasQueryTool ? 0.86 : 0.68;
     reasonBrief = "The question asks for aggregated values, trends, or ranking analysis.";
   } else if (hasMetadataKeywords || knownDatasourceMentioned) {
     intent = "metadata_lookup";
-    confidence = 0.84;
+    confidence = knownDatasourceMentioned ? 0.84 : 0.74;
     reasonBrief = "The question asks about datasources, fields, or workbook/view metadata.";
   } else if (hasContentSearchKeywords && hasSearchTool) {
     intent = "content_search";
-    confidence = 0.8;
+    confidence = 0.78;
     reasonBrief = "The question asks to locate Tableau Cloud content.";
   } else if (hasDashboardExplanationKeywords || dashboardContext.worksheets.length > 0) {
     intent = "dashboard_explanation";
-    confidence = hasDashboardExplanationKeywords ? 0.78 : 0.58;
+    confidence = hasDashboardExplanationKeywords ? 0.76 : 0.56;
     reasonBrief = "The question can likely be handled from the active dashboard context.";
+  }
+
+  if (clueCount >= 2 && hasQuestionMark) {
+    confidence = Math.max(0.55, confidence - 0.07);
+    reasonBrief = `${reasonBrief} Multiple intent clues were detected, so this classification may need adjustment.`;
   }
 
   const policy = QUESTION_INTENT_POLICY[intent];
@@ -318,6 +390,7 @@ export function classifyQuestionIntent(
 export function parseToolPlanResponse(
   text: string,
   fallbackIntent?: ClassifiedQuestionIntent,
+  sanitizeOptions: ArgumentSanitizeOptions = getArgumentSanitizeOptionsFromConfig(),
 ): McpToolPlan | undefined {
   const jsonText = extractJsonObject(text);
   if (!jsonText) {
@@ -333,7 +406,7 @@ export function parseToolPlanResponse(
     const record = parsed as Record<string, unknown>;
     const toolCallsSource = Array.isArray(record.toolCalls) ? record.toolCalls : Array.isArray(record.steps) ? record.steps : [];
     const normalizedCalls = toolCallsSource
-      .map(normalizeToolCall)
+      .map((call) => normalizeToolCall(call, sanitizeOptions))
       .filter((call): call is PlannedMcpToolCall => Boolean(call));
 
     const intent = readIntent(record.intent) ?? fallbackIntent?.intent ?? "unsupported";
@@ -369,7 +442,7 @@ export function resolveAllowedToolNames(tools: McpToolForPlanning[], configuredA
   return desired.filter((toolName) => available.has(toolName));
 }
 
-function normalizeToolCall(value: unknown): PlannedMcpToolCall | undefined {
+function normalizeToolCall(value: unknown, sanitizeOptions: ArgumentSanitizeOptions): PlannedMcpToolCall | undefined {
   if (!value || typeof value !== "object") {
     return undefined;
   }
@@ -380,7 +453,7 @@ function normalizeToolCall(value: unknown): PlannedMcpToolCall | undefined {
     return undefined;
   }
 
-  const args = record.arguments && isPlainObject(record.arguments) ? sanitizeToolArguments(record.arguments) : undefined;
+  const args = record.arguments && isPlainObject(record.arguments) ? sanitizeToolArguments(record.arguments, sanitizeOptions) : undefined;
   const purpose = typeof record.purpose === "string" ? record.purpose.slice(0, 220) : undefined;
   const reason = typeof record.reason === "string" ? record.reason.slice(0, 220) : undefined;
   const dependsOnTool =
@@ -399,42 +472,76 @@ function normalizeToolCall(value: unknown): PlannedMcpToolCall | undefined {
   };
 }
 
-function sanitizeToolArguments(value: unknown): Record<string, unknown> | undefined {
+function sanitizeToolArguments(value: unknown, options: ArgumentSanitizeOptions): Record<string, unknown> | undefined {
   if (!isPlainObject(value)) {
     return undefined;
   }
 
-  const sanitized = Object.fromEntries(
-    Object.entries(value).filter(([key, child]) => {
-      if (/token|secret|password|jwt|authorization|credential|cookie/i.test(key)) {
-        return false;
-      }
+  const entries = Object.entries(value).slice(0, options.maxObjectKeys);
+  const sanitized: Record<string, unknown> = {};
+  for (const [key, child] of entries) {
+    const isSensitive = /token|secret|password|jwt|authorization|credential|cookie/i.test(key);
+    if (options.mode === "drop" && isSensitive) {
+      continue;
+    }
 
-      return isJsonSafeValue(child, 0);
-    }),
-  );
+    const sanitizedValue = sanitizeJsonValue(child, 0, options);
+    if (sanitizedValue === undefined && options.mode === "drop") {
+      continue;
+    }
+
+    if (isSensitive && options.mode === "mask") {
+      sanitized[key] = "__REDACTED__";
+      continue;
+    }
+
+    if (sanitizedValue !== undefined) {
+      sanitized[key] = sanitizedValue;
+    }
+  }
 
   return Object.keys(sanitized).length ? sanitized : undefined;
 }
 
-function isJsonSafeValue(value: unknown, depth: number): boolean {
-  if (depth > 5) {
-    return false;
+function sanitizeJsonValue(value: unknown, depth: number, options: ArgumentSanitizeOptions): unknown {
+  if (depth > options.maxDepth) {
+    return undefined;
   }
 
   if (value === null || ["string", "number", "boolean"].includes(typeof value)) {
-    return true;
+    return value;
   }
 
   if (Array.isArray(value)) {
-    return value.length <= 50 && value.every((item) => isJsonSafeValue(item, depth + 1));
+    const sanitizedItems = value
+      .slice(0, options.maxArrayLength)
+      .map((item) => sanitizeJsonValue(item, depth + 1, options))
+      .filter((item): item is unknown => item !== undefined);
+    return sanitizedItems;
   }
 
   if (isPlainObject(value)) {
-    return Object.keys(value).length <= 30 && Object.values(value).every((item) => isJsonSafeValue(item, depth + 1));
+    const sanitizedObject: Record<string, unknown> = {};
+    for (const [key, child] of Object.entries(value).slice(0, options.maxObjectKeys)) {
+      const isSensitive = /token|secret|password|jwt|authorization|credential|cookie/i.test(key);
+      if (isSensitive && options.mode === "drop") {
+        continue;
+      }
+
+      if (isSensitive && options.mode === "mask") {
+        sanitizedObject[key] = "__REDACTED__";
+        continue;
+      }
+
+      const sanitizedChild = sanitizeJsonValue(child, depth + 1, options);
+      if (sanitizedChild !== undefined) {
+        sanitizedObject[key] = sanitizedChild;
+      }
+    }
+    return sanitizedObject;
   }
 
-  return false;
+  return undefined;
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -488,7 +595,13 @@ function clampNumber(value: unknown, min: number, max: number, fallback: number)
 }
 
 function buildPlannerPrompt(
-  input: McpToolPlannerInput & { allowedToolNames: string[]; intent: ClassifiedQuestionIntent; maxToolCalls: number },
+  input: McpToolPlannerInput & {
+    allowedToolNames: string[];
+    intent: ClassifiedQuestionIntent;
+    maxToolCalls: number;
+    preferredToolNames: string[];
+    allowIntentReclassification: boolean;
+  },
 ): string {
   return [
     "You are a strict planner for Tableau MCP tool calls.",
@@ -496,10 +609,14 @@ function buildPlannerPrompt(
     "Keep reasonBrief and purpose short.",
     "Never invent IDs. If an ID is unknown, leave args empty and add dependsOnTool.",
     "Use only allowlisted tools.",
+    input.allowIntentReclassification
+      ? "You may adjust intent when the question and observations strongly disagree with the initial classifier."
+      : "Treat the classified intent as fixed for this request.",
     "Avoid query-datasource unless aggregate analysis is required.",
     "For query-datasource, always include a small limit and aggregate fields.",
     `Maximum tool calls: ${input.maxToolCalls}`,
     `Allowed tools: ${input.allowedToolNames.join(", ") || "none"}`,
+    `Preferred tools for this intent: ${input.preferredToolNames.join(", ") || "none"}`,
     `Classified intent: ${input.intent.intent} (confidence=${input.intent.confidence.toFixed(2)})`,
     `Intent reason: ${input.intent.reasonBrief}`,
     `Previously called tools: ${input.previouslyCalledToolNames?.join(", ") || "none"}`,
