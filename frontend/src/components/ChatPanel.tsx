@@ -30,6 +30,8 @@ const exampleQuestions = [
 
 export default function ChatPanel({ dashboardContext, authToken, userDisplayName, onDashboardContextPatch }: Props) {
   const enrichmentStartedKey = useRef<string | null>(null);
+  const notionPopupRef = useRef<Window | null>(null);
+  const notionPopupPollerRef = useRef<number | undefined>(undefined);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [sessionId, setSessionId] = useState<string | undefined>();
   const [isLoading, setIsLoading] = useState(false);
@@ -95,6 +97,16 @@ export default function ChatPanel({ dashboardContext, authToken, userDisplayName
 
     void refreshNotionStatus();
   }, [authToken]);
+
+  useEffect(() => {
+    return () => {
+      if (notionPopupPollerRef.current) {
+        window.clearInterval(notionPopupPollerRef.current);
+      }
+      notionPopupPollerRef.current = undefined;
+      notionPopupRef.current = null;
+    };
+  }, []);
 
   useEffect(() => {
     const handleWindowFocus = () => {
@@ -168,16 +180,63 @@ export default function ChatPanel({ dashboardContext, authToken, userDisplayName
   async function handleConnectNotion() {
     try {
       setNotionLoading(true);
+      setError(null);
+
+      const popup = window.open("about:blank", "tableau-chat-notion-connect", "popup,width=520,height=720");
+      if (!popup) {
+        throw new Error("ポップアップを開けませんでした。ブラウザのポップアップ許可を確認してください。");
+      }
+      notionPopupRef.current = popup;
+      popup.focus();
+
       const authorizationUrl = await startNotionConnect(
         {
           redirectAfter: window.location.href,
         },
         authToken,
       );
-      window.open(authorizationUrl, "_blank", "noopener,noreferrer");
+      popup.location.assign(authorizationUrl);
+
+      if (notionPopupPollerRef.current) {
+        window.clearInterval(notionPopupPollerRef.current);
+      }
+      notionPopupPollerRef.current = window.setInterval(() => {
+        const currentPopup = notionPopupRef.current;
+        if (!currentPopup) {
+          return;
+        }
+
+        if (currentPopup.closed) {
+          window.clearInterval(notionPopupPollerRef.current);
+          notionPopupPollerRef.current = undefined;
+          notionPopupRef.current = null;
+          void refreshNotionStatus();
+          setNotionLoading(false);
+          return;
+        }
+
+        try {
+          const popupUrl = currentPopup.location.href;
+          if (popupUrl.startsWith(window.location.origin)) {
+            currentPopup.close();
+            window.clearInterval(notionPopupPollerRef.current);
+            notionPopupPollerRef.current = undefined;
+            notionPopupRef.current = null;
+            void refreshNotionStatus();
+            setNotionLoading(false);
+          }
+        } catch {
+          // Ignore cross-origin access errors while popup stays on Notion domain.
+        }
+      }, 500);
     } catch (unknownError) {
       setError(unknownError instanceof Error ? unknownError.message : "Notion接続に失敗しました。");
-    } finally {
+      if (notionPopupPollerRef.current) {
+        window.clearInterval(notionPopupPollerRef.current);
+      }
+      notionPopupPollerRef.current = undefined;
+      notionPopupRef.current?.close();
+      notionPopupRef.current = null;
       setNotionLoading(false);
     }
   }
