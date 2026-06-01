@@ -65,7 +65,7 @@ test.describe("chat panel", () => {
 
     await expect(page.locator(".chat-panel")).toBeVisible();
     await expect(page.locator(".question-starters")).toBeVisible();
-    await expect(page.locator(".starter-chip-row button")).toHaveCount(3);
+    await expect(page.locator(".starter-user-row button")).toHaveCount(3);
 
     await expect(page.getByText("Mock Executive Sales Dashboard")).toHaveCount(0);
     await expect(page.getByText("Mock Sales Workbook")).toHaveCount(0);
@@ -81,7 +81,7 @@ test.describe("chat panel", () => {
     await mockAssistantApis(page);
     await page.goto("/");
 
-    await page.locator(".starter-chip-row button").first().click();
+    await page.locator(".starter-user-row button").first().click();
 
     await expect(page.locator(".message-bubble.user")).toHaveCount(1);
     await expect(page.locator(".message-bubble.assistant")).toHaveCount(1);

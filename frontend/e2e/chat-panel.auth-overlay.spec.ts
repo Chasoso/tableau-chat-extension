@@ -13,8 +13,8 @@ test.describe("auth overlay visual", () => {
     await expect(page.locator(".auth-overlay-card")).toBeVisible();
     await expect(page.getByRole("button", { name: "ログイン" })).toBeVisible();
 
-    await expect(page.locator(".starter-chip-row button")).toHaveCount(3);
-    await expect(page.locator(".starter-chip-row button").first()).toBeDisabled();
+    await expect(page.locator(".starter-user-row button")).toHaveCount(3);
+    await expect(page.locator(".starter-user-row button").first()).toBeDisabled();
     await expect(page.locator(".message-input textarea")).toBeDisabled();
     await expect(page.locator(".message-input button")).toBeDisabled();
     await expect(page.locator(".plus-action-button")).toBeDisabled();

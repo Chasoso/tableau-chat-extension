@@ -176,29 +176,32 @@ button {
   font-size: 12px;
 }
 
-.starter-chip-row {
+.starter-user-row {
   display: flex;
-  flex-wrap: wrap;
+  flex-direction: column;
+  align-items: flex-end;
   gap: 8px;
 }
 
-.starter-chip-row button {
-  border: 1px solid #d5d9dd;
-  border-radius: 999px;
-  padding: 7px 11px;
-  background: #ffffff;
-  color: #4a525a;
+.starter-user-bubble {
+  max-width: 78%;
+  border: 0;
+  border-radius: 12px 12px 4px 12px;
+  padding: 10px 12px 9px;
+  background: #585b60;
+  color: #ffffff;
   font-size: 12px;
   font-weight: 700;
+  text-align: left;
   cursor: pointer;
+  line-height: 1.45;
 }
 
-.starter-chip-row button:hover:not(:disabled) {
-  border-color: #b9c0c7;
-  background: #f6f7f8;
+.starter-user-bubble:hover:not(:disabled) {
+  background: #4f5358;
 }
 
-.starter-chip-row button:disabled {
+.starter-user-bubble:disabled {
   cursor: not-allowed;
   opacity: 0.55;
 }

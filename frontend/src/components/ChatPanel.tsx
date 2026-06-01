@@ -373,9 +373,15 @@ export default function ChatPanel({
         {messages.length === 0 ? (
           <section className="question-starters" aria-label="suggested questions">
             <p>たとえば、このような質問ができます。</p>
-            <div className="starter-chip-row">
+            <div className="starter-user-row">
               {exampleQuestions.map((question) => (
-                <button key={question} disabled={isSendLocked} type="button" onClick={() => void handleSend(question)}>
+                <button
+                  key={question}
+                  className="starter-user-bubble"
+                  disabled={isSendLocked}
+                  type="button"
+                  onClick={() => void handleSend(question)}
+                >
                   {question}
                 </button>
               ))}
