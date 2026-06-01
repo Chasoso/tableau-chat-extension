@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+﻿import { useEffect, useMemo, useRef, useState } from "react";
 import { sendChatQuestion } from "../api/chatApi";
 import { enrichDashboardContext } from "../api/contextApi";
 import {
@@ -316,7 +316,7 @@ export default function ChatPanel({ dashboardContext, authToken, userDisplayName
       });
       setNotionDraft(null);
     } catch (unknownError) {
-      setError(unknownError instanceof Error ? unknownError.message : "Notion登録に失敗しました。");
+      setError(unknownError instanceof Error ? unknownError.message : "Notion保存に失敗しました。");
     } finally {
       setIsNotionSaving(false);
     }
@@ -347,7 +347,10 @@ export default function ChatPanel({ dashboardContext, authToken, userDisplayName
           aria-label="ユーザー情報"
           title={userDisplayName || "Guest"}
         >
-          {(userDisplayName || "G").slice(0, 1).toUpperCase()}
+          <svg className="avatar-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <circle cx="12" cy="8" r="3.6" />
+            <path d="M5.5 18.3c1.7-3 4-4.5 6.5-4.5s4.8 1.5 6.5 4.5" />
+          </svg>
         </div>
       </header>
 
@@ -377,35 +380,6 @@ export default function ChatPanel({ dashboardContext, authToken, userDisplayName
       </div>
 
       <div className="chat-footer">
-        {notionDraft ? (
-          <section className="notion-confirm-card" aria-label="Notion保存前確認">
-            <h2>外部サービス連携アクション</h2>
-            <p>
-              <strong>保存タイトル:</strong> {notionDraft.title}
-            </p>
-            <p>
-              <strong>保存内容の要約:</strong> {buildDraftSummary(notionDraft)}
-            </p>
-            <p>
-              <strong>保存先:</strong> Notion
-            </p>
-            <div className="notion-confirm-actions">
-              <button type="button" className="secondary" disabled={isNotionSaving} onClick={() => setNotionDraft(null)}>
-                キャンセル
-              </button>
-              <button
-                type="button"
-                className="primary"
-                disabled={isNotionSaving || !notionStatus?.connected}
-                onClick={() => void handleSaveToNotion()}
-              >
-                Notionに登録
-              </button>
-            </div>
-            {!notionStatus?.connected ? <p className="hint">Notion接続後に登録できます。</p> : null}
-          </section>
-        ) : null}
-
         {isNotionSaving ? (
           <div className="operation-status" aria-live="polite">
             <span className="spinner" aria-hidden />
@@ -423,8 +397,11 @@ export default function ChatPanel({ dashboardContext, authToken, userDisplayName
               aria-expanded={notionActionMenuOpen}
               aria-controls="external-action-menu"
               onClick={() => setNotionActionMenuOpen((open) => !open)}
+              aria-label="外部サービス連携を開く"
             >
-              ＋
+              <svg className="plus-icon" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M12 5v14M5 12h14" />
+              </svg>
             </button>
             {notionActionMenuOpen ? (
               <div id="external-action-menu" className="action-menu" role="menu" aria-label="外部連携メニュー">
@@ -442,6 +419,40 @@ export default function ChatPanel({ dashboardContext, authToken, userDisplayName
           <MessageInput disabled={isSendLocked} onSend={handleSend} />
         </div>
       </div>
+
+      {notionDraft ? (
+        <div className="notion-modal-backdrop" role="presentation">
+          <section className="notion-confirm-card notion-confirm-modal" aria-label="Notion保存前確認">
+            <h2>外部サービス連携アクション</h2>
+            <div className="notion-confirm-row">
+              <p className="notion-confirm-label">保存タイトル:</p>
+              <p className="notion-confirm-value">{notionDraft.title}</p>
+            </div>
+            <div className="notion-confirm-row">
+              <p className="notion-confirm-label">保存内容の要約:</p>
+              <p className="notion-confirm-value notion-confirm-summary">{buildDraftSummary(notionDraft)}</p>
+            </div>
+            <div className="notion-confirm-row">
+              <p className="notion-confirm-label">保存先:</p>
+              <p className="notion-confirm-value">Notion</p>
+            </div>
+            <div className="notion-confirm-actions">
+              <button type="button" className="secondary" disabled={isNotionSaving} onClick={() => setNotionDraft(null)}>
+                キャンセル
+              </button>
+              <button
+                type="button"
+                className="primary"
+                disabled={isNotionSaving || !notionStatus?.connected}
+                onClick={() => void handleSaveToNotion()}
+              >
+                Notionに登録
+              </button>
+            </div>
+            {!notionStatus?.connected ? <p className="hint">Notion接続後に保存できます。</p> : null}
+          </section>
+        </div>
+      ) : null}
     </section>
   );
 }

@@ -1,5 +1,5 @@
 :root {
-  color: #162331;
+  color: #2f353b;
   background: transparent;
   font-family: "Aptos", "Segoe UI", sans-serif;
 }
@@ -82,10 +82,11 @@ button {
   max-width: 452px;
   height: calc(100vh - 20px);
   overflow: hidden;
-  border: 1px solid #d7e3eb;
-  border-radius: 16px;
+  position: relative;
+  border: 1px solid #d3d7dc;
+  border-radius: 14px;
   background: rgba(255, 255, 255, 0.97);
-  box-shadow: 0 10px 24px rgba(21, 32, 43, 0.08);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.06);
 }
 
 .chat-header {
@@ -94,12 +95,12 @@ button {
   justify-content: space-between;
   gap: 10px;
   padding: 16px 16px 11px;
-  border-bottom: 1px solid #edf2f6;
+  border-bottom: 1px solid #e4e7ea;
 }
 
 .chat-header h1 {
   margin: 0;
-  color: #102f43;
+  color: #2f353b;
   font-size: 23px;
   line-height: 1.1;
   letter-spacing: -0.02em;
@@ -107,7 +108,7 @@ button {
 
 .chat-header p {
   margin: 3px 0 0;
-  color: #66778a;
+  color: #7b838c;
   font-size: 12px;
   line-height: 1.35;
 }
@@ -119,11 +120,20 @@ button {
   border-radius: 50%;
   display: grid;
   place-items: center;
-  background: #f2f7fb;
-  color: #4e6073;
+  background: #f1f3f5;
+  color: #666f78;
   font-size: 12px;
-  font-weight: 700;
   cursor: default;
+}
+
+.avatar-icon {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 .user-avatar::after {
@@ -133,7 +143,7 @@ button {
   right: 0;
   border-radius: 8px;
   padding: 6px 8px;
-  background: #1a2d3f;
+  background: #2f353b;
   color: #ffffff;
   font-size: 11px;
   white-space: nowrap;
@@ -152,12 +162,12 @@ button {
   display: grid;
   gap: 8px;
   padding: 10px 16px 8px;
-  border-bottom: 1px solid #edf2f6;
+  border-bottom: 1px solid #e4e7ea;
 }
 
 .question-starters p {
   margin: 0;
-  color: #66778a;
+  color: #7b838c;
   font-size: 12px;
 }
 
@@ -168,19 +178,19 @@ button {
 }
 
 .starter-chip-row button {
-  border: 1px solid #d4e2ec;
+  border: 1px solid #d5d9dd;
   border-radius: 999px;
   padding: 7px 11px;
   background: #ffffff;
-  color: #1e5577;
+  color: #4a525a;
   font-size: 12px;
   font-weight: 700;
   cursor: pointer;
 }
 
 .starter-chip-row button:hover:not(:disabled) {
-  border-color: #9cc5de;
-  background: #f2f8fc;
+  border-color: #b9c0c7;
+  background: #f6f7f8;
 }
 
 .starter-chip-row button:disabled {
@@ -190,7 +200,7 @@ button {
 
 .chat-body {
   min-height: 0;
-  background: linear-gradient(180deg, #f8fbfe 0%, #ffffff 100%);
+  background: transparent;
 }
 
 .chat-body.has-starters {
@@ -214,7 +224,7 @@ button {
   min-height: 0;
   overflow-y: auto;
   padding: 14px 16px 16px;
-  scrollbar-color: rgba(84, 99, 113, 0.35) transparent;
+  scrollbar-color: rgba(109, 115, 120, 0.35) transparent;
   scrollbar-width: thin;
 }
 
@@ -225,22 +235,13 @@ button {
 .message-list::-webkit-scrollbar-thumb {
   border: 2px solid transparent;
   border-radius: 999px;
-  background: rgba(84, 99, 113, 0.25);
+  background: rgba(109, 115, 120, 0.25);
   background-clip: padding-box;
 }
 
 .message-bubble {
   max-width: 88%;
   line-height: 1.5;
-}
-
-.message-bubble span {
-  display: block;
-  margin-bottom: 5px;
-  color: #536577;
-  font-size: 11px;
-  font-weight: 800;
-  letter-spacing: 0.02em;
 }
 
 .message-bubble p {
@@ -250,42 +251,43 @@ button {
 
 .message-bubble.assistant {
   align-self: flex-start;
-  padding: 0;
-  color: #172533;
+  color: #3d444b;
+}
+
+.message-bubble.assistant-reply {
+  border-radius: 10px;
+  padding: 11px 13px;
+  background: #eef0f2;
 }
 
 .message-bubble.user {
   align-self: flex-end;
   max-width: 78%;
-  border-radius: 16px 16px 5px 16px;
+  border-radius: 12px 12px 4px 12px;
   padding: 10px 12px 9px;
-  background: #16384f;
+  background: #585b60;
   color: #ffffff;
 }
 
-.message-bubble.user span {
-  color: rgba(255, 255, 255, 0.78);
-}
-
 .message-bubble.loading {
-  color: #647487;
+  color: #6a7178;
 }
 
 .message-bubble.loading p {
   display: inline-flex;
   gap: 8px;
   align-items: center;
-  border-radius: 12px;
+  border-radius: 10px;
   padding: 9px 11px;
-  background: #f2f7fa;
+  background: #eef1f3;
 }
 
 .spinner {
   display: inline-block;
   width: 12px;
   height: 12px;
-  border: 2px solid #9db1c1;
-  border-top-color: #2b688e;
+  border: 2px solid #b8bdc3;
+  border-top-color: #666d75;
   border-radius: 50%;
   animation: spin 900ms linear infinite;
 }
@@ -311,7 +313,7 @@ button {
 
 .markdown-content :where(h1, h2, h3, h4) {
   margin: 3px 0 0;
-  color: #102f43;
+  color: #2f353b;
   font-weight: 800;
   line-height: 1.3;
 }
@@ -340,15 +342,15 @@ button {
 .markdown-content code {
   border-radius: 5px;
   padding: 1px 5px;
-  background: rgba(22, 56, 79, 0.08);
+  background: rgba(82, 89, 95, 0.08);
   font-size: 0.92em;
 }
 
 .markdown-content pre {
   overflow-x: auto;
-  border-radius: 10px;
+  border-radius: 8px;
   padding: 10px;
-  background: #102f43;
+  background: #3b4148;
   color: #f7fbff;
 }
 
@@ -359,9 +361,9 @@ button {
 }
 
 .markdown-content blockquote {
-  border-left: 3px solid #9bbfd7;
+  border-left: 3px solid #b7bdc4;
   padding-left: 10px;
-  color: #41566b;
+  color: #565d65;
 }
 
 .markdown-content table {
@@ -372,31 +374,36 @@ button {
 }
 
 .markdown-content :where(th, td) {
-  border: 1px solid #cddbe6;
+  border: 1px solid #d7dce1;
   padding: 5px 7px;
 }
 
 .markdown-content th {
-  background: #eef5f9;
+  background: #f1f3f5;
   font-weight: 800;
 }
 
-.notion-completion {
-  max-width: 100%;
+.notion-completion-row {
+  width: 100%;
+  margin-top: 2px;
 }
 
 .notion-completion-toggle {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  border: 1px solid #dbe7f0;
-  border-radius: 10px;
-  padding: 8px 10px;
-  background: #f8fbfe;
-  color: #204863;
+  border: 0;
+  border-top: 1px solid #d9dde2;
+  border-bottom: 1px solid #d9dde2;
+  border-radius: 0;
+  width: 100%;
+  padding: 8px 0;
+  background: transparent;
+  color: #6d747c;
   font-size: 12px;
-  font-weight: 700;
+  font-weight: 500;
   cursor: pointer;
+  justify-content: flex-start;
 }
 
 .toggle-icon {
@@ -410,9 +417,10 @@ button {
 
 .notion-completion-body {
   margin-top: 8px;
-  border-left: 2px solid #d2e0eb;
+  margin-left: 2px;
+  border-left: 2px solid #cfd4d9;
   padding-left: 10px;
-  color: #38566d;
+  color: #4f565e;
   font-size: 12px;
 }
 
@@ -421,7 +429,7 @@ button {
 }
 
 .notion-completion-body a {
-  color: #1a6ea4;
+  color: #4f565e;
   font-weight: 700;
   text-decoration: none;
 }
@@ -430,34 +438,55 @@ button {
   display: grid;
   gap: 9px;
   padding: 10px 16px 14px;
-  border-top: 1px solid #edf2f6;
+  border-top: 1px solid #e4e7ea;
   background: rgba(255, 255, 255, 0.99);
 }
 
 .notion-confirm-card {
   display: grid;
-  gap: 6px;
-  padding: 10px;
-  border: 1px solid #dce8f1;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid #d2d6db;
   border-radius: 10px;
-  background: #f8fbfe;
+  background: #f4f5f7;
 }
 
 .notion-confirm-card h2 {
   margin: 0;
-  color: #14384f;
-  font-size: 12px;
+  color: #3a4148;
+  font-size: 13px;
+  font-weight: 800;
 }
 
-.notion-confirm-card p {
+.notion-confirm-row {
+  display: grid;
+  gap: 2px;
+}
+
+.notion-confirm-label {
   margin: 0;
-  color: #2c4b62;
+  color: #4d545c;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.notion-confirm-value {
+  margin: 0;
+  color: #4a5158;
   font-size: 12px;
   line-height: 1.4;
 }
 
+.notion-confirm-summary {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}
+
 .notion-confirm-card .hint {
-  color: #4e6478;
+  color: #717982;
   font-size: 11px;
 }
 
@@ -468,8 +497,8 @@ button {
 
 .notion-confirm-actions .primary,
 .notion-confirm-actions .secondary {
-  border-radius: 10px;
-  padding: 7px 10px;
+  border-radius: 16px;
+  padding: 8px 12px;
   font-size: 12px;
   font-weight: 700;
   cursor: pointer;
@@ -477,14 +506,14 @@ button {
 
 .notion-confirm-actions .primary {
   border: 0;
-  background: #1f8b5d;
+  background: #4f565e;
   color: #ffffff;
 }
 
 .notion-confirm-actions .secondary {
-  border: 1px solid #c8d8e5;
-  background: #ffffff;
-  color: #34546a;
+  border: 1px solid #d0d5db;
+  background: #ebedf0;
+  color: #626971;
 }
 
 .notion-confirm-actions button:disabled {
@@ -496,10 +525,10 @@ button {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  border-radius: 10px;
+  border-radius: 8px;
   padding: 8px 10px;
-  background: #f2f7fa;
-  color: #425d73;
+  background: #eef1f3;
+  color: #5d646c;
   font-size: 12px;
 }
 
@@ -527,16 +556,24 @@ button {
 }
 
 .plus-action-button {
-  width: 32px;
-  height: 32px;
+  width: 36px;
+  height: 36px;
   border-radius: 50%;
-  border: 1px solid #cbd8e4;
+  border: 1px solid #cfd4da;
   background: #ffffff;
-  color: #315570;
-  font-size: 18px;
-  line-height: 1;
-  font-weight: 500;
+  color: #7a828a;
   cursor: pointer;
+  display: grid;
+  place-items: center;
+}
+
+.plus-icon {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.2;
+  stroke-linecap: round;
 }
 
 .action-menu {
@@ -544,10 +581,10 @@ button {
   bottom: calc(100% + 8px);
   left: 0;
   min-width: 168px;
-  border: 1px solid #dce5ed;
-  border-radius: 10px;
+  border: 1px solid #d2d7dc;
+  border-radius: 8px;
   background: #ffffff;
-  box-shadow: 0 8px 18px rgba(21, 32, 43, 0.12);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.12);
   padding: 6px;
   z-index: 10;
 }
@@ -556,17 +593,17 @@ button {
   width: 100%;
   text-align: left;
   border: 0;
-  border-radius: 8px;
+  border-radius: 6px;
   padding: 8px 10px;
   background: transparent;
-  color: #304f66;
+  color: #4f5760;
   font-size: 12px;
   font-weight: 700;
   cursor: pointer;
 }
 
 .action-menu-item:hover:not(:disabled) {
-  background: #f2f8fc;
+  background: #f2f4f6;
 }
 
 .action-menu-item:disabled {
@@ -584,42 +621,86 @@ button {
 
 .message-input textarea {
   width: 100%;
-  min-height: 44px;
+  min-height: 40px;
   max-height: 136px;
   resize: none;
-  border: 1px solid #cad5df;
-  border-radius: 14px;
-  padding: 12px 13px;
+  border: 1px solid #d0d4d9;
+  border-radius: 16px;
+  padding: 10px 13px;
   color: #15202b;
   line-height: 1.45;
   outline: none;
 }
 
 .message-input textarea:focus {
-  border-color: #2176ae;
-  box-shadow: 0 0 0 3px rgba(33, 118, 174, 0.12);
+  border-color: #adb4bc;
+  box-shadow: 0 0 0 3px rgba(88, 94, 100, 0.14);
 }
 
 .message-input button {
   border: 0;
-  border-radius: 14px;
-  min-width: 64px;
-  min-height: 44px;
-  padding: 10px 14px;
-  background: #b7c8d6;
+  border-radius: 16px;
+  min-width: 54px;
+  min-height: 40px;
+  padding: 0;
+  background: #c9ced4;
   color: #ffffff;
   font-weight: 800;
   cursor: not-allowed;
   transition: background-color 120ms ease;
+  display: grid;
+  place-items: center;
 }
 
 .message-input button.send-active {
-  background: #2c88c7;
+  background: #535960;
   cursor: pointer;
+}
+
+.message-input button.send-active:hover {
+  background: #484e55;
 }
 
 .message-input button:disabled {
   cursor: not-allowed;
+}
+
+.send-icon {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.notion-modal-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(21, 24, 28, 0.15);
+  display: grid;
+  place-items: end center;
+  pointer-events: auto;
+  padding: 16px;
+}
+
+.notion-confirm-modal {
+  width: 100%;
+  max-width: 360px;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.22);
 }
 
 @media (max-width: 520px) {

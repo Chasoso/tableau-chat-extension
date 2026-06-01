@@ -1,4 +1,4 @@
-import ReactMarkdown from "react-markdown";
+﻿import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { ChatMessage } from "../types/chat";
 
@@ -27,8 +27,10 @@ export default function MessageList({
   return (
     <div className="message-list" aria-live="polite">
       {messages.map((message) => (
-        <article key={message.id} className={`message-bubble ${message.role}`}>
-          <span>{message.role === "user" ? "あなた" : "アシスタント"}</span>
+        <article
+          key={message.id}
+          className={`message-bubble ${message.role}${message.role === "assistant" ? " assistant-reply" : ""}`}
+        >
           {message.role === "assistant" ? (
             <div className="markdown-content">
               <ReactMarkdown remarkPlugins={[remarkGfm]}>{message.content}</ReactMarkdown>
@@ -40,13 +42,13 @@ export default function MessageList({
       ))}
 
       {notionCompletion ? (
-        <article className="message-bubble assistant notion-completion">
+        <section className="notion-completion-row" aria-label="Notion保存完了">
           <button
             type="button"
             className="notion-completion-toggle"
             onClick={onToggleNotionCompletion}
             aria-expanded={notionCompletion.expanded}
-            aria-label="Notion保存結果を開閉"
+            aria-label="Notion保存完了メッセージを開閉"
           >
             <span className={`toggle-icon ${notionCompletion.expanded ? "open" : ""}`} aria-hidden>
               ▶
@@ -70,12 +72,11 @@ export default function MessageList({
               ) : null}
             </div>
           ) : null}
-        </article>
+        </section>
       ) : null}
 
       {isLoading ? (
         <article className="message-bubble assistant loading">
-          <span>アシスタント</span>
           <p>
             <span className="spinner" aria-hidden />
             {loadingText}

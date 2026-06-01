@@ -1,4 +1,4 @@
-import { FormEvent, KeyboardEvent, useMemo, useState } from "react";
+﻿import { FormEvent, KeyboardEvent, useMemo, useState } from "react";
 
 type Props = {
   disabled?: boolean;
@@ -37,14 +37,18 @@ export default function MessageInput({ disabled, onSend }: Props) {
       <textarea
         aria-label="質問"
         disabled={disabled}
-        placeholder="このダッシュボードについて質問する..."
-        rows={2}
+        placeholder="このダッシュボードについて質問する…"
+        rows={1}
         value={question}
         onChange={(event) => setQuestion(event.target.value)}
         onKeyDown={handleKeyDown}
       />
       <button className={canSend ? "send-active" : ""} disabled={!canSend} type="submit">
-        送信
+        <span className="sr-only">送信</span>
+        <svg className="send-icon" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M3 11.5 20.5 3l-4.2 18-5.1-6.2-4.1-3.3L3 11.5Z" />
+          <path d="M20.5 3 7.1 11.5" />
+        </svg>
       </button>
     </form>
   );
