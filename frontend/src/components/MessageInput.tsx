@@ -1,4 +1,4 @@
-import { FormEvent, KeyboardEvent, useState } from "react";
+import { FormEvent, KeyboardEvent, useMemo, useState } from "react";
 
 type Props = {
   disabled?: boolean;
@@ -7,6 +7,8 @@ type Props = {
 
 export default function MessageInput({ disabled, onSend }: Props) {
   const [question, setQuestion] = useState("");
+
+  const canSend = useMemo(() => Boolean(question.trim()) && !disabled, [question, disabled]);
 
   function submitQuestion() {
     const trimmedQuestion = question.trim();
@@ -41,7 +43,7 @@ export default function MessageInput({ disabled, onSend }: Props) {
         onChange={(event) => setQuestion(event.target.value)}
         onKeyDown={handleKeyDown}
       />
-      <button disabled={disabled || !question.trim()} type="submit">
+      <button className={canSend ? "send-active" : ""} disabled={!canSend} type="submit">
         送信
       </button>
     </form>

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { sendChatQuestion } from "../api/chatApi";
 import { enrichDashboardContext } from "../api/contextApi";
 import {
@@ -12,7 +12,7 @@ import { env } from "../env";
 import type { ChatMessage } from "../types/chat";
 import type { DashboardContext } from "../types/tableau";
 import MessageInput from "./MessageInput";
-import MessageList from "./MessageList";
+import MessageList, { type NotionCompletion } from "./MessageList";
 
 type Props = {
   dashboardContext: DashboardContext;
@@ -32,14 +32,21 @@ export default function ChatPanel({ dashboardContext, authToken, userDisplayName
   const enrichmentStartedKey = useRef<string | null>(null);
   const notionPopupRef = useRef<Window | null>(null);
   const notionPopupPollerRef = useRef<number | undefined>(undefined);
+  const actionMenuRef = useRef<HTMLDivElement | null>(null);
+
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [sessionId, setSessionId] = useState<string | undefined>();
-  const [isLoading, setIsLoading] = useState(false);
+  const [isAnswerLoading, setIsAnswerLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
   const [notionStatus, setNotionStatus] = useState<NotionStatusResponse | null>(null);
-  const [notionLoading, setNotionLoading] = useState(false);
+  const [isNotionConnecting, setIsNotionConnecting] = useState(false);
+  const [isNotionSaving, setIsNotionSaving] = useState(false);
+  const [notionActionMenuOpen, setNotionActionMenuOpen] = useState(false);
   const [notionDraft, setNotionDraft] = useState<NotionPostIdeaDraft | null>(null);
-  const [notionSavedUrl, setNotionSavedUrl] = useState<string | null>(null);
+  const [notionCompletion, setNotionCompletion] = useState<NotionCompletion | null>(null);
+
+  const isSendLocked = isAnswerLoading || isNotionSaving;
 
   useEffect(() => {
     if (dashboardContext.workbookName) {
@@ -94,7 +101,6 @@ export default function ChatPanel({ dashboardContext, authToken, userDisplayName
     if (env.authRequired && !authToken) {
       return;
     }
-
     void refreshNotionStatus();
   }, [authToken]);
 
@@ -122,7 +128,7 @@ export default function ChatPanel({ dashboardContext, authToken, userDisplayName
       }
 
       void refreshNotionStatus();
-      setNotionLoading(false);
+      setIsNotionConnecting(false);
     };
 
     window.addEventListener("message", handleNotionCompleteMessage);
@@ -151,9 +157,25 @@ export default function ChatPanel({ dashboardContext, authToken, userDisplayName
     };
   }, [authToken]);
 
+  useEffect(() => {
+    const handleDocumentClick = (event: MouseEvent) => {
+      if (!actionMenuRef.current) {
+        return;
+      }
+      if (!actionMenuRef.current.contains(event.target as Node)) {
+        setNotionActionMenuOpen(false);
+      }
+    };
+
+    window.addEventListener("mousedown", handleDocumentClick);
+    return () => {
+      window.removeEventListener("mousedown", handleDocumentClick);
+    };
+  }, []);
+
   async function handleSend(question: string) {
     const trimmedQuestion = question.trim();
-    if (!trimmedQuestion || isLoading) {
+    if (!trimmedQuestion || isSendLocked) {
       return;
     }
 
@@ -165,9 +187,8 @@ export default function ChatPanel({ dashboardContext, authToken, userDisplayName
     };
 
     setMessages((current) => [...current, userMessage]);
-    setIsLoading(true);
+    setIsAnswerLoading(true);
     setError(null);
-    setNotionSavedUrl(null);
 
     try {
       const response = await sendChatQuestion(
@@ -187,9 +208,7 @@ export default function ChatPanel({ dashboardContext, authToken, userDisplayName
       if (response.dashboardContextPatch) {
         onDashboardContextPatch?.(response.dashboardContextPatch);
       }
-      if (response.notionPostIdeaDraft) {
-        setNotionDraft(response.notionPostIdeaDraft);
-      }
+
       setMessages((current) => [
         ...current,
         {
@@ -199,21 +218,28 @@ export default function ChatPanel({ dashboardContext, authToken, userDisplayName
           createdAt: new Date().toISOString(),
         },
       ]);
+
+      if (response.notionPostIdeaDraft) {
+        setNotionDraft(response.notionPostIdeaDraft);
+      } else {
+        setNotionDraft(null);
+      }
     } catch (unknownError) {
-      setError(unknownError instanceof Error ? unknownError.message : "回答の取得に失敗しました。");
+      setError(unknownError instanceof Error ? unknownError.message : "回答の生成に失敗しました。");
     } finally {
-      setIsLoading(false);
+      setIsAnswerLoading(false);
     }
   }
 
   async function handleConnectNotion() {
     try {
-      setNotionLoading(true);
+      setIsNotionConnecting(true);
+      setNotionActionMenuOpen(false);
       setError(null);
 
       const popup = window.open("about:blank", "tableau-chat-notion-connect", "popup,width=520,height=720");
       if (!popup) {
-        throw new Error("ポップアップを開けませんでした。ブラウザのポップアップ許可を確認してください。");
+        throw new Error("ポップアップを開けませんでした。ブラウザのポップアップ設定を確認してください。");
       }
       notionPopupRef.current = popup;
       popup.focus();
@@ -240,24 +266,22 @@ export default function ChatPanel({ dashboardContext, authToken, userDisplayName
           notionPopupPollerRef.current = undefined;
           notionPopupRef.current = null;
           void refreshNotionStatus();
-          setNotionLoading(false);
+          setIsNotionConnecting(false);
           return;
         }
 
         try {
           const popupUrl = currentPopup.location.href;
           if (popupUrl.startsWith(window.location.origin) && popupUrl.includes("/notion/callback")) {
-            // Wait for callback page postMessage so that token exchange is not interrupted.
             return;
           }
           if (popupUrl.startsWith(window.location.origin) && !popupUrl.includes("/notion/callback")) {
-            // Fallback: if callback script could not postMessage, close here.
             currentPopup.close();
             window.clearInterval(notionPopupPollerRef.current);
             notionPopupPollerRef.current = undefined;
             notionPopupRef.current = null;
             void refreshNotionStatus();
-            setNotionLoading(false);
+            setIsNotionConnecting(false);
           }
         } catch {
           // Ignore cross-origin access errors while popup stays on Notion domain.
@@ -271,7 +295,7 @@ export default function ChatPanel({ dashboardContext, authToken, userDisplayName
       notionPopupPollerRef.current = undefined;
       notionPopupRef.current?.close();
       notionPopupRef.current = null;
-      setNotionLoading(false);
+      setIsNotionConnecting(false);
     }
   }
 
@@ -281,24 +305,50 @@ export default function ChatPanel({ dashboardContext, authToken, userDisplayName
     }
 
     try {
-      setNotionLoading(true);
+      setIsNotionSaving(true);
+      setError(null);
       const saved = await savePostIdeaToNotion(notionDraft, authToken);
-      setNotionSavedUrl(saved.pageUrl ?? null);
+      setNotionCompletion({
+        title: notionDraft.title,
+        summary: buildDraftSummary(notionDraft),
+        pageUrl: saved.pageUrl ?? null,
+        expanded: false,
+      });
+      setNotionDraft(null);
     } catch (unknownError) {
-      setError(unknownError instanceof Error ? unknownError.message : "Notion保存に失敗しました。");
+      setError(unknownError instanceof Error ? unknownError.message : "Notion登録に失敗しました。");
     } finally {
-      setNotionLoading(false);
+      setIsNotionSaving(false);
     }
   }
+
+  const notionActionLabel = useMemo(() => {
+    if (isNotionConnecting) {
+      return "Notionに接続中…";
+    }
+    if (notionStatus?.connected) {
+      return "Notion接続済み";
+    }
+    return "Notionに接続";
+  }, [isNotionConnecting, notionStatus?.connected]);
+
+  const notionActionDisabled = isNotionConnecting || Boolean(notionStatus?.connected);
 
   return (
     <section className="chat-panel" aria-label="Tableau Chat Panel">
       <header className="chat-header">
         <div>
           <h1>Tableau Assistant</h1>
-          <p>ダッシュボード文脈を使って質問に答えます。</p>
+          <p>ダッシュボードを分析し、次のアクションにつなげます。</p>
         </div>
-        {userDisplayName ? <span className="user-pill">{userDisplayName}</span> : null}
+        <div
+          className="user-avatar"
+          data-tooltip={userDisplayName || "Guest"}
+          aria-label="ユーザー情報"
+          title={userDisplayName || "Guest"}
+        >
+          {(userDisplayName || "G").slice(0, 1).toUpperCase()}
+        </div>
       </header>
 
       <div className={messages.length === 0 ? "chat-body has-starters" : "chat-body no-starters"}>
@@ -307,7 +357,7 @@ export default function ChatPanel({ dashboardContext, authToken, userDisplayName
             <p>たとえば、次の質問ができます。</p>
             <div className="starter-chip-row">
               {exampleQuestions.map((question) => (
-                <button key={question} disabled={isLoading} type="button" onClick={() => void handleSend(question)}>
+                <button key={question} disabled={isSendLocked} type="button" onClick={() => void handleSend(question)}>
                   {question}
                 </button>
               ))}
@@ -315,44 +365,92 @@ export default function ChatPanel({ dashboardContext, authToken, userDisplayName
           </section>
         ) : null}
 
-        <MessageList messages={messages} isLoading={isLoading} />
+        <MessageList
+          messages={messages}
+          isLoading={isAnswerLoading}
+          loadingText="Tableau MCPでデータを確認しています…"
+          notionCompletion={notionCompletion}
+          onToggleNotionCompletion={() =>
+            setNotionCompletion((current) => (current ? { ...current, expanded: !current.expanded } : current))
+          }
+        />
       </div>
 
       <div className="chat-footer">
-        {!notionStatus?.connected ? (
-          <div className="notion-connect-row">
-            <button type="button" className="notion-connect-button" disabled={notionLoading} onClick={() => void handleConnectNotion()}>
-              Connect to Notion
-            </button>
-          </div>
-        ) : null}
         {notionDraft ? (
-          <section className="notion-draft-card" aria-label="Notion post idea preview">
-            <h2>Notion保存プレビュー</h2>
-            <p className="draft-title">{notionDraft.title}</p>
-            <p>{notionDraft.reason}</p>
-            <button
-              type="button"
-              className="notion-save-button"
-              disabled={notionLoading || !notionStatus?.connected}
-              onClick={() => void handleSaveToNotion()}
-            >
-              Notionに保存
-            </button>
-            {!notionStatus?.connected ? <p className="draft-note">保存するには先にNotion接続が必要です。</p> : null}
-            {notionSavedUrl ? (
-              <p className="draft-note">
-                保存完了:{" "}
-                <a href={notionSavedUrl} target="_blank" rel="noreferrer">
-                  Notionページを開く
-                </a>
-              </p>
-            ) : null}
+          <section className="notion-confirm-card" aria-label="Notion保存前確認">
+            <h2>外部サービス連携アクション</h2>
+            <p>
+              <strong>保存タイトル:</strong> {notionDraft.title}
+            </p>
+            <p>
+              <strong>保存内容の要約:</strong> {buildDraftSummary(notionDraft)}
+            </p>
+            <p>
+              <strong>保存先:</strong> Notion
+            </p>
+            <div className="notion-confirm-actions">
+              <button type="button" className="secondary" disabled={isNotionSaving} onClick={() => setNotionDraft(null)}>
+                キャンセル
+              </button>
+              <button
+                type="button"
+                className="primary"
+                disabled={isNotionSaving || !notionStatus?.connected}
+                onClick={() => void handleSaveToNotion()}
+              >
+                Notionに登録
+              </button>
+            </div>
+            {!notionStatus?.connected ? <p className="hint">Notion接続後に登録できます。</p> : null}
           </section>
         ) : null}
+
+        {isNotionSaving ? (
+          <div className="operation-status" aria-live="polite">
+            <span className="spinner" aria-hidden />
+            Notionに登録しています…
+          </div>
+        ) : null}
+
         {error ? <div className="error-banner">{error}</div> : null}
-        <MessageInput disabled={isLoading} onSend={handleSend} />
+
+        <div className="compose-row">
+          <div className="action-row" ref={actionMenuRef}>
+            <button
+              type="button"
+              className="plus-action-button"
+              aria-expanded={notionActionMenuOpen}
+              aria-controls="external-action-menu"
+              onClick={() => setNotionActionMenuOpen((open) => !open)}
+            >
+              ＋
+            </button>
+            {notionActionMenuOpen ? (
+              <div id="external-action-menu" className="action-menu" role="menu" aria-label="外部連携メニュー">
+                <button
+                  type="button"
+                  className="action-menu-item"
+                  disabled={notionActionDisabled}
+                  onClick={() => void handleConnectNotion()}
+                >
+                  {notionActionLabel}
+                </button>
+              </div>
+            ) : null}
+          </div>
+          <MessageInput disabled={isSendLocked} onSend={handleSend} />
+        </div>
       </div>
     </section>
   );
+}
+
+function buildDraftSummary(draft: NotionPostIdeaDraft): string {
+  const parts = [draft.reason, draft.suggestedPostText].filter(Boolean).join(" ");
+  const compact = parts.replace(/\s+/g, " ").trim();
+  if (!compact) {
+    return "保存内容の要約はありません。";
+  }
+  return compact.length > 140 ? `${compact.slice(0, 140)}…` : compact;
 }

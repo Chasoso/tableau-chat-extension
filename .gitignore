@@ -13,5 +13,6 @@ coverage/
 frontend/.vite/
 frontend/playwright-report/
 frontend/test-results/
+frontend/e2e/*.spec.ts-snapshots/
 backend/.serverless/
 backend/cdk.out/

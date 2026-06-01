@@ -1,10 +1,7 @@
 :root {
   color: #162331;
   background: transparent;
-  font-family:
-    "Aptos",
-    "Segoe UI",
-    sans-serif;
+  font-family: "Aptos", "Segoe UI", sans-serif;
 }
 
 * {
@@ -35,7 +32,7 @@ button {
 .app-shell {
   display: flex;
   min-height: 100vh;
-  padding: 8px;
+  padding: 10px;
 }
 
 .loading-state,
@@ -82,13 +79,13 @@ button {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto;
   width: 100%;
-  max-width: 420px;
-  height: calc(100vh - 16px);
+  max-width: 452px;
+  height: calc(100vh - 20px);
   overflow: hidden;
-  border: 1px solid #dce5ed;
-  border-radius: 14px;
-  background: rgba(255, 255, 255, 0.96);
-  box-shadow: 0 8px 20px rgba(21, 32, 43, 0.08);
+  border: 1px solid #d7e3eb;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.97);
+  box-shadow: 0 10px 24px rgba(21, 32, 43, 0.08);
 }
 
 .chat-header {
@@ -96,14 +93,14 @@ button {
   align-items: flex-start;
   justify-content: space-between;
   gap: 10px;
-  padding: 10px 12px 8px;
+  padding: 16px 16px 11px;
   border-bottom: 1px solid #edf2f6;
 }
 
 .chat-header h1 {
   margin: 0;
   color: #102f43;
-  font-size: 18px;
+  font-size: 23px;
   line-height: 1.1;
   letter-spacing: -0.02em;
 }
@@ -115,44 +112,46 @@ button {
   line-height: 1.35;
 }
 
-.notion-connect-row {
-  display: flex;
-  justify-content: flex-start;
-}
-
-.notion-connect-button {
-  border: 1px solid #cfdbe5;
-  border-radius: 999px;
-  padding: 4px 9px;
-  background: #ffffff;
-  color: #315570;
-  font-size: 11px;
-  font-weight: 700;
-  cursor: pointer;
-}
-
-.notion-connect-button:disabled {
-  cursor: not-allowed;
-  opacity: 0.6;
-}
-
-.user-pill {
-  max-width: 120px;
-  overflow: hidden;
-  border-radius: 999px;
-  padding: 3px 8px;
+.user-avatar {
+  position: relative;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
   background: #f2f7fb;
   color: #4e6073;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: default;
+}
+
+.user-avatar::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  border-radius: 8px;
+  padding: 6px 8px;
+  background: #1a2d3f;
+  color: #ffffff;
   font-size: 11px;
-  line-height: 1.4;
-  text-overflow: ellipsis;
   white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-2px);
+  transition: opacity 120ms ease, transform 120ms ease;
+}
+
+.user-avatar:hover::after {
+  opacity: 1;
+  transform: translateY(0);
 }
 
 .question-starters {
   display: grid;
   gap: 8px;
-  padding: 10px 12px 8px;
+  padding: 10px 16px 8px;
   border-bottom: 1px solid #edf2f6;
 }
 
@@ -165,13 +164,13 @@ button {
 .starter-chip-row {
   display: flex;
   flex-wrap: wrap;
-  gap: 7px;
+  gap: 8px;
 }
 
 .starter-chip-row button {
   border: 1px solid #d4e2ec;
   border-radius: 999px;
-  padding: 6px 9px;
+  padding: 7px 11px;
   background: #ffffff;
   color: #1e5577;
   font-size: 12px;
@@ -191,6 +190,7 @@ button {
 
 .chat-body {
   min-height: 0;
+  background: linear-gradient(180deg, #f8fbfe 0%, #ffffff 100%);
 }
 
 .chat-body.has-starters {
@@ -210,10 +210,10 @@ button {
 .message-list {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 12px;
   min-height: 0;
   overflow-y: auto;
-  padding: 14px 12px 16px;
+  padding: 14px 16px 16px;
   scrollbar-color: rgba(84, 99, 113, 0.35) transparent;
   scrollbar-width: thin;
 }
@@ -231,7 +231,7 @@ button {
 
 .message-bubble {
   max-width: 88%;
-  line-height: 1.55;
+  line-height: 1.5;
 }
 
 .message-bubble span {
@@ -257,8 +257,8 @@ button {
 .message-bubble.user {
   align-self: flex-end;
   max-width: 78%;
-  border-radius: 15px 15px 4px 15px;
-  padding: 10px 12px;
+  border-radius: 16px 16px 5px 16px;
+  padding: 10px 12px 9px;
   background: #16384f;
   color: #ffffff;
 }
@@ -273,9 +273,30 @@ button {
 
 .message-bubble.loading p {
   display: inline-flex;
+  gap: 8px;
+  align-items: center;
   border-radius: 12px;
   padding: 9px 11px;
   background: #f2f7fa;
+}
+
+.spinner {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border: 2px solid #9db1c1;
+  border-top-color: #2b688e;
+  border-radius: 50%;
+  animation: spin 900ms linear infinite;
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .markdown-content {
@@ -360,15 +381,60 @@ button {
   font-weight: 800;
 }
 
-.chat-footer {
-  display: grid;
-  gap: 8px;
-  padding: 10px 12px 12px;
-  border-top: 1px solid #edf2f6;
-  background: rgba(255, 255, 255, 0.98);
+.notion-completion {
+  max-width: 100%;
 }
 
-.notion-draft-card {
+.notion-completion-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid #dbe7f0;
+  border-radius: 10px;
+  padding: 8px 10px;
+  background: #f8fbfe;
+  color: #204863;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.toggle-icon {
+  display: inline-block;
+  transition: transform 120ms ease;
+}
+
+.toggle-icon.open {
+  transform: rotate(90deg);
+}
+
+.notion-completion-body {
+  margin-top: 8px;
+  border-left: 2px solid #d2e0eb;
+  padding-left: 10px;
+  color: #38566d;
+  font-size: 12px;
+}
+
+.notion-completion-body p + p {
+  margin-top: 6px;
+}
+
+.notion-completion-body a {
+  color: #1a6ea4;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.chat-footer {
+  display: grid;
+  gap: 9px;
+  padding: 10px 16px 14px;
+  border-top: 1px solid #edf2f6;
+  background: rgba(255, 255, 255, 0.99);
+}
+
+.notion-confirm-card {
   display: grid;
   gap: 6px;
   padding: 10px;
@@ -377,43 +443,64 @@ button {
   background: #f8fbfe;
 }
 
-.notion-draft-card h2 {
+.notion-confirm-card h2 {
   margin: 0;
   color: #14384f;
   font-size: 12px;
 }
 
-.notion-draft-card p {
+.notion-confirm-card p {
   margin: 0;
   color: #2c4b62;
   font-size: 12px;
   line-height: 1.4;
 }
 
-.notion-draft-card .draft-title {
-  font-weight: 700;
+.notion-confirm-card .hint {
+  color: #4e6478;
+  font-size: 11px;
 }
 
-.notion-save-button {
-  justify-self: start;
-  border: 0;
+.notion-confirm-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.notion-confirm-actions .primary,
+.notion-confirm-actions .secondary {
   border-radius: 10px;
   padding: 7px 10px;
-  background: #1f8b5d;
-  color: #ffffff;
   font-size: 12px;
   font-weight: 700;
   cursor: pointer;
 }
 
-.notion-save-button:disabled {
-  cursor: not-allowed;
-  opacity: 0.55;
+.notion-confirm-actions .primary {
+  border: 0;
+  background: #1f8b5d;
+  color: #ffffff;
 }
 
-.notion-draft-card .draft-note {
-  color: #4e6478;
-  font-size: 11px;
+.notion-confirm-actions .secondary {
+  border: 1px solid #c8d8e5;
+  background: #ffffff;
+  color: #34546a;
+}
+
+.notion-confirm-actions button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.operation-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border-radius: 10px;
+  padding: 8px 10px;
+  background: #f2f7fa;
+  color: #425d73;
+  font-size: 12px;
 }
 
 .error-banner {
@@ -426,20 +513,83 @@ button {
   line-height: 1.4;
 }
 
+.action-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.compose-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: end;
+  gap: 10px;
+}
+
+.plus-action-button {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 1px solid #cbd8e4;
+  background: #ffffff;
+  color: #315570;
+  font-size: 18px;
+  line-height: 1;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.action-menu {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 0;
+  min-width: 168px;
+  border: 1px solid #dce5ed;
+  border-radius: 10px;
+  background: #ffffff;
+  box-shadow: 0 8px 18px rgba(21, 32, 43, 0.12);
+  padding: 6px;
+  z-index: 10;
+}
+
+.action-menu-item {
+  width: 100%;
+  text-align: left;
+  border: 0;
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: transparent;
+  color: #304f66;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.action-menu-item:hover:not(:disabled) {
+  background: #f2f8fc;
+}
+
+.action-menu-item:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
 .message-input {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 8px;
   align-items: end;
+  width: 100%;
 }
 
 .message-input textarea {
   width: 100%;
-  max-height: 132px;
+  min-height: 44px;
+  max-height: 136px;
   resize: none;
   border: 1px solid #cad5df;
-  border-radius: 12px;
-  padding: 10px 11px;
+  border-radius: 14px;
+  padding: 12px 13px;
   color: #15202b;
   line-height: 1.45;
   outline: none;
@@ -452,17 +602,24 @@ button {
 
 .message-input button {
   border: 0;
-  border-radius: 12px;
-  padding: 10px 13px;
-  background: #2176ae;
+  border-radius: 14px;
+  min-width: 64px;
+  min-height: 44px;
+  padding: 10px 14px;
+  background: #b7c8d6;
   color: #ffffff;
   font-weight: 800;
+  cursor: not-allowed;
+  transition: background-color 120ms ease;
+}
+
+.message-input button.send-active {
+  background: #2c88c7;
   cursor: pointer;
 }
 
 .message-input button:disabled {
   cursor: not-allowed;
-  opacity: 0.5;
 }
 
 @media (max-width: 520px) {
