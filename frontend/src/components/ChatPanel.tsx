@@ -18,6 +18,13 @@ type Props = {
   dashboardContext: DashboardContext;
   authToken?: string;
   userDisplayName?: string;
+  isAuthenticated?: boolean;
+  isAuthLoading?: boolean;
+  authOverlay?: {
+    isSigningIn: boolean;
+    error: string | null;
+    onSignIn: () => Promise<void>;
+  };
   onDashboardContextPatch?: (patch: Partial<Pick<DashboardContext, "workbookName">>) => void;
 };
 
@@ -25,10 +32,17 @@ const exampleQuestions = [
   "このダッシュボードのポイントを教えてください",
   "フィルター状態を要約してください",
   "使われているデータソースを教えてください",
-  "次に見るべき指標は何ですか",
 ];
 
-export default function ChatPanel({ dashboardContext, authToken, userDisplayName, onDashboardContextPatch }: Props) {
+export default function ChatPanel({
+  dashboardContext,
+  authToken,
+  userDisplayName,
+  isAuthenticated = true,
+  isAuthLoading = false,
+  authOverlay,
+  onDashboardContextPatch,
+}: Props) {
   const enrichmentStartedKey = useRef<string | null>(null);
   const notionPopupRef = useRef<Window | null>(null);
   const notionPopupPollerRef = useRef<number | undefined>(undefined);
@@ -46,7 +60,8 @@ export default function ChatPanel({ dashboardContext, authToken, userDisplayName
   const [notionDraft, setNotionDraft] = useState<NotionPostIdeaDraft | null>(null);
   const [notionCompletion, setNotionCompletion] = useState<NotionCompletion | null>(null);
 
-  const isSendLocked = isAnswerLoading || isNotionSaving;
+  const isSendLocked = isAnswerLoading || isNotionSaving || !isAuthenticated || isAuthLoading;
+  const isBackgroundLocked = !isAuthenticated;
 
   useEffect(() => {
     if (dashboardContext.workbookName) {
@@ -342,7 +357,7 @@ export default function ChatPanel({ dashboardContext, authToken, userDisplayName
           <p>ダッシュボードを分析し、次のアクションにつなげます。</p>
         </div>
         <div
-          className="user-avatar"
+          className={`user-avatar${isBackgroundLocked ? " disabled" : ""}`}
           data-tooltip={userDisplayName || "Guest"}
           aria-label="ユーザー情報"
           title={userDisplayName || "Guest"}
@@ -354,10 +369,10 @@ export default function ChatPanel({ dashboardContext, authToken, userDisplayName
         </div>
       </header>
 
-      <div className={messages.length === 0 ? "chat-body has-starters" : "chat-body no-starters"}>
+      <div className={`${messages.length === 0 ? "chat-body has-starters" : "chat-body no-starters"}${isBackgroundLocked ? " locked" : ""}`}>
         {messages.length === 0 ? (
           <section className="question-starters" aria-label="suggested questions">
-            <p>たとえば、次の質問ができます。</p>
+            <p>たとえば、このような質問ができます。</p>
             <div className="starter-chip-row">
               {exampleQuestions.map((question) => (
                 <button key={question} disabled={isSendLocked} type="button" onClick={() => void handleSend(question)}>
@@ -379,7 +394,7 @@ export default function ChatPanel({ dashboardContext, authToken, userDisplayName
         />
       </div>
 
-      <div className="chat-footer">
+      <div className={`chat-footer${isBackgroundLocked ? " locked" : ""}`}>
         {isNotionSaving ? (
           <div className="operation-status" aria-live="polite">
             <span className="spinner" aria-hidden />
@@ -396,6 +411,7 @@ export default function ChatPanel({ dashboardContext, authToken, userDisplayName
               className="plus-action-button"
               aria-expanded={notionActionMenuOpen}
               aria-controls="external-action-menu"
+              disabled={isBackgroundLocked}
               onClick={() => setNotionActionMenuOpen((open) => !open)}
               aria-label="外部サービス連携を開く"
             >
@@ -403,7 +419,7 @@ export default function ChatPanel({ dashboardContext, authToken, userDisplayName
                 <path d="M12 5v14M5 12h14" />
               </svg>
             </button>
-            {notionActionMenuOpen ? (
+            {notionActionMenuOpen && !isBackgroundLocked ? (
               <div id="external-action-menu" className="action-menu" role="menu" aria-label="外部連携メニュー">
                 <button
                   type="button"
@@ -450,6 +466,24 @@ export default function ChatPanel({ dashboardContext, authToken, userDisplayName
               </button>
             </div>
             {!notionStatus?.connected ? <p className="hint">Notion接続後に保存できます。</p> : null}
+          </section>
+        </div>
+      ) : null}
+
+      {!isAuthenticated ? (
+        <div className="auth-overlay" role="presentation">
+          <div className="auth-overlay-backdrop" />
+          <section className="auth-overlay-card" aria-label="ログイン案内">
+            <h2>Tableau Assistant</h2>
+            <p>利用するには、ログインが必要です。</p>
+            {authOverlay?.error ? <div className="error-banner">{authOverlay.error}</div> : null}
+            <button
+              type="button"
+              disabled={Boolean(authOverlay?.isSigningIn)}
+              onClick={() => void authOverlay?.onSignIn()}
+            >
+              {authOverlay?.isSigningIn ? "ログイン中…" : "ログイン"}
+            </button>
           </section>
         </div>
       ) : null}

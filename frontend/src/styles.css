@@ -126,6 +126,11 @@ button {
   cursor: default;
 }
 
+.user-avatar.disabled {
+  pointer-events: none;
+  opacity: 0.55;
+}
+
 .avatar-icon {
   width: 18px;
   height: 18px;
@@ -201,6 +206,11 @@ button {
 .chat-body {
   min-height: 0;
   background: transparent;
+}
+
+.chat-body.locked {
+  filter: grayscale(8%);
+  opacity: 0.58;
 }
 
 .chat-body.has-starters {
@@ -442,6 +452,11 @@ button {
   background: rgba(255, 255, 255, 0.99);
 }
 
+.chat-footer.locked {
+  filter: grayscale(10%);
+  opacity: 0.52;
+}
+
 .notion-confirm-card {
   display: grid;
   gap: 8px;
@@ -565,6 +580,11 @@ button {
   cursor: pointer;
   display: grid;
   place-items: center;
+}
+
+.plus-action-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .plus-icon {
@@ -701,6 +721,65 @@ button {
   width: 100%;
   max-width: 360px;
   box-shadow: 0 10px 24px rgba(0, 0, 0, 0.22);
+}
+
+.auth-overlay {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  z-index: 20;
+}
+
+.auth-overlay-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(255, 255, 255, 0.64);
+  backdrop-filter: blur(1.8px);
+}
+
+.auth-overlay-card {
+  position: relative;
+  display: grid;
+  gap: 10px;
+  justify-items: center;
+  text-align: center;
+  width: min(320px, calc(100% - 36px));
+  padding: 18px 18px 16px;
+  border: 1px solid #d2d7dc;
+  border-radius: 14px;
+  background: #ffffff;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.12);
+}
+
+.auth-overlay-card h2 {
+  margin: 0;
+  color: #2f353b;
+  font-size: 22px;
+  letter-spacing: -0.01em;
+}
+
+.auth-overlay-card p {
+  margin: 0;
+  color: #666e77;
+  font-size: 14px;
+}
+
+.auth-overlay-card button {
+  justify-self: center;
+  border: 0;
+  border-radius: 12px;
+  padding: 10px 16px;
+  background: #4f565e;
+  color: #ffffff;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.auth-overlay-card button:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
 }
 
 @media (max-width: 520px) {

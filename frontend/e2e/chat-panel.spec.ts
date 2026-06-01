@@ -65,7 +65,7 @@ test.describe("chat panel", () => {
 
     await expect(page.locator(".chat-panel")).toBeVisible();
     await expect(page.locator(".question-starters")).toBeVisible();
-    await expect(page.locator(".starter-chip-row button")).toHaveCount(4);
+    await expect(page.locator(".starter-chip-row button")).toHaveCount(3);
 
     await expect(page.getByText("Mock Executive Sales Dashboard")).toHaveCount(0);
     await expect(page.getByText("Mock Sales Workbook")).toHaveCount(0);
@@ -102,5 +102,19 @@ test.describe("chat panel", () => {
     await expect(page.getByRole("heading", { name: "Summary" })).toBeVisible();
     await expect(input).toHaveValue("");
   });
-});
 
+  test("activates send button only when input has non-whitespace characters", async ({ page }) => {
+    await mockAssistantApis(page);
+    await page.goto("/");
+
+    const sendButton = page.locator(".message-input button");
+    const input = page.locator(".message-input textarea");
+
+    await expect(sendButton).toBeDisabled();
+    await input.fill("   ");
+    await expect(sendButton).toBeDisabled();
+
+    await input.fill("確認したいです");
+    await expect(sendButton).toBeEnabled();
+  });
+});

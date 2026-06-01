@@ -37,7 +37,7 @@ export default function MessageInput({ disabled, onSend }: Props) {
       <textarea
         aria-label="質問"
         disabled={disabled}
-        placeholder="このダッシュボードについて質問する…"
+        placeholder="このダッシュボードについて質問する"
         rows={1}
         value={question}
         onChange={(event) => setQuestion(event.target.value)}

@@ -2,8 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import type React from "react";
 import {
   authBroadcastChannelName,
-  completeLoginFromUrl,
   completeLoginFromRedirect,
+  completeLoginFromUrl,
   getStoredSession,
   isAuthCodeMessage,
   isAuthCodePayload,
@@ -17,8 +17,16 @@ import type { AuthSession } from "../types/auth";
 
 const popupWaitTimeoutMs = 5 * 60 * 1000;
 
+export type AuthGateRenderState = {
+  session: AuthSession | null;
+  isLoading: boolean;
+  isSigningIn: boolean;
+  error: string | null;
+  startSignIn: () => Promise<void>;
+};
+
 type Props = {
-  children: (session: AuthSession) => React.ReactNode;
+  children: (state: AuthGateRenderState) => React.ReactNode;
 };
 
 export default function AuthGate({ children }: Props) {
@@ -143,7 +151,7 @@ export default function AuthGate({ children }: Props) {
       }
 
       if (popupRef.current?.closed) {
-        stopSignInWaiting("サインイン結果を受け取れませんでした。もう一度サインインを押してください。");
+        stopSignInWaiting("サインイン画面を閉じました。もう一度サインインしてください。");
       }
     }, 3_000);
   }
@@ -245,7 +253,7 @@ export default function AuthGate({ children }: Props) {
         // popup.closed can be unreliable while Cognito moves between Hosted UI
         // steps. A hard timeout is still useful for abandoned sign-in attempts.
         if (Date.now() - startedAt > popupWaitTimeoutMs) {
-          stopSignInWaiting("サインインがタイムアウトしました。もう一度サインインを押してください。");
+          stopSignInWaiting("サインインがタイムアウトしました。もう一度サインインしてください。");
         }
       }, 500);
     } catch (unknownError) {
@@ -253,24 +261,15 @@ export default function AuthGate({ children }: Props) {
     }
   }
 
-  if (isLoading) {
-    return <div className="app-shell loading-state">サインイン状態を確認しています...</div>;
-  }
-
-  if (session) {
-    return <>{children(session)}</>;
-  }
-
   return (
-    <div className="app-shell auth-state">
-      <section className="auth-card">
-        <h1>Tableau Assistant</h1>
-        <p>Tableau 内では Cognito を直接表示できないため、別ウィンドウでサインインします。</p>
-        {error ? <div className="error-banner">{error}</div> : null}
-        <button type="button" disabled={isSigningIn} onClick={handleSignIn}>
-          {isSigningIn ? "サインイン完了を待機中..." : "Cognitoでサインイン"}
-        </button>
-      </section>
-    </div>
+    <>
+      {children({
+        session,
+        isLoading,
+        isSigningIn,
+        error,
+        startSignIn: handleSignIn,
+      })}
+    </>
   );
 }

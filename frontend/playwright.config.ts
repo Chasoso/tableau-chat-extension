@@ -18,7 +18,7 @@ export default defineConfig({
     reuseExistingServer: !process.env.CI,
     env: {
       VITE_USE_MOCK_TABLEAU: "true",
-      VITE_AUTH_REQUIRED: "false",
+      VITE_AUTH_REQUIRED: process.env.PW_VITE_AUTH_REQUIRED ?? "false",
       VITE_API_BASE_URL: "/api",
     },
   },
