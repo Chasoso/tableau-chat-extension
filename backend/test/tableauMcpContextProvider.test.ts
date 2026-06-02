@@ -8,6 +8,7 @@ import {
   classifyMcpErrorCategory,
   extractBestWorkbookId,
   extractDatasourceFieldProfilesFromRawToolResults,
+  extractQueryDatasourceInsightsFromRawToolResults,
   extractDatasourcesFromRawToolResults,
   extractWorkbookFromToolResults,
   inferPlannedToolArguments,
@@ -670,7 +671,7 @@ describe("TableauMcpContextProvider extraction helpers", () => {
       allowedToolNames: tools.map((tool) => tool.name),
       input: {
         ...baseInput,
-        question: "viewCountが最も多いworkbookは何か、データソースをクエリして求めてください。",
+        question: "Show a ranking of the Viz with the most favorites in 2026/05.",
         dashboardContext: {
           ...baseInput.dashboardContext,
           dataSources: [{ name: "Tableau Public Per Day(2025/04-)" }],
@@ -703,7 +704,7 @@ describe("TableauMcpContextProvider extraction helpers", () => {
                 text: JSON.stringify({
                   datasourceModel: {
                     name: "Tableau Public Per Day(2025/04-)",
-                    fields: [{ name: "workbook_title" }, { name: "workbook_viewCount" }],
+                    fields: [{ name: "Datetime(JST)" }, { name: "workbook_title" }, { name: "workbook_favoriteCount" }],
                   },
                 }),
               },
@@ -719,7 +720,29 @@ describe("TableauMcpContextProvider extraction helpers", () => {
     if (selection?.status === "ready") {
       expect(selection.tool.name).toBe("query-datasource");
       expect(selection.arguments.datasourceLuid).toBe("ds-123");
-      expect(selection.arguments.limit).toBe(1);
+      expect(selection.arguments.limit).toBe(10);
+      expect(selection.arguments.query).toEqual({
+        fields: [
+          { fieldCaption: "workbook_title", fieldAlias: "Dimension" },
+          {
+            fieldCaption: "workbook_favoriteCount",
+            function: "SUM",
+            fieldAlias: "Aggregated Value",
+            sortDirection: "DESC",
+            sortPriority: 1,
+          },
+        ],
+        filters: [
+          {
+            field: { fieldCaption: "Datetime(JST)" },
+            filterType: "QUANTITATIVE_DATE",
+            quantitativeFilterType: "RANGE",
+            minDate: "2026-05-01",
+            maxDate: "2026-05-31",
+            includeNulls: false,
+          },
+        ],
+      });
     }
   });
 
@@ -762,4 +785,52 @@ describe("TableauMcpContextProvider extraction helpers", () => {
     expect(normalized.datasources[0]?.id).toBe("ds-target");
     expect(normalized.datasources[0]?.luid).toBe("ds-target");
   });
+
+  it("extracts structured ranking rows from successful query-datasource results", () => {
+    const insights = extractQueryDatasourceInsightsFromRawToolResults(
+      [
+        {
+          toolName: "query-datasource",
+          args: {
+            datasourceLuid: "ds-123",
+            query: {
+              fields: [
+                { fieldCaption: "workbook_title", fieldAlias: "Dimension" },
+                { fieldCaption: "workbook_favoriteCount", function: "SUM", fieldAlias: "Aggregated Value" },
+              ],
+            },
+          },
+          result: {
+            content: [
+              {
+                text: JSON.stringify({
+                  data: [
+                    { Dimension: "Viz A", "Aggregated Value": 120 },
+                    { Dimension: "Viz B", "Aggregated Value": 88 },
+                  ],
+                }),
+              },
+            ],
+          },
+        },
+      ],
+      [{ type: "datasource", name: "Tableau Public Per Day(2025/04-)", id: "ds-123", luid: "ds-123" }],
+    );
+
+    expect(insights).toEqual([
+      {
+        datasourceName: "Tableau Public Per Day(2025/04-)",
+        datasourceLuid: "ds-123",
+        dimensionField: "workbook_title",
+        metricField: "workbook_favoriteCount",
+        rowCount: 2,
+        rows: [
+          { label: "Viz A", value: 120 },
+          { label: "Viz B", value: 88 },
+        ],
+      },
+    ]);
+  });
 });
+
+

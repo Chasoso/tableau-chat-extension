@@ -136,6 +136,20 @@ export type DatasourceFieldProfile = {
   sourceTool: "get-datasource-metadata";
 };
 
+export type QueryDatasourceInsightRow = {
+  label?: string;
+  value: number | null;
+};
+
+export type QueryDatasourceInsight = {
+  datasourceName: string;
+  datasourceLuid?: string;
+  dimensionField?: string;
+  metricField: string;
+  rowCount: number;
+  rows: QueryDatasourceInsightRow[];
+};
+
 export type ResolvedDatasourceRef = {
   name: string;
   id?: string;
@@ -164,6 +178,7 @@ export type TableauAdditionalContext = {
   workbook?: unknown;
   datasources?: unknown[];
   datasourceFieldProfiles?: DatasourceFieldProfile[];
+  queryInsights?: QueryDatasourceInsight[];
   normalizedContext?: NormalizedTableauContext;
   metadata?: unknown;
   mcpTools?: TableauMcpToolSummary[];

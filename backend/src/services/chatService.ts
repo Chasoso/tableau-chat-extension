@@ -71,7 +71,7 @@ export class ChatService {
       prompt,
       additionalContext,
     });
-    const sanitizedAnswer = sanitizeUserFacingAnswer(answer, request, additionalContext);
+    const sanitizedAnswer = finalizeUserFacingAnswer(answer, request, additionalContext);
     logDebug("chat.message.output_debug", {
       sessionId,
       messageId,
@@ -243,6 +243,19 @@ export function sanitizeUserFacingAnswer(
   ].join("");
 }
 
+export function finalizeUserFacingAnswer(
+  answer: string,
+  request: ChatRequest,
+  additionalContext: Awaited<ReturnType<TableauContextProvider["getAdditionalContext"]>>,
+): string {
+  const structuredAnswer = buildStructuredDataAnalysisAnswer(request, additionalContext);
+  if (structuredAnswer) {
+    return structuredAnswer;
+  }
+
+  return sanitizeUserFacingAnswer(answer, request, additionalContext);
+}
+
 function sanitizeHallucinatedFieldMentions(
   answer: string,
   request: ChatRequest,
@@ -369,6 +382,86 @@ function hasSuccessfulDatasourceQuery(
   return (
     additionalContext.mcpToolResults?.some((result) => result.toolName === "query-datasource" && result.status === "success") ?? false
   );
+}
+
+export function buildStructuredDataAnalysisAnswer(
+  request: ChatRequest,
+  additionalContext: Awaited<ReturnType<TableauContextProvider["getAdditionalContext"]>>,
+): string | undefined {
+  if (additionalContext.mcpExecutionDebug?.intent !== "data_analysis") {
+    return undefined;
+  }
+
+  const insight = additionalContext.queryInsights?.find((candidate) => candidate.rows.length > 0);
+  if (!insight) {
+    return undefined;
+  }
+
+  const rows = insight.rows.filter((row) => row.label || row.value !== null);
+  if (!rows.length) {
+    return undefined;
+  }
+
+  const periodLabel = extractQuestionPeriodLabel(request.question);
+  const metricLabel = describeMetricField(insight.metricField);
+  const isRankingQuestion = /ランキング|rank(?:ing)?|上位|一覧|list/i.test(request.question);
+  const visibleRows = rows.slice(0, isRankingQuestion ? Math.min(10, rows.length) : Math.min(3, rows.length));
+  const intro = isRankingQuestion
+    ? `${periodLabel ? `${periodLabel}の` : ""}${metricLabel}ランキングです。`
+    : `${periodLabel ? `${periodLabel}の` : ""}${metricLabel}が高いVizです。`;
+  const body = isRankingQuestion
+    ? visibleRows.map((row, index) => `${index + 1}. ${row.label ?? "名称不明"}: ${formatMetricValue(row.value)}`).join("\n")
+    : visibleRows
+        .map((row) => `- ${row.label ?? "名称不明"}: ${formatMetricValue(row.value)}`)
+        .join("\n");
+
+  return [
+    `${intro}`,
+    `このダッシュボードで参照しているデータソース「${insight.datasourceName}」から集計しています。`,
+    "",
+    body,
+  ].join("\n");
+}
+
+function extractQuestionPeriodLabel(question: string): string | undefined {
+  const yearMonthMatch =
+    question.match(/(20\d{2})[年\/\-](\d{1,2})月?/) ?? question.match(/(20\d{2})\s*年\s*(\d{1,2})\s*月/);
+  if (!yearMonthMatch?.[1] || !yearMonthMatch?.[2]) {
+    return undefined;
+  }
+
+  const year = Number.parseInt(yearMonthMatch[1], 10);
+  const month = Number.parseInt(yearMonthMatch[2], 10);
+  if (!Number.isFinite(year) || !Number.isFinite(month) || month < 1 || month > 12) {
+    return undefined;
+  }
+
+  return `${year}年${month}月`;
+}
+
+function describeMetricField(fieldName: string): string {
+  const normalized = fieldName.toLowerCase();
+  if (/favorite|favourite/.test(normalized)) {
+    return "Favorite数";
+  }
+  if (/view/.test(normalized)) {
+    return "View数";
+  }
+  if (/love/.test(normalized)) {
+    return "Love数";
+  }
+  if (/bookmark/.test(normalized)) {
+    return "Bookmark数";
+  }
+  return fieldName;
+}
+
+function formatMetricValue(value: number | null): string {
+  if (value === null || !Number.isFinite(value)) {
+    return "値なし";
+  }
+
+  return new Intl.NumberFormat("ja-JP").format(value);
 }
 
 function buildDashboardContextPatch(

@@ -15,6 +15,7 @@ import type {
   DatasourceFieldProfile,
   McpExecutionDebug,
   McpObservation,
+  QueryDatasourceInsight,
   ResolvedDatasourceRef,
   NormalizedTableauContext,
   TableauDatasourceRef,
@@ -40,6 +41,7 @@ export type McpTool = {
 export type RawMcpToolResult = {
   toolName: string;
   result: unknown;
+  args?: Record<string, unknown>;
 };
 
 const TOOL_RESULT_SUMMARY_LIMIT = 1_800;
@@ -347,6 +349,7 @@ export class TableauMcpContextProvider implements TableauContextProvider {
           rawToolResults.push({
             toolName: selection.tool.name,
             result,
+            args: selection.arguments,
           });
           observations.push({
             tool: selection.tool.name,
@@ -418,6 +421,7 @@ export class TableauMcpContextProvider implements TableauContextProvider {
       });
       const answerContextDatasources = normalizedContext.datasources;
       const datasourceFieldProfiles = extractDatasourceFieldProfilesFromRawToolResults(rawToolResults, answerContextDatasources);
+      const queryInsights = extractQueryDatasourceInsightsFromRawToolResults(rawToolResults, answerContextDatasources);
       const metadataCallSucceeded = toolResults.some(
         (result) => result.toolName === "get-datasource-metadata" && result.status === "success",
       );
@@ -464,6 +468,7 @@ export class TableauMcpContextProvider implements TableauContextProvider {
         workbook: extractedWorkbook,
         datasources: answerContextDatasources,
         datasourceFieldProfiles,
+        queryInsights,
         normalizedContext,
         metadata: {
           transport: "stdio",
@@ -2112,6 +2117,73 @@ export function extractDatasourceFieldProfilesFromRawToolResults(
   return dedupeDatasourceFieldProfiles(profiles);
 }
 
+export function extractQueryDatasourceInsightsFromRawToolResults(
+  rawToolResults: RawMcpToolResult[],
+  normalizedDatasources: TableauDatasourceRef[],
+): QueryDatasourceInsight[] {
+  const insights: QueryDatasourceInsight[] = [];
+
+  for (const toolResult of rawToolResults) {
+    if (toolResult.toolName !== "query-datasource") {
+      continue;
+    }
+
+    const args = toolResult.args ?? {};
+    const datasourceLuid = readString(args.datasourceLuid) ?? readString(args.datasourceId) ?? undefined;
+    const datasourceName =
+      normalizedDatasources.find(
+        (datasource) => datasource.luid === datasourceLuid || datasource.id === datasourceLuid,
+      )?.name ?? "resolved datasource";
+    const query = isPlainObject(args.query) ? (args.query as Record<string, unknown>) : undefined;
+    const fields = Array.isArray(query?.fields) ? query.fields : [];
+    const dimensionFieldRecord = fields.find((field) => {
+      if (!isPlainObject(field)) {
+        return false;
+      }
+
+      return !readString((field as Record<string, unknown>).function);
+    }) as Record<string, unknown> | undefined;
+    const metricFieldRecord = fields.find((field) => {
+      if (!isPlainObject(field)) {
+        return false;
+      }
+
+      return Boolean(readString((field as Record<string, unknown>).function));
+    }) as Record<string, unknown> | undefined;
+    const dimensionField = readString(dimensionFieldRecord?.fieldCaption) ?? readString(dimensionFieldRecord?.fieldAlias);
+    const dimensionKeyCandidates = [
+      readString(dimensionFieldRecord?.fieldAlias),
+      readString(dimensionFieldRecord?.fieldCaption),
+      "Dimension",
+    ].filter((value): value is string => Boolean(value));
+    const metricField = readString(metricFieldRecord?.fieldCaption) ?? "aggregated value";
+    const metricKeyCandidates = [
+      readString(metricFieldRecord?.fieldAlias),
+      readString(metricFieldRecord?.fieldCaption),
+      "Aggregated Value",
+    ].filter((value): value is string => Boolean(value));
+
+    const rows = extractQueryDatasourceRows(toolResult.result)
+      .map((row) => normalizeQueryDatasourceInsightRow(row, dimensionKeyCandidates, metricKeyCandidates))
+      .filter((row): row is { label?: string; value: number | null } => row !== undefined);
+
+    if (!rows.length) {
+      continue;
+    }
+
+    insights.push({
+      datasourceName,
+      datasourceLuid,
+      dimensionField,
+      metricField,
+      rowCount: rows.length,
+      rows: rows.slice(0, 20),
+    });
+  }
+
+  return insights;
+}
+
 type WorkbookCandidate = {
   id?: string;
   name: string;
@@ -2120,6 +2192,61 @@ type WorkbookCandidate = {
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function extractQueryDatasourceRows(result: unknown): Record<string, unknown>[] {
+  for (const payload of parseToolResultPayloads(result)) {
+    const data = findQueryDatasourceDataArray(payload);
+    if (data?.length) {
+      return data;
+    }
+  }
+
+  return [];
+}
+
+function findQueryDatasourceDataArray(value: unknown): Record<string, unknown>[] | undefined {
+  if (Array.isArray(value)) {
+    const rows = value.filter((item): item is Record<string, unknown> => isPlainObject(item));
+    return rows.length ? rows : undefined;
+  }
+
+  if (!isPlainObject(value)) {
+    return undefined;
+  }
+
+  const directData = Array.isArray(value.data)
+    ? value.data.filter((item): item is Record<string, unknown> => isPlainObject(item))
+    : undefined;
+  if (directData?.length) {
+    return directData;
+  }
+
+  for (const key of ["result", "queryResult", "payload"]) {
+    const nested = findQueryDatasourceDataArray(value[key]);
+    if (nested?.length) {
+      return nested;
+    }
+  }
+
+  return undefined;
+}
+
+function normalizeQueryDatasourceInsightRow(
+  row: Record<string, unknown>,
+  dimensionKeyCandidates: string[],
+  metricKeyCandidates: string[],
+): { label?: string; value: number | null } | undefined {
+  const label = dimensionKeyCandidates.map((key) => readString(row[key])).find((value) => Boolean(value));
+  const value = metricKeyCandidates.map((key) => readNumericLike(row[key])).find((candidate) => candidate !== undefined);
+  if (label === undefined && value === undefined) {
+    return undefined;
+  }
+
+  return {
+    ...(label ? { label } : {}),
+    value: value ?? null,
+  };
 }
 
 function extractFieldNamesFromDatasourceModel(value: unknown): string[] {
@@ -2891,7 +3018,9 @@ function buildAggregateQueryDatasourceArgs(
   }
 
   const dimensionField = chooseAggregateDimensionField(fieldNames);
-  const topN = /top|most|highest|max|rank|最も|最多|最大|ランキング/.test(question.toLowerCase()) ? 1 : 10;
+  const dateField = chooseAggregateDateField(fieldNames);
+  const dateRange = parseQuestionDateRange(question);
+  const topN = inferAggregateTopN(question);
   const fields: Array<Record<string, unknown>> = [];
   if (dimensionField) {
     fields.push({
@@ -2907,10 +3036,27 @@ function buildAggregateQueryDatasourceArgs(
     sortPriority: 1,
   });
 
+  const filters =
+    dateField && dateRange
+      ? [
+          {
+            field: {
+              fieldCaption: dateField,
+            },
+            filterType: "QUANTITATIVE_DATE",
+            quantitativeFilterType: "RANGE",
+            minDate: dateRange.start,
+            maxDate: dateRange.end,
+            includeNulls: false,
+          },
+        ]
+      : undefined;
+
   return {
     datasourceLuid,
     query: {
       fields,
+      ...(filters ? { filters } : {}),
     },
     limit: topN,
   };
@@ -2940,19 +3086,50 @@ function chooseAggregateMetricField(fieldNames: string[], question: string): str
   }
 
   const lowerQuestion = question.toLowerCase();
-  const prioritizedPatterns: RegExp[] = [];
   if (/view|閲覧/.test(lowerQuestion)) {
-    prioritizedPatterns.push(/view.?count/i);
+    const viewHit = trimmed.find((fieldName) => /view.?count/i.test(fieldName));
+    if (viewHit) {
+      return viewHit;
+    }
   }
-  if (/favorite|favourite|お気に入り/.test(lowerQuestion)) {
-    prioritizedPatterns.push(/favorite|favourite/i);
-  }
-  if (/reaction|リアクション/.test(lowerQuestion)) {
-    prioritizedPatterns.push(/reaction/i);
-  }
-  prioritizedPatterns.push(/count|total|number|sum|sales|profit|revenue|amount|score|rate/i);
 
-  for (const pattern of prioritizedPatterns) {
+  if (/favorite|favourite|お気に入り/.test(lowerQuestion)) {
+    const favoriteWithoutReaction = trimmed.find(
+      (fieldName) => /favorite|favourite/i.test(fieldName) && !/reaction/i.test(fieldName),
+    );
+    if (favoriteWithoutReaction) {
+      return favoriteWithoutReaction;
+    }
+
+    const favoriteHit = trimmed.find((fieldName) => /favorite|favourite/i.test(fieldName));
+    if (favoriteHit) {
+      return favoriteHit;
+    }
+  }
+
+  if (/reaction|リアクション/.test(lowerQuestion)) {
+    const reactionHit = trimmed.find((fieldName) => /reaction/i.test(fieldName));
+    if (reactionHit) {
+      return reactionHit;
+    }
+  }
+
+  const genericHit = trimmed.find((fieldName) => /count|total|number|sum|sales|profit|revenue|amount|score|rate/i.test(fieldName));
+  if (genericHit) {
+    return genericHit;
+  }
+
+  return undefined;
+}
+
+function chooseAggregateDateField(fieldNames: string[]): string | undefined {
+  const trimmed = fieldNames.map((fieldName) => fieldName.trim()).filter(Boolean);
+  if (!trimmed.length) {
+    return undefined;
+  }
+
+  const patterns = [/date.*time/i, /datetime/i, /date/i, /time/i, /timestamp/i, /\(jst\)/i];
+  for (const pattern of patterns) {
     const hit = trimmed.find((fieldName) => pattern.test(fieldName));
     if (hit) {
       return hit;
@@ -2960,6 +3137,42 @@ function chooseAggregateMetricField(fieldNames: string[], question: string): str
   }
 
   return undefined;
+}
+
+function inferAggregateTopN(question: string): number {
+  const explicitTop = question.match(/top\s*(\d{1,2})/i) ?? question.match(/上位\s*(\d{1,2})/);
+  if (explicitTop?.[1]) {
+    return Math.max(1, Math.min(50, Number.parseInt(explicitTop[1], 10)));
+  }
+
+  if (/ランキング|rank(?:ing)?|一覧|リスト/.test(question.toLowerCase())) {
+    return 10;
+  }
+
+  if (/top|most|highest|max|最も|最多|最大|一番/.test(question.toLowerCase())) {
+    return 1;
+  }
+
+  return 10;
+}
+
+function parseQuestionDateRange(question: string): { start: string; end: string } | undefined {
+  const yearMonthMatch =
+    question.match(/(20\d{2})[年\/\-](\d{1,2})月?/) ?? question.match(/(20\d{2})\s*年\s*(\d{1,2})\s*月/);
+  if (!yearMonthMatch?.[1] || !yearMonthMatch?.[2]) {
+    return undefined;
+  }
+
+  const year = Number.parseInt(yearMonthMatch[1], 10);
+  const month = Number.parseInt(yearMonthMatch[2], 10);
+  if (!Number.isFinite(year) || !Number.isFinite(month) || month < 1 || month > 12) {
+    return undefined;
+  }
+
+  const start = `${year.toString().padStart(4, "0")}-${month.toString().padStart(2, "0")}-01`;
+  const endDate = new Date(Date.UTC(year, month, 0));
+  const end = `${endDate.getUTCFullYear().toString().padStart(4, "0")}-${String(endDate.getUTCMonth() + 1).padStart(2, "0")}-${String(endDate.getUTCDate()).padStart(2, "0")}`;
+  return { start, end };
 }
 
 function selectBestResolvedDatasource(candidates: ResolvedDatasourceRef[]): ResolvedDatasourceRef | undefined {
@@ -3175,6 +3388,19 @@ function dedupeViews(views: TableauViewRef[]): TableauViewRef[] {
 
 function readString(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function readNumericLike(value: unknown): number | undefined {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Number.parseFloat(value.replace(/,/g, ""));
+    return Number.isFinite(parsed) ? parsed : undefined;
+  }
+
+  return undefined;
 }
 
 function tryParseJson(text: string): unknown {

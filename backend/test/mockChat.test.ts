@@ -2,7 +2,7 @@
 import { InMemoryChatHistoryRepository } from "../src/repositories/chatHistoryRepository";
 import type { AnswerGenerator } from "../src/services/answerGenerator";
 import { MockAnswerGenerator } from "../src/services/answerGenerator";
-import { ChatService, sanitizeUserFacingAnswer } from "../src/services/chatService";
+import { buildStructuredDataAnalysisAnswer, ChatService, finalizeUserFacingAnswer, sanitizeUserFacingAnswer } from "../src/services/chatService";
 import { MockTableauContextProvider } from "../src/tableau/mockTableauContextProvider";
 import type { AuthenticatedUser } from "../src/types/auth";
 
@@ -269,6 +269,114 @@ describe("ChatService with mock provider", () => {
     expect(sanitized).not.toContain("```sql");
     expect(sanitized).not.toContain("SELECT ");
     expect(sanitized).toContain("安全制約により集計クエリを実行できなかった");
+  });
+
+  it("formats a direct ranking answer from successful datasource query results", () => {
+    const formatted = buildStructuredDataAnalysisAnswer(
+      {
+        question: "このダッシュボードで使われているデータソースから、2026年5月に最もFavoriteを集めたVizを、ランキング形式で出してください。",
+        dashboardContext: {
+          dashboardName: "Statistics",
+          worksheets: [{ name: "Views" }],
+          filters: [],
+          parameters: [],
+          dataSources: [{ name: "Tableau Public Per Day(2025/04-)" }],
+          capturedAt: new Date().toISOString(),
+        },
+      },
+      {
+        provider: "tableau-mcp",
+        queryInsights: [
+          {
+            datasourceName: "Tableau Public Per Day(2025/04-)",
+            datasourceLuid: "ds-123",
+            dimensionField: "workbook_title",
+            metricField: "workbook_favoriteCount",
+            rowCount: 3,
+            rows: [
+              { label: "Viz A", value: 120 },
+              { label: "Viz B", value: 88 },
+              { label: "Viz C", value: 75 },
+            ],
+          },
+        ],
+        mcpExecutionDebug: {
+          intent: "data_analysis",
+          intentConfidence: 0.95,
+          answerableFromDashboardContext: false,
+          needsMcp: true,
+          maxToolCalls: 8,
+          plannedTools: ["list-datasources", "get-datasource-metadata", "query-datasource"],
+          blockedTools: [],
+          executedTools: ["list-datasources", "get-datasource-metadata", "query-datasource"],
+          skippedTools: [],
+          toolCallCount: 3,
+          replanUsed: true,
+          timingMs: { planning: 0, execution: 0 },
+        },
+      },
+    );
+
+    expect(formatted).toContain("2026年5月のFavorite数ランキング");
+    expect(formatted).toContain("1. Viz A: 120");
+    expect(formatted).toContain("2. Viz B: 88");
+    expect(formatted).toContain("Tableau Public Per Day(2025/04-)");
+  });
+
+  it("prefers structured query results over a manual SQL-style answer", () => {
+    const finalized = finalizeUserFacingAnswer(
+      [
+        "このランキングを取得するには次のクエリを実行してください。",
+        "```sql",
+        "SELECT workbook_title, SUM(workbook_favoriteCount) FROM datasource",
+        "```",
+      ].join("\n"),
+      {
+        question: "このダッシュボードで使われているデータソースから、2026年5月に最もFavoriteを集めたVizを、ランキング形式で出してください。",
+        dashboardContext: {
+          dashboardName: "Statistics",
+          worksheets: [{ name: "Views" }],
+          filters: [],
+          parameters: [],
+          dataSources: [{ name: "Tableau Public Per Day(2025/04-)" }],
+          capturedAt: new Date().toISOString(),
+        },
+      },
+      {
+        provider: "tableau-mcp",
+        queryInsights: [
+          {
+            datasourceName: "Tableau Public Per Day(2025/04-)",
+            datasourceLuid: "ds-123",
+            dimensionField: "workbook_title",
+            metricField: "workbook_favoriteCount",
+            rowCount: 2,
+            rows: [
+              { label: "Viz A", value: 120 },
+              { label: "Viz B", value: 88 },
+            ],
+          },
+        ],
+        mcpExecutionDebug: {
+          intent: "data_analysis",
+          intentConfidence: 0.95,
+          answerableFromDashboardContext: false,
+          needsMcp: true,
+          maxToolCalls: 8,
+          plannedTools: ["list-datasources", "get-datasource-metadata", "query-datasource"],
+          blockedTools: [],
+          executedTools: ["list-datasources", "get-datasource-metadata", "query-datasource"],
+          skippedTools: [],
+          toolCallCount: 3,
+          replanUsed: true,
+          timingMs: { planning: 0, execution: 0 },
+        },
+        mcpToolResults: [{ toolName: "query-datasource", status: "success", summary: "ok" }],
+      },
+    );
+
+    expect(finalized).not.toContain("```sql");
+    expect(finalized).toContain("1. Viz A: 120");
   });
 
   it("creates a notion draft preview when the question asks to save into Notion", async () => {

@@ -1,5 +1,5 @@
 import type { ChatRequest } from "../types/chat";
-import type { DatasourceFieldProfile, TableauAdditionalContext } from "../types/tableau";
+import type { DatasourceFieldProfile, QueryDatasourceInsight, TableauAdditionalContext } from "../types/tableau";
 
 const REDACTED_KEYS = /token|secret|password|jwt|authorization|credential|cookie/i;
 
@@ -23,6 +23,7 @@ export type CompressedDashboardContext = {
   mcpToolResults: string[];
   mcpObservations: string[];
   datasourceFieldEvidence: string[];
+  queryInsights: string[];
   warnings: string[];
 };
 
@@ -69,6 +70,7 @@ export function compressDashboardContext(
         return `${observation.tool} (${status}) purpose=${observation.purpose}; ${reason}`.slice(0, 420);
       }) ?? [],
     datasourceFieldEvidence: renderDatasourceFieldEvidence(additionalContext.datasourceFieldProfiles ?? []),
+    queryInsights: renderQueryInsights(additionalContext.queryInsights ?? []),
     warnings: additionalContext.warnings ?? [],
   };
 }
@@ -94,6 +96,7 @@ export function renderCompressedContext(context: CompressedDashboardContext): st
     `MCP tool results: ${context.mcpToolResults.join("\n") || "not available"}`,
     `MCP observations: ${context.mcpObservations.join("\n") || "not available"}`,
     `Datasource field evidence: ${context.datasourceFieldEvidence.join("\n") || "not available"}`,
+    `Query insights: ${context.queryInsights.join("\n") || "not available"}`,
     `Warnings: ${context.warnings.join("; ") || "none"}`,
   ].join("\n");
 }
@@ -154,5 +157,15 @@ function renderDatasourceFieldEvidence(profiles: DatasourceFieldProfile[]): stri
     const topFields = profile.fieldNames.slice(0, 40).join(", ");
     const suffix = profile.fieldNames.length > 40 ? ", ..." : "";
     return `${profile.datasourceName} fields (${profile.fieldCount}): ${topFields}${suffix}`;
+  });
+}
+
+function renderQueryInsights(insights: QueryDatasourceInsight[]): string[] {
+  return insights.slice(0, 3).map((insight) => {
+    const preview = insight.rows
+      .slice(0, 5)
+      .map((row) => `${row.label ?? "(value)"}=${row.value ?? "null"}`)
+      .join(", ");
+    return `${insight.datasourceName} ${insight.metricField}${insight.dimensionField ? ` by ${insight.dimensionField}` : ""}: ${preview}`;
   });
 }
