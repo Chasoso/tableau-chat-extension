@@ -35,6 +35,7 @@ type Props = {
 export default function AuthGate({ children }: Props) {
   const mountedRef = useRef(false);
   const popupRef = useRef<Window | null>(null);
+  const popupOpenedAtRef = useRef<number>(0);
   const sessionPollerRef = useRef<number | undefined>(undefined);
   const signInTimerRef = useRef<number | undefined>(undefined);
   const popupCloseGuardRef = useRef<number | undefined>(undefined);
@@ -61,6 +62,7 @@ export default function AuthGate({ children }: Props) {
 
   function resetPopupTracking(): void {
     popupRef.current = null;
+    popupOpenedAtRef.current = 0;
     authPopupHandoffObservedRef.current = false;
     clearPopupCloseGuard();
   }
@@ -159,6 +161,10 @@ export default function AuthGate({ children }: Props) {
   }
 
   function checkClosedPopupAfterFocus(): void {
+    if (!isSigningIn) {
+      return;
+    }
+
     const popup = popupRef.current;
     if (!popup?.closed) {
       return;
@@ -167,6 +173,10 @@ export default function AuthGate({ children }: Props) {
     clearPopupCloseGuard();
     popupCloseGuardRef.current = window.setTimeout(() => {
       if (acceptStoredSession()) {
+        return;
+      }
+
+      if (popupOpenedAtRef.current && Date.now() - popupOpenedAtRef.current < 2_000) {
         return;
       }
 
@@ -210,9 +220,20 @@ export default function AuthGate({ children }: Props) {
     }
 
     function handleFocus() {
+      if (!isSigningIn && !popupRef.current) {
+        return;
+      }
       acceptStoredSession();
       startSessionPolling(5_000);
       checkClosedPopupAfterFocus();
+    }
+
+    function handleVisibilityChange() {
+      if (document.visibilityState !== "visible") {
+        return;
+      }
+
+      handleFocus();
     }
 
     let channel: BroadcastChannel | undefined;
@@ -234,7 +255,7 @@ export default function AuthGate({ children }: Props) {
     window.addEventListener("message", handleMessage);
     window.addEventListener("storage", handleStorage);
     window.addEventListener("focus", handleFocus);
-    document.addEventListener("visibilitychange", handleFocus);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
     void completeLoginFromRedirect()
       .then((nextSession) => {
         if (mountedRef.current && nextSession) {
@@ -263,7 +284,7 @@ export default function AuthGate({ children }: Props) {
       window.removeEventListener("message", handleMessage);
       window.removeEventListener("storage", handleStorage);
       window.removeEventListener("focus", handleFocus);
-      document.removeEventListener("visibilitychange", handleFocus);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
   }, []);
 
@@ -275,6 +296,7 @@ export default function AuthGate({ children }: Props) {
 
     try {
       popupRef.current = await startLoginPopup();
+      popupOpenedAtRef.current = Date.now();
       const startedAt = Date.now();
       startSessionPolling(popupWaitTimeoutMs);
 
