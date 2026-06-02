@@ -1,64 +1,36 @@
 import { useEffect, useState } from "react";
-import {
-  completeLoginFromRedirect,
-  isAuthCompleteAckMessage,
-  publishAuthSession,
-} from "../auth/cognitoAuth";
-
-const popupAutoCloseTimeoutMs = 15_000;
+import { completeLoginFromRedirect } from "../auth/cognitoAuth";
 
 export default function AuthCallback() {
   const [message, setMessage] = useState("サインイン結果を確認しています…");
 
   useEffect(() => {
-    let interval: number | undefined;
-    let closeTimer: number | undefined;
-
-    const handleAck = (event: MessageEvent) => {
-      if (!isAuthCompleteAckMessage(event)) {
-        return;
-      }
-
-      if (interval) {
-        window.clearInterval(interval);
-      }
-      if (closeTimer) {
-        window.clearTimeout(closeTimer);
-      }
-      window.close();
-    };
-
-    window.addEventListener("message", handleAck);
+    let cancelled = false;
 
     void completeLoginFromRedirect()
       .then((session) => {
+        if (cancelled) {
+          return;
+        }
+
         if (!session) {
           setMessage("サインイン結果を確認できませんでした。このウィンドウを閉じて、もう一度お試しください。");
           return;
         }
 
-        setMessage("サインインが完了しました。元の画面に戻しています…");
-        interval = window.setInterval(() => publishAuthSession(session), 250);
-        publishAuthSession(session);
-        closeTimer = window.setTimeout(() => {
-          if (interval) {
-            window.clearInterval(interval);
-          }
-          window.close();
-        }, popupAutoCloseTimeoutMs);
+        setMessage("サインインが完了しました。元の画面に戻ります…");
+        window.setTimeout(() => {
+          window.location.replace("/");
+        }, 800);
       })
       .catch(() => {
-        setMessage("サインインに失敗しました。このウィンドウを閉じて、もう一度お試しください。");
+        if (!cancelled) {
+          setMessage("サインインに失敗しました。このウィンドウを閉じて、もう一度お試しください。");
+        }
       });
 
     return () => {
-      window.removeEventListener("message", handleAck);
-      if (interval) {
-        window.clearInterval(interval);
-      }
-      if (closeTimer) {
-        window.clearTimeout(closeTimer);
-      }
+      cancelled = true;
     };
   }, []);
 

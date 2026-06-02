@@ -93,4 +93,20 @@ describe("chatHandler", () => {
 
     expect(response.statusCode).not.toBe(401);
   });
+
+  it("does not require authorization header for cognito popup auth routes", async () => {
+    process.env.AUTH_REQUIRED = "true";
+    process.env.COGNITO_CLIENT_ID = "client-123";
+    process.env.COGNITO_DOMAIN = "https://demo.auth.ap-northeast-1.amazoncognito.com";
+    process.env.COGNITO_POPUP_REDIRECT_URI = "https://example.com/api/auth/cognito/callback";
+
+    const response = await handler({
+      httpMethod: "POST",
+      rawPath: "/auth/cognito/popup/start",
+      headers: {},
+      body: JSON.stringify({}),
+    });
+
+    expect(response.statusCode).not.toBe(401);
+  });
 });

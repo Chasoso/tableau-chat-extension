@@ -89,7 +89,7 @@ Cognito frontend settings:
 - `VITE_COGNITO_CLIENT_ID`
 - `VITE_COGNITO_REGION`
 - `VITE_COGNITO_DOMAIN`
-- `VITE_COGNITO_REDIRECT_URI`
+- `VITE_COGNITO_REDIRECT_URI` (optional full-page fallback callback)
 - `VITE_COGNITO_LOGOUT_URI`
 
 Cognito backend settings:
@@ -97,8 +97,24 @@ Cognito backend settings:
 - `COGNITO_USER_POOL_ID`
 - `COGNITO_CLIENT_ID`
 - `COGNITO_REGION`
+- `COGNITO_DOMAIN`
+- `COGNITO_POPUP_REDIRECT_URI`
+- `COGNITO_AUTH_TRANSACTION_KEY_PARAM`
+- `COGNITO_AUTH_TRANSACTION_TTL_SECONDS`
 
 The backend verifies the Cognito JWT and derives the Tableau subject from the verified `email` claim. It does not trust a username sent by the frontend.
+
+Popup sign-in for Tableau Cloud now uses a backend transaction + polling flow instead of relying on popup-to-iframe `postMessage` timing:
+
+1. Frontend opens a blank popup immediately from the user click.
+2. Frontend calls `POST /auth/cognito/popup/start`.
+3. Backend creates a short-lived auth transaction in DynamoDB, stores the encrypted PKCE verifier, and returns the Cognito authorization URL.
+4. Frontend navigates the popup to Cognito Hosted UI.
+5. Cognito redirects to backend `GET /auth/cognito/callback`.
+6. Backend exchanges the code, stores an encrypted short-lived session payload, and marks the transaction as completed.
+7. Parent iframe polls `GET /auth/cognito/popup/status` until it receives the completed session.
+
+This avoids fragile popup close detection inside Tableau Cloud iframes.
 
 ### Tableau Connected App Settings
 

@@ -3,32 +3,8 @@ import type { AuthSession } from "../types/auth";
 
 const sessionKey = "tableau-chat.auth.session";
 const verifierKeyPrefix = "tableau-chat.auth.pkce.verifier.";
-const authMessageType = "tableau-chat.auth.complete";
-const authCompleteAckMessageType = "tableau-chat.auth.complete-ack";
-const authCodeMessageType = "tableau-chat.auth.code";
-const authCodeAckMessageType = "tableau-chat.auth.code-ack";
-const authBroadcastChannelName = "tableau-chat.auth";
-const parentHandledStatePrefix = "parent.";
 
-export type AuthCompleteMessage = {
-  type: typeof authMessageType;
-  session: AuthSession;
-};
-
-export type AuthCompleteAckMessage = {
-  type: typeof authCompleteAckMessageType;
-};
-
-export type AuthCodeMessage = {
-  type: typeof authCodeMessageType;
-  url: string;
-};
-
-export type AuthCodeAckMessage = {
-  type: typeof authCodeAckMessageType;
-};
-
-export { authBroadcastChannelName, authMessageType, sessionKey };
+export { sessionKey };
 
 export function getStoredSession(): AuthSession | null {
   const raw = localStorage.getItem(sessionKey);
@@ -69,7 +45,7 @@ export async function completeLoginFromUrl(urlValue: string): Promise<AuthSessio
 
   const verifier = localStorage.getItem(getVerifierKey(state));
   if (!verifier) {
-    throw new Error("サインインセッションの期限が切れました。もう一度サインインしてください。");
+    throw new Error("サインインセッションの情報が見つかりませんでした。もう一度サインインしてください。");
   }
 
   const tokenResponse = await fetch(`${getCognitoDomain()}/oauth2/token`, {
@@ -105,7 +81,6 @@ export async function completeLoginFromUrl(urlValue: string): Promise<AuthSessio
 
   storeSession(session);
   localStorage.removeItem(getVerifierKey(state));
-  publishAuthSession(session);
   return session;
 }
 
@@ -114,13 +89,37 @@ export async function startLogin(): Promise<void> {
   window.location.assign(loginUrl);
 }
 
-export async function startLoginPopup(): Promise<Window> {
-  const popup = window.open(getPopupStartUrl(), "tableau-chat-cognito-login", "popup,width=520,height=720");
+export function openLoginPopupWindow(): Window {
+  const popup = window.open("", "tableau-chat-cognito-login", "popup,width=520,height=720");
   if (!popup) {
     throw new Error("サインインウィンドウを開けませんでした。このサイトのポップアップを許可してください。");
   }
 
   popup.focus();
+  try {
+    popup.document.write(`
+      <!doctype html>
+      <html lang="ja">
+        <head>
+          <meta charset="utf-8" />
+          <title>Tableau Assistant</title>
+          <style>
+            body { font-family: sans-serif; background:#f6f7f9; color:#1f2937; display:flex; min-height:100vh; align-items:center; justify-content:center; margin:0; }
+            .card { background:#fff; border:1px solid #d5d9e0; border-radius:16px; padding:24px; width:min(420px, 92vw); text-align:center; box-shadow:0 16px 36px rgba(15,23,42,.12); }
+          </style>
+        </head>
+        <body>
+          <div class="card">
+            <h1>Tableau Assistant</h1>
+            <p>サインイン画面を準備しています…</p>
+          </div>
+        </body>
+      </html>
+    `);
+    popup.document.close();
+  } catch {
+    // Ignore cross-browser popup document initialization issues.
+  }
   return popup;
 }
 
@@ -132,88 +131,8 @@ export function isAuthPopupStart(): boolean {
   return new URL(window.location.href).searchParams.get("auth_action") === "login_popup";
 }
 
-export function isAuthCompleteMessage(message: MessageEvent): message is MessageEvent<AuthCompleteMessage> {
-  return message.origin === window.location.origin && isAuthCompletePayload(message.data);
-}
-
-export function isAuthCompletePayload(payload: unknown): payload is AuthCompleteMessage {
-  return (
-    typeof payload === "object" &&
-    payload !== null &&
-    "type" in payload &&
-    "session" in payload &&
-    (payload as AuthCompleteMessage).type === authMessageType &&
-    Boolean((payload as AuthCompleteMessage).session)
-  );
-}
-
-export function isAuthCompleteAckMessage(message: MessageEvent): message is MessageEvent<AuthCompleteAckMessage> {
-  return message.origin === window.location.origin && isAuthCompleteAckPayload(message.data);
-}
-
-export function isAuthCompleteAckPayload(payload: unknown): payload is AuthCompleteAckMessage {
-  return (
-    typeof payload === "object" &&
-    payload !== null &&
-    "type" in payload &&
-    (payload as AuthCompleteAckMessage).type === authCompleteAckMessageType
-  );
-}
-
-export function isAuthCodeMessage(message: MessageEvent): message is MessageEvent<AuthCodeMessage> {
-  return message.origin === window.location.origin && isAuthCodePayload(message.data);
-}
-
-export function isAuthCodePayload(payload: unknown): payload is AuthCodeMessage {
-  return (
-    typeof payload === "object" &&
-    payload !== null &&
-    "type" in payload &&
-    "url" in payload &&
-    (payload as AuthCodeMessage).type === authCodeMessageType &&
-    typeof (payload as AuthCodeMessage).url === "string"
-  );
-}
-
-export function isAuthCodeAckMessage(message: MessageEvent): message is MessageEvent<AuthCodeAckMessage> {
-  return message.origin === window.location.origin && isAuthCodeAckPayload(message.data);
-}
-
-export function isAuthCodeAckPayload(payload: unknown): payload is AuthCodeAckMessage {
-  return (
-    typeof payload === "object" &&
-    payload !== null &&
-    "type" in payload &&
-    (payload as AuthCodeAckMessage).type === authCodeAckMessageType
-  );
-}
-
 export function storeSession(session: AuthSession): void {
   localStorage.setItem(sessionKey, JSON.stringify(session));
-}
-
-export function publishAuthSession(session: AuthSession): void {
-  notifyOpener(session);
-  notifyBroadcastChannel(session);
-}
-
-export function isParentHandledAuthRedirect(urlValue = window.location.href): boolean {
-  const url = new URL(urlValue);
-  const state = url.searchParams.get("state");
-  return Boolean(url.searchParams.get("code") && state?.startsWith(parentHandledStatePrefix));
-}
-
-export function publishAuthCode(urlValue = window.location.href): void {
-  notifyOpenerAuthCode(urlValue);
-  notifyBroadcastChannelAuthCode(urlValue);
-}
-
-export function publishAuthCodeAck(targetWindow: Window | null = window.opener): void {
-  notifyPopupAuthCodeAck(targetWindow);
-}
-
-export function publishAuthCompleteAck(targetWindow: Window | null = window.opener): void {
-  notifyPopupAuthCompleteAck(targetWindow);
 }
 
 export function signOut(): void {
@@ -276,92 +195,6 @@ function getRedirectUri(): string {
 
 function getLogoutUri(): string {
   return env.cognito.logoutUri || getRedirectUri();
-}
-
-function getPopupStartUrl(): string {
-  const url = new URL(getRedirectUri());
-  url.searchParams.set("auth_action", "login_popup");
-  return url.toString();
-}
-
-function notifyOpener(session: AuthSession): void {
-  if (!window.opener) {
-    return;
-  }
-
-  window.opener.postMessage(
-    {
-      type: authMessageType,
-      session,
-    } satisfies AuthCompleteMessage,
-    window.location.origin,
-  );
-}
-
-function notifyOpenerAuthCode(urlValue: string): void {
-  if (!window.opener) {
-    return;
-  }
-
-  window.opener.postMessage(
-    {
-      type: authCodeMessageType,
-      url: urlValue,
-    } satisfies AuthCodeMessage,
-    window.location.origin,
-  );
-}
-
-function notifyBroadcastChannel(session: AuthSession): void {
-  if (typeof BroadcastChannel === "undefined") {
-    return;
-  }
-
-  const channel = new BroadcastChannel(authBroadcastChannelName);
-  channel.postMessage({
-    type: authMessageType,
-    session,
-  } satisfies AuthCompleteMessage);
-  channel.close();
-}
-
-function notifyBroadcastChannelAuthCode(urlValue: string): void {
-  if (typeof BroadcastChannel === "undefined") {
-    return;
-  }
-
-  const channel = new BroadcastChannel(authBroadcastChannelName);
-  channel.postMessage({
-    type: authCodeMessageType,
-    url: urlValue,
-  } satisfies AuthCodeMessage);
-  channel.close();
-}
-
-function notifyPopupAuthCodeAck(targetWindow: Window | null): void {
-  if (!targetWindow) {
-    return;
-  }
-
-  targetWindow.postMessage(
-    {
-      type: authCodeAckMessageType,
-    } satisfies AuthCodeAckMessage,
-    window.location.origin,
-  );
-}
-
-function notifyPopupAuthCompleteAck(targetWindow: Window | null): void {
-  if (!targetWindow) {
-    return;
-  }
-
-  targetWindow.postMessage(
-    {
-      type: authCompleteAckMessageType,
-    } satisfies AuthCompleteAckMessage,
-    window.location.origin,
-  );
 }
 
 function getVerifierKey(state: string): string {

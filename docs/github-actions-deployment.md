@@ -21,6 +21,18 @@ The workflow intentionally avoids printing AWS account IDs, ARNs, bucket names, 
 
 The frontend upload keeps hashed files under `assets/` as append-only objects with long-lived cache headers, while `index.html` and `.trex` are uploaded with `no-cache`. This avoids a CloudFront/S3 race where an older cached `index.html` points at a hashed JS file that has already been deleted.
 
+### Cognito Popup Auth Flow
+
+The Tableau Cloud extension now uses backend transaction polling for popup sign-in:
+
+1. The frontend opens a popup immediately from the user click.
+2. `POST /auth/cognito/popup/start` creates a short-lived DynamoDB transaction and returns the Cognito authorization URL.
+3. Cognito redirects to `COGNITO_POPUP_REDIRECT_URI`, which must point to `/api/auth/cognito/callback`.
+4. The backend exchanges the authorization code and stores an encrypted short-lived session payload.
+5. The parent iframe polls `GET /auth/cognito/popup/status` with `X-Auth-Poll-Token` until the session is completed.
+
+This avoids depending on fragile popup-to-iframe `postMessage` timing inside Tableau Cloud.
+
 ### GitHub Secrets
 
 Store these as GitHub Secrets:
@@ -44,8 +56,9 @@ Store these as GitHub Secrets:
 | `COGNITO_USER_POOL_ID` | Required when auth is enabled. |
 | `COGNITO_CLIENT_ID` | Required when auth is enabled. |
 | `VITE_COGNITO_DOMAIN` | Cognito Hosted UI domain. |
-| `VITE_COGNITO_REDIRECT_URI` | Exact callback URL. |
+| `VITE_COGNITO_REDIRECT_URI` | Optional full-page fallback callback URL. |
 | `VITE_COGNITO_LOGOUT_URI` | Exact sign-out URL. |
+| `COGNITO_POPUP_REDIRECT_URI` | Backend popup callback URL, for example `https://<cloudfront-domain>/api/auth/cognito/callback`. |
 | `TABLEAU_MCP_SERVER_URL` | Optional only for HTTP MCP mode. |
 | `TABLEAU_MCP_COMMAND` | Optional override for MCP command. Usually empty. |
 | `TABLEAU_MCP_ARGS` | Optional override for MCP args. Usually empty. |
@@ -67,6 +80,8 @@ These can be repository Variables if acceptable:
 | `TABLEAU_CONTEXT_PROVIDER` | `mock` | `mock`, `direct-api`, or `mcp`. |
 | `AUTH_REQUIRED` | `false` | Enables Cognito JWT verification. |
 | `COGNITO_REGION` | none | Cognito region. |
+| `COGNITO_AUTH_TRANSACTION_KEY_PARAM` | `/tableau-chat-extension/cognito/popup-auth-key` | SSM SecureString parameter name for popup auth AES key. |
+| `COGNITO_AUTH_TRANSACTION_TTL_SECONDS` | `600` | Popup auth transaction TTL in seconds. |
 | `TABLEAU_MCP_TRANSPORT` | `stdio` | Recommended MCP transport for low-cost Lambda PoC. |
 | `TABLEAU_MCP_AUTH_MODE` | `direct-trust` | MCP authentication mode. |
 | `TABLEAU_MCP_TIMEOUT_MS` | `5000` | MCP timeout. |

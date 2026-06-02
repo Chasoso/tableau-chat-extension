@@ -5,12 +5,14 @@ import { createChatService } from "../services/chatService";
 import type { ApiGatewayProxyEvent, ApiGatewayProxyResult } from "../types/api";
 import type { ChatRequest, ContextRequest } from "../types/chat";
 import { handleNotionRoute } from "./notionHandler";
+import { handleCognitoPopupAuthRoute } from "./cognitoPopupAuthHandler";
 
 export async function handler(event: ApiGatewayProxyEvent): Promise<ApiGatewayProxyResult> {
   const requestId = event.requestContext?.requestId;
   const method = event.httpMethod ?? event.requestContext?.http?.method;
   const routePath = getRoutePath(event);
   const isNotionCallbackRoute = routePath.startsWith("/notion/callback");
+  const isCognitoPopupAuthRoute = routePath.startsWith("/auth/cognito/");
 
   if (method === "OPTIONS") {
     return jsonResponse(204, {});
@@ -18,7 +20,10 @@ export async function handler(event: ApiGatewayProxyEvent): Promise<ApiGatewayPr
 
   try {
     logInfo("chat.request.received", { requestId, method, routePath });
-    const authResult = isNotionCallbackRoute ? { ok: true as const, user: undefined } : await authenticateRequest(event.headers);
+    const authResult =
+      isNotionCallbackRoute || isCognitoPopupAuthRoute
+        ? { ok: true as const, user: undefined }
+        : await authenticateRequest(event.headers);
     if (!authResult.ok) {
       logWarn("chat.auth.rejected", { requestId, statusCode: authResult.statusCode });
       return jsonResponse(authResult.statusCode, { message: authResult.message });
@@ -33,6 +38,9 @@ export async function handler(event: ApiGatewayProxyEvent): Promise<ApiGatewayPr
 
     if (routePath.startsWith("/notion")) {
       return handleNotionRoute(event, authResult.user);
+    }
+    if (routePath.startsWith("/auth/cognito")) {
+      return handleCognitoPopupAuthRoute(event);
     }
 
     const request = parseRequest(event.body);
@@ -121,7 +129,7 @@ function jsonResponse(statusCode: number, payload: unknown): ApiGatewayProxyResu
     statusCode,
     headers: {
       "Access-Control-Allow-Origin": config.corsAllowedOrigin,
-      "Access-Control-Allow-Headers": "Content-Type,Authorization",
+      "Access-Control-Allow-Headers": "Content-Type,Authorization,X-Auth-Poll-Token",
       "Access-Control-Allow-Methods": "OPTIONS,POST,GET",
       "Content-Type": "application/json",
     },

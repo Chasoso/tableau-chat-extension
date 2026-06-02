@@ -1,24 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import type React from "react";
-import {
-  authBroadcastChannelName,
-  completeLoginFromRedirect,
-  completeLoginFromUrl,
-  getStoredSession,
-  isAuthCodePayload,
-  isAuthCompleteMessage,
-  isAuthCompletePayload,
-  publishAuthCodeAck,
-  publishAuthCompleteAck,
-  sessionKey,
-  startLoginPopup,
-  storeSession,
-} from "../auth/cognitoAuth";
+import { getPopupAuthStatus, startPopupAuth, type PopupAuthStartResponse } from "../api/authApi";
+import { getStoredSession, openLoginPopupWindow, storeSession } from "../auth/cognitoAuth";
 import type { AuthSession } from "../types/auth";
 
-const popupWaitTimeoutMs = 5 * 60 * 1000;
-const popupCloseGracePeriodMs = 4_000;
-const popupOpenSettlingMs = 2_000;
+const popupWaitTimeoutMs = 90_000;
+const popupPollIntervalMs = 750;
+const popupClosedPendingGraceMs = 3_000;
+const authDebugStorageKey = "tableau-chat.auth.debug";
 
 export type AuthGateRenderState = {
   session: AuthSession | null;
@@ -32,265 +21,148 @@ type Props = {
   children: (state: AuthGateRenderState) => React.ReactNode;
 };
 
-function asWindow(source: MessageEventSource | null): Window | null {
-  if (source && typeof (source as Window).postMessage === "function") {
-    return source as Window;
-  }
-
-  return null;
-}
+type PopupTransactionState = PopupAuthStartResponse & {
+  startedAt: number;
+  popupClosedAt?: number;
+};
 
 export default function AuthGate({ children }: Props) {
   const mountedRef = useRef(false);
   const popupRef = useRef<Window | null>(null);
-  const popupOpenedAtRef = useRef(0);
-  const popupClosedAtRef = useRef(0);
-  const signInTimerRef = useRef<number | undefined>(undefined);
-  const authCodeExchangeRef = useRef(false);
+  const pollTimerRef = useRef<number | undefined>(undefined);
+  const transactionRef = useRef<PopupTransactionState | null>(null);
   const [session, setSession] = useState<AuthSession | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSigningIn, setIsSigningIn] = useState(false);
 
-  function clearSignInTimer(): void {
-    if (signInTimerRef.current) {
-      window.clearInterval(signInTimerRef.current);
-      signInTimerRef.current = undefined;
+  function clearPollTimer(): void {
+    if (pollTimerRef.current) {
+      window.clearInterval(pollTimerRef.current);
+      pollTimerRef.current = undefined;
     }
   }
 
-  function resetPopupTracking(): void {
+  function resetPopupState(): void {
     popupRef.current = null;
-    popupOpenedAtRef.current = 0;
-    popupClosedAtRef.current = 0;
+    transactionRef.current = null;
   }
 
-  function stopSignInWaiting(message?: string): void {
-    clearSignInTimer();
-    resetPopupTracking();
+  function stopSignIn(message?: string): void {
+    logAuthDebug("popup_sign_in_stopped", { hasMessage: Boolean(message), message });
+    clearPollTimer();
+    resetPopupState();
     setIsSigningIn(false);
     if (message) {
       setError(message);
     }
   }
 
-  function acceptSession(nextSession: AuthSession, sourceWindow: Window | null = null): void {
-    if (sourceWindow) {
-      publishAuthCompleteAck(sourceWindow);
-    }
-
+  function acceptSession(nextSession: AuthSession): void {
+    logAuthDebug("popup_sign_in_completed", { email: nextSession.email, nickname: nextSession.nickname });
     storeSession(nextSession);
-    clearSignInTimer();
-    resetPopupTracking();
+    clearPollTimer();
+    try {
+      popupRef.current?.close();
+    } catch {
+      // Ignore popup close failures after auth completion.
+    }
+    resetPopupState();
     setSession(nextSession);
     setError(null);
     setIsSigningIn(false);
   }
 
-  function acceptStoredSession(): boolean {
-    const storedSession = getStoredSession();
-    if (!storedSession) {
-      return false;
+  async function pollPopupTransaction(): Promise<void> {
+    const transaction = transactionRef.current;
+    if (!transaction) {
+      return;
     }
 
-    acceptSession(storedSession);
-    return true;
-  }
-
-  async function acceptPopupRedirectSession(): Promise<boolean> {
-    const popup = popupRef.current;
-    if (!popup || popup.closed) {
-      return false;
-    }
-
-    let popupUrl: string;
     try {
-      popupUrl = popup.location.href;
-    } catch {
-      return false;
-    }
-
-    if (!popupUrl.startsWith(window.location.origin)) {
-      return false;
-    }
-
-    const url = new URL(popupUrl);
-    if (!url.searchParams.has("code")) {
-      return false;
-    }
-
-    return acceptAuthCodeUrl(popupUrl, popup);
-  }
-
-  async function acceptAuthCodeUrl(urlValue: string, sourceWindow: Window | null = null): Promise<boolean> {
-    if (authCodeExchangeRef.current) {
-      return false;
-    }
-
-    authCodeExchangeRef.current = true;
-    try {
-      const nextSession = await completeLoginFromUrl(urlValue);
-      if (!nextSession) {
-        return acceptStoredSession();
+      logAuthDebug("popup_status_poll", { transactionId: transaction.transactionId });
+      const response = await getPopupAuthStatus(transaction.transactionId, transaction.pollToken);
+      if (response.status === "completed") {
+        acceptSession(response.session);
+        return;
       }
 
-      sourceWindow?.close();
-      acceptSession(nextSession, sourceWindow);
-      return true;
-    } catch {
-      return acceptStoredSession();
-    } finally {
-      authCodeExchangeRef.current = false;
-    }
-  }
-
-  function checkClosedPopupDuringSignIn(): void {
-    if (!isSigningIn) {
+      if (response.status === "failed" || response.status === "consumed") {
+        logAuthDebug("popup_status_failed", { transactionId: transaction.transactionId, message: response.message });
+        stopSignIn(response.message || "サインインに失敗しました。もう一度お試しください。");
+        return;
+      }
+    } catch (unknownError) {
+      stopSignIn(
+        unknownError instanceof Error ? unknownError.message : "サインイン状態の確認に失敗しました。もう一度お試しください。",
+      );
       return;
     }
 
     const popup = popupRef.current;
-    if (!popup) {
-      return;
+    if (popup?.closed) {
+      const closedAt = transaction.popupClosedAt ?? Date.now();
+      transaction.popupClosedAt = closedAt;
+      if (Date.now() - closedAt >= popupClosedPendingGraceMs) {
+        stopSignIn("サインイン画面を閉じました。もう一度サインインしてください。");
+        return;
+      }
     }
 
-    if (!popup.closed) {
-      popupClosedAtRef.current = 0;
-      return;
+    if (Date.now() - transaction.startedAt >= popupWaitTimeoutMs) {
+      stopSignIn("サインインがタイムアウトしました。もう一度サインインしてください。");
     }
-
-    if (acceptStoredSession()) {
-      return;
-    }
-
-    if (popupOpenedAtRef.current && Date.now() - popupOpenedAtRef.current < popupOpenSettlingMs) {
-      return;
-    }
-
-    if (!popupClosedAtRef.current) {
-      popupClosedAtRef.current = Date.now();
-      return;
-    }
-
-    if (Date.now() - popupClosedAtRef.current < popupCloseGracePeriodMs) {
-      return;
-    }
-
-    stopSignInWaiting("サインイン画面を閉じました。もう一度サインインしてください。");
   }
 
   useEffect(() => {
     mountedRef.current = true;
-
-    function handleMessage(event: MessageEvent) {
-      if (isAuthCompleteMessage(event)) {
-        acceptSession(event.data.session, asWindow(event.source));
-        return;
-      }
-
-      if (isAuthCodePayload(event.data)) {
-        publishAuthCodeAck(asWindow(event.source));
-        void acceptAuthCodeUrl(event.data.url, asWindow(event.source));
-      }
-    }
-
-    function handleStorage(event: StorageEvent) {
-      if (event.key !== sessionKey) {
-        return;
-      }
-
-      acceptStoredSession();
-    }
-
-    function handleFocus() {
-      if (!isSigningIn && !popupRef.current) {
-        return;
-      }
-
-      acceptStoredSession();
-      void acceptPopupRedirectSession();
-      checkClosedPopupDuringSignIn();
-    }
-
-    function handleVisibilityChange() {
-      if (document.visibilityState === "visible") {
-        handleFocus();
-      }
-    }
-
-    let channel: BroadcastChannel | undefined;
-    if (typeof BroadcastChannel !== "undefined") {
-      channel = new BroadcastChannel(authBroadcastChannelName);
-      channel.addEventListener("message", (event: MessageEvent) => {
-        if (isAuthCompletePayload(event.data)) {
-          acceptSession(event.data.session);
-          return;
-        }
-
-        if (isAuthCodePayload(event.data)) {
-          void acceptAuthCodeUrl(event.data.url);
-        }
-      });
-    }
-
-    window.addEventListener("message", handleMessage);
-    window.addEventListener("storage", handleStorage);
-    window.addEventListener("focus", handleFocus);
-    document.addEventListener("visibilitychange", handleVisibilityChange);
-
-    void completeLoginFromRedirect()
-      .then((nextSession) => {
-        if (mountedRef.current && nextSession) {
-          acceptSession(nextSession);
-        }
-      })
-      .catch((unknownError) => {
-        if (mountedRef.current) {
-          setError(unknownError instanceof Error ? unknownError.message : "サインインに失敗しました。");
-        }
-      })
-      .finally(() => {
-        if (mountedRef.current) {
-          setIsLoading(false);
-        }
-      });
+    setSession(getStoredSession());
+    setIsLoading(false);
 
     return () => {
       mountedRef.current = false;
-      clearSignInTimer();
-      channel?.close();
-      window.removeEventListener("message", handleMessage);
-      window.removeEventListener("storage", handleStorage);
-      window.removeEventListener("focus", handleFocus);
-      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      clearPollTimer();
     };
-  }, [isSigningIn]);
+  }, []);
 
   async function handleSignIn() {
     setIsSigningIn(true);
     setError(null);
-    popupClosedAtRef.current = 0;
+    logAuthDebug("popup_sign_in_started");
 
+    let popup: Window | null = null;
     try {
-      popupRef.current = await startLoginPopup();
-      popupOpenedAtRef.current = Date.now();
-      const startedAt = Date.now();
+      popup = openLoginPopupWindow();
+      popupRef.current = popup;
 
-      clearSignInTimer();
-      signInTimerRef.current = window.setInterval(() => {
-        if (acceptStoredSession()) {
-          return;
-        }
+      const startResponse = await startPopupAuth({
+        redirectAfter: window.location.pathname + window.location.search,
+      });
 
-        void acceptPopupRedirectSession();
-        checkClosedPopupDuringSignIn();
+      transactionRef.current = {
+        ...startResponse,
+        startedAt: Date.now(),
+      };
+      logAuthDebug("popup_auth_transaction_created", {
+        transactionId: startResponse.transactionId,
+        expiresAt: startResponse.expiresAt,
+      });
 
-        if (Date.now() - startedAt > popupWaitTimeoutMs) {
-          stopSignInWaiting("サインインがタイムアウトしました。もう一度サインインしてください。");
-        }
-      }, 500);
+      popup.location.replace(startResponse.authorizationUrl);
+      clearPollTimer();
+      pollTimerRef.current = window.setInterval(() => {
+        void pollPopupTransaction();
+      }, popupPollIntervalMs);
+      void pollPopupTransaction();
     } catch (unknownError) {
-      stopSignInWaiting(unknownError instanceof Error ? unknownError.message : "サインインを開始できませんでした。");
+      try {
+        popup?.close();
+      } catch {
+        // Ignore popup close failures on startup error.
+      }
+      stopSignIn(
+        unknownError instanceof Error ? unknownError.message : "サインインの開始に失敗しました。もう一度お試しください。",
+      );
     }
   }
 
@@ -305,4 +177,15 @@ export default function AuthGate({ children }: Props) {
       })}
     </>
   );
+}
+
+function logAuthDebug(event: string, details: Record<string, unknown> = {}): void {
+  const shouldLog =
+    typeof window !== "undefined" &&
+    (localStorage.getItem(authDebugStorageKey) === "true" || import.meta.env.DEV);
+  if (!shouldLog) {
+    return;
+  }
+
+  console.debug("[tableau-auth]", event, details);
 }

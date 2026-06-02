@@ -19,6 +19,13 @@ export type AppConfig = {
     cognitoUserPoolId: string;
     cognitoClientId: string;
     cognitoRegion: string;
+    cognitoDomain: string;
+    popup: {
+      redirectUri: string;
+      transactionsTableName?: string;
+      transactionKeyParam?: string;
+      transactionTtlSeconds: number;
+    };
   };
   tableau: {
     serverUrl: string;
@@ -94,6 +101,13 @@ export function getConfig(): AppConfig {
       cognitoUserPoolId: process.env.COGNITO_USER_POOL_ID ?? "",
       cognitoClientId: process.env.COGNITO_CLIENT_ID ?? "",
       cognitoRegion: process.env.COGNITO_REGION ?? "",
+      cognitoDomain: process.env.COGNITO_DOMAIN ?? "",
+      popup: {
+        redirectUri: process.env.COGNITO_POPUP_REDIRECT_URI ?? "",
+        transactionsTableName: process.env.COGNITO_AUTH_TRANSACTIONS_TABLE,
+        transactionKeyParam: process.env.COGNITO_AUTH_TRANSACTION_KEY_PARAM,
+        transactionTtlSeconds: parsePositiveInt(process.env.COGNITO_AUTH_TRANSACTION_TTL_SECONDS, 600),
+      },
     },
     tableau: {
       serverUrl: process.env.TABLEAU_SERVER_URL ?? "",

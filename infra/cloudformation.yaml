@@ -65,6 +65,21 @@ Parameters:
   CognitoRegion:
     Type: String
     Default: ""
+  CognitoDomain:
+    Type: String
+    NoEcho: true
+    Default: ""
+  CognitoPopupRedirectUri:
+    Type: String
+    NoEcho: true
+    Default: ""
+  CognitoAuthTransactionKeyParam:
+    Type: String
+    NoEcho: true
+    Default: "/tableau-chat-extension/cognito/popup-auth-key"
+  CognitoAuthTransactionTtlSeconds:
+    Type: Number
+    Default: 600
   TableauMcpServerUrl:
     Type: String
     NoEcho: true
@@ -238,6 +253,32 @@ Resources:
       SSESpecification:
         SSEEnabled: true
 
+  CognitoAuthTransactionsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub "${AWS::StackName}-cognito-auth-transactions"
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: transactionId
+          AttributeType: S
+        - AttributeName: state
+          AttributeType: S
+      KeySchema:
+        - AttributeName: transactionId
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: StateIndex
+          KeySchema:
+            - AttributeName: state
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+      TimeToLiveSpecification:
+        AttributeName: expiresAt
+        Enabled: true
+      SSESpecification:
+        SSEEnabled: true
+
   ChatFunctionLogGroup:
     Type: AWS::Logs::LogGroup
     Properties:
@@ -287,10 +328,14 @@ Resources:
                 Resource:
                   - !GetAtt NotionConnectionsTable.Arn
                   - !GetAtt NotionOAuthStatesTable.Arn
+                  - !GetAtt CognitoAuthTransactionsTable.Arn
+                  - !Sub "${CognitoAuthTransactionsTable.Arn}/index/*"
               - Effect: Allow
                 Action:
                   - ssm:GetParameter
-                Resource: !Sub "arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter${NotionTokenEncryptionKeyParam}"
+                Resource:
+                  - !Sub "arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter${NotionTokenEncryptionKeyParam}"
+                  - !Sub "arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter${CognitoAuthTransactionKeyParam}"
               - Effect: Allow
                 Action:
                   - bedrock:InvokeModel
@@ -337,6 +382,11 @@ Resources:
           COGNITO_USER_POOL_ID: !Ref CognitoUserPoolId
           COGNITO_CLIENT_ID: !Ref CognitoClientId
           COGNITO_REGION: !Ref CognitoRegion
+          COGNITO_DOMAIN: !Ref CognitoDomain
+          COGNITO_POPUP_REDIRECT_URI: !Ref CognitoPopupRedirectUri
+          COGNITO_AUTH_TRANSACTIONS_TABLE: !Ref CognitoAuthTransactionsTable
+          COGNITO_AUTH_TRANSACTION_KEY_PARAM: !Ref CognitoAuthTransactionKeyParam
+          COGNITO_AUTH_TRANSACTION_TTL_SECONDS: !Sub "${CognitoAuthTransactionTtlSeconds}"
           TABLEAU_MCP_SERVER_URL: !Ref TableauMcpServerUrl
           TABLEAU_MCP_TRANSPORT: !Ref TableauMcpTransport
           TABLEAU_MCP_AUTH_MODE: !Ref TableauMcpAuthMode
@@ -395,6 +445,7 @@ Resources:
         AllowHeaders:
           - Content-Type
           - Authorization
+          - X-Auth-Poll-Token
         AllowMethods:
           - OPTIONS
           - GET
@@ -488,6 +539,27 @@ Resources:
       RouteKey: "POST /notion/create-post-idea"
       Target: !Sub "integrations/${ChatIntegration}"
 
+  CognitoPopupStartRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref HttpApi
+      RouteKey: "POST /auth/cognito/popup/start"
+      Target: !Sub "integrations/${ChatIntegration}"
+
+  CognitoPopupCallbackRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref HttpApi
+      RouteKey: "GET /auth/cognito/callback"
+      Target: !Sub "integrations/${ChatIntegration}"
+
+  CognitoPopupStatusRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref HttpApi
+      RouteKey: "GET /auth/cognito/popup/status"
+      Target: !Sub "integrations/${ChatIntegration}"
+
   ChatInvokePermission:
     Type: AWS::Lambda::Permission
     Properties:
@@ -551,6 +623,30 @@ Resources:
       FunctionName: !Ref ChatFunction
       Principal: apigateway.amazonaws.com
       SourceArn: !Sub "arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${HttpApi}/*/*/notion/create-post-idea"
+
+  CognitoPopupStartInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref ChatFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub "arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${HttpApi}/*/*/auth/cognito/popup/start"
+
+  CognitoPopupCallbackInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref ChatFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub "arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${HttpApi}/*/*/auth/cognito/callback"
+
+  CognitoPopupStatusInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref ChatFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub "arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${HttpApi}/*/*/auth/cognito/popup/status"
 
   HealthInvokePermission:
     Type: AWS::Lambda::Permission
