@@ -103,11 +103,19 @@ export class CognitoAuthTransactionRepository {
     const updates: string[] = [];
 
     for (const [key, value] of Object.entries(values)) {
+      if (value === undefined) {
+        continue;
+      }
+
       const nameKey = `#${key}`;
       const valueKey = `:${key}`;
       attributeNames[nameKey] = key;
       attributeValues[valueKey] = value;
       updates.push(`${nameKey} = ${valueKey}`);
+    }
+
+    if (updates.length === 0) {
+      return;
     }
 
     await getDynamoDbClient().send(
