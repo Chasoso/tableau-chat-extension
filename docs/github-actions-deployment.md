@@ -19,6 +19,8 @@ The workflow intentionally avoids printing AWS account IDs, ARNs, bucket names, 
 9. Sync `frontend/dist` to the private frontend S3 bucket.
 10. Invalidate CloudFront.
 
+The frontend upload keeps hashed files under `assets/` as append-only objects with long-lived cache headers, while `index.html` and `.trex` are uploaded with `no-cache`. This avoids a CloudFront/S3 race where an older cached `index.html` points at a hashed JS file that has already been deleted.
+
 ### GitHub Secrets
 
 Store these as GitHub Secrets:
@@ -124,6 +126,13 @@ One-time migration note: if the stack was previously deployed with the managed `
 ### Artifact Size Note
 
 The Lambda package now includes production `node_modules` because the MCP provider launches `@tableau/mcp-server` at runtime. If the package becomes too large or cold starts are too slow, move MCP dependencies into a Lambda Layer or a Lambda container image.
+
+### Frontend Cache Note
+
+- Do not delete older hashed frontend assets during deploys.
+- Upload `assets/` with long cache headers such as `public, max-age=31536000, immutable`.
+- Upload `index.html` and `tableau-chat-extension.trex` with `no-cache`.
+- Avoid CloudFront `404/403 -> /index.html` fallback for all paths, because missing JS/CSS files can otherwise return HTML and break the extension with module MIME errors.
 
 ### Logging Rules
 
