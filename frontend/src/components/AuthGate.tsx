@@ -5,12 +5,11 @@ import {
   completeLoginFromRedirect,
   completeLoginFromUrl,
   getStoredSession,
-  isAuthCodeAckMessage,
-  isAuthCodeMessage,
   isAuthCodePayload,
   isAuthCompleteMessage,
   isAuthCompletePayload,
   publishAuthCodeAck,
+  publishAuthCompleteAck,
   sessionKey,
   startLoginPopup,
   storeSession,
@@ -18,7 +17,8 @@ import {
 import type { AuthSession } from "../types/auth";
 
 const popupWaitTimeoutMs = 5 * 60 * 1000;
-const popupCloseGracePeriodMs = 6_000;
+const popupCloseGracePeriodMs = 4_000;
+const popupOpenSettlingMs = 2_000;
 
 export type AuthGateRenderState = {
   session: AuthSession | null;
@@ -32,15 +32,21 @@ type Props = {
   children: (state: AuthGateRenderState) => React.ReactNode;
 };
 
+function asWindow(source: MessageEventSource | null): Window | null {
+  if (source && typeof (source as Window).postMessage === "function") {
+    return source as Window;
+  }
+
+  return null;
+}
+
 export default function AuthGate({ children }: Props) {
   const mountedRef = useRef(false);
   const popupRef = useRef<Window | null>(null);
-  const popupOpenedAtRef = useRef<number>(0);
-  const sessionPollerRef = useRef<number | undefined>(undefined);
+  const popupOpenedAtRef = useRef(0);
+  const popupClosedAtRef = useRef(0);
   const signInTimerRef = useRef<number | undefined>(undefined);
-  const popupCloseGuardRef = useRef<number | undefined>(undefined);
   const authCodeExchangeRef = useRef(false);
-  const authPopupHandoffObservedRef = useRef(false);
   const [session, setSession] = useState<AuthSession | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -53,18 +59,10 @@ export default function AuthGate({ children }: Props) {
     }
   }
 
-  function clearPopupCloseGuard(): void {
-    if (popupCloseGuardRef.current) {
-      window.clearTimeout(popupCloseGuardRef.current);
-      popupCloseGuardRef.current = undefined;
-    }
-  }
-
   function resetPopupTracking(): void {
     popupRef.current = null;
     popupOpenedAtRef.current = 0;
-    authPopupHandoffObservedRef.current = false;
-    clearPopupCloseGuard();
+    popupClosedAtRef.current = 0;
   }
 
   function stopSignInWaiting(message?: string): void {
@@ -76,7 +74,11 @@ export default function AuthGate({ children }: Props) {
     }
   }
 
-  function acceptSession(nextSession: AuthSession): void {
+  function acceptSession(nextSession: AuthSession, sourceWindow: Window | null = null): void {
+    if (sourceWindow) {
+      publishAuthCompleteAck(sourceWindow);
+    }
+
     storeSession(nextSession);
     clearSignInTimer();
     resetPopupTracking();
@@ -117,11 +119,10 @@ export default function AuthGate({ children }: Props) {
       return false;
     }
 
-    authPopupHandoffObservedRef.current = true;
-    return acceptAuthCodeUrl(popupUrl);
+    return acceptAuthCodeUrl(popupUrl, popup);
   }
 
-  async function acceptAuthCodeUrl(urlValue: string): Promise<boolean> {
+  async function acceptAuthCodeUrl(urlValue: string, sourceWindow: Window | null = null): Promise<boolean> {
     if (authCodeExchangeRef.current) {
       return false;
     }
@@ -133,8 +134,8 @@ export default function AuthGate({ children }: Props) {
         return acceptStoredSession();
       }
 
-      popupRef.current?.close();
-      acceptSession(nextSession);
+      sourceWindow?.close();
+      acceptSession(nextSession, sourceWindow);
       return true;
     } catch {
       return acceptStoredSession();
@@ -143,71 +144,53 @@ export default function AuthGate({ children }: Props) {
     }
   }
 
-  function startSessionPolling(durationMs = 15_000): void {
-    if (sessionPollerRef.current) {
-      window.clearInterval(sessionPollerRef.current);
-    }
-
-    const startedAt = Date.now();
-    sessionPollerRef.current = window.setInterval(() => {
-      void acceptPopupRedirectSession();
-      if (!mountedRef.current || acceptStoredSession() || Date.now() - startedAt > durationMs) {
-        if (sessionPollerRef.current) {
-          window.clearInterval(sessionPollerRef.current);
-          sessionPollerRef.current = undefined;
-        }
-      }
-    }, 250);
-  }
-
-  function checkClosedPopupAfterFocus(): void {
+  function checkClosedPopupDuringSignIn(): void {
     if (!isSigningIn) {
       return;
     }
 
     const popup = popupRef.current;
-    if (!popup?.closed) {
+    if (!popup) {
       return;
     }
 
-    clearPopupCloseGuard();
-    popupCloseGuardRef.current = window.setTimeout(() => {
-      if (acceptStoredSession()) {
-        return;
-      }
+    if (!popup.closed) {
+      popupClosedAtRef.current = 0;
+      return;
+    }
 
-      if (popupOpenedAtRef.current && Date.now() - popupOpenedAtRef.current < 2_000) {
-        return;
-      }
+    if (acceptStoredSession()) {
+      return;
+    }
 
-      if (authCodeExchangeRef.current || authPopupHandoffObservedRef.current) {
-        return;
-      }
+    if (popupOpenedAtRef.current && Date.now() - popupOpenedAtRef.current < popupOpenSettlingMs) {
+      return;
+    }
 
-      if (popupRef.current?.closed) {
-        stopSignInWaiting("サインイン画面を閉じました。もう一度サインインしてください。");
-      }
-    }, popupCloseGracePeriodMs);
+    if (!popupClosedAtRef.current) {
+      popupClosedAtRef.current = Date.now();
+      return;
+    }
+
+    if (Date.now() - popupClosedAtRef.current < popupCloseGracePeriodMs) {
+      return;
+    }
+
+    stopSignInWaiting("サインイン画面を閉じました。もう一度サインインしてください。");
   }
 
   useEffect(() => {
     mountedRef.current = true;
 
-    function handleMessage(message: MessageEvent) {
-      if (isAuthCompleteMessage(message)) {
-        acceptSession(message.data.session);
+    function handleMessage(event: MessageEvent) {
+      if (isAuthCompleteMessage(event)) {
+        acceptSession(event.data.session, asWindow(event.source));
         return;
       }
 
-      if (isAuthCodeMessage(message)) {
-        authPopupHandoffObservedRef.current = true;
-        publishAuthCodeAck(popupRef.current);
-        void acceptAuthCodeUrl(message.data.url);
-        return;
-      }
-
-      if (isAuthCodeAckMessage(message)) {
-        return;
+      if (isAuthCodePayload(event.data)) {
+        publishAuthCodeAck(asWindow(event.source));
+        void acceptAuthCodeUrl(event.data.url, asWindow(event.source));
       }
     }
 
@@ -223,17 +206,16 @@ export default function AuthGate({ children }: Props) {
       if (!isSigningIn && !popupRef.current) {
         return;
       }
+
       acceptStoredSession();
-      startSessionPolling(5_000);
-      checkClosedPopupAfterFocus();
+      void acceptPopupRedirectSession();
+      checkClosedPopupDuringSignIn();
     }
 
     function handleVisibilityChange() {
-      if (document.visibilityState !== "visible") {
-        return;
+      if (document.visibilityState === "visible") {
+        handleFocus();
       }
-
-      handleFocus();
     }
 
     let channel: BroadcastChannel | undefined;
@@ -246,7 +228,6 @@ export default function AuthGate({ children }: Props) {
         }
 
         if (isAuthCodePayload(event.data)) {
-          authPopupHandoffObservedRef.current = true;
           void acceptAuthCodeUrl(event.data.url);
         }
       });
@@ -256,6 +237,7 @@ export default function AuthGate({ children }: Props) {
     window.addEventListener("storage", handleStorage);
     window.addEventListener("focus", handleFocus);
     document.addEventListener("visibilitychange", handleVisibilityChange);
+
     void completeLoginFromRedirect()
       .then((nextSession) => {
         if (mountedRef.current && nextSession) {
@@ -275,37 +257,33 @@ export default function AuthGate({ children }: Props) {
 
     return () => {
       mountedRef.current = false;
-      if (sessionPollerRef.current) {
-        window.clearInterval(sessionPollerRef.current);
-      }
       clearSignInTimer();
-      clearPopupCloseGuard();
       channel?.close();
       window.removeEventListener("message", handleMessage);
       window.removeEventListener("storage", handleStorage);
       window.removeEventListener("focus", handleFocus);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
-  }, []);
+  }, [isSigningIn]);
 
   async function handleSignIn() {
     setIsSigningIn(true);
     setError(null);
-    authPopupHandoffObservedRef.current = false;
-    clearPopupCloseGuard();
+    popupClosedAtRef.current = 0;
 
     try {
       popupRef.current = await startLoginPopup();
       popupOpenedAtRef.current = Date.now();
       const startedAt = Date.now();
-      startSessionPolling(popupWaitTimeoutMs);
 
+      clearSignInTimer();
       signInTimerRef.current = window.setInterval(() => {
         if (acceptStoredSession()) {
           return;
         }
 
         void acceptPopupRedirectSession();
+        checkClosedPopupDuringSignIn();
 
         if (Date.now() - startedAt > popupWaitTimeoutMs) {
           stopSignInWaiting("サインインがタイムアウトしました。もう一度サインインしてください。");

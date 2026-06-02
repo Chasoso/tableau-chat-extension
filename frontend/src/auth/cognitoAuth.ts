@@ -4,6 +4,7 @@ import type { AuthSession } from "../types/auth";
 const sessionKey = "tableau-chat.auth.session";
 const verifierKeyPrefix = "tableau-chat.auth.pkce.verifier.";
 const authMessageType = "tableau-chat.auth.complete";
+const authCompleteAckMessageType = "tableau-chat.auth.complete-ack";
 const authCodeMessageType = "tableau-chat.auth.code";
 const authCodeAckMessageType = "tableau-chat.auth.code-ack";
 const authBroadcastChannelName = "tableau-chat.auth";
@@ -12,6 +13,10 @@ const parentHandledStatePrefix = "parent.";
 export type AuthCompleteMessage = {
   type: typeof authMessageType;
   session: AuthSession;
+};
+
+export type AuthCompleteAckMessage = {
+  type: typeof authCompleteAckMessageType;
 };
 
 export type AuthCodeMessage = {
@@ -45,6 +50,7 @@ export async function completeLoginFromRedirect(): Promise<AuthSession | null> {
   const url = new URL(window.location.href);
   url.searchParams.delete("code");
   url.searchParams.delete("state");
+  url.searchParams.delete("auth_action");
   window.history.replaceState({}, document.title, url.toString());
   return session;
 }
@@ -63,7 +69,7 @@ export async function completeLoginFromUrl(urlValue: string): Promise<AuthSessio
 
   const verifier = localStorage.getItem(getVerifierKey(state));
   if (!verifier) {
-    throw new Error("サインインセッションの有効期限が切れました。もう一度サインインしてください。");
+    throw new Error("サインインセッションの期限が切れました。もう一度サインインしてください。");
   }
 
   const tokenResponse = await fetch(`${getCognitoDomain()}/oauth2/token`, {
@@ -81,7 +87,7 @@ export async function completeLoginFromUrl(urlValue: string): Promise<AuthSessio
   });
 
   if (!tokenResponse.ok) {
-    throw new Error("Cognitoサインインに失敗しました。");
+    throw new Error("Cognito サインインに失敗しました。");
   }
 
   const body = (await tokenResponse.json()) as {
@@ -104,23 +110,17 @@ export async function completeLoginFromUrl(urlValue: string): Promise<AuthSessio
 }
 
 export async function startLogin(): Promise<void> {
-  const loginUrl = await createLoginUrl("redirect");
+  const loginUrl = await createLoginUrl();
   window.location.assign(loginUrl);
 }
 
 export async function startLoginPopup(): Promise<Window> {
-  const popup = window.open("about:blank", "tableau-chat-cognito-login", "popup,width=520,height=720");
+  const popup = window.open(getPopupStartUrl(), "tableau-chat-cognito-login", "popup,width=520,height=720");
   if (!popup) {
     throw new Error("サインインウィンドウを開けませんでした。このサイトのポップアップを許可してください。");
   }
+
   popup.focus();
-  try {
-    const loginUrl = await createLoginUrl("popup");
-    popup.location.assign(loginUrl);
-  } catch (error) {
-    popup.close();
-    throw error;
-  }
   return popup;
 }
 
@@ -144,6 +144,19 @@ export function isAuthCompletePayload(payload: unknown): payload is AuthComplete
     "session" in payload &&
     (payload as AuthCompleteMessage).type === authMessageType &&
     Boolean((payload as AuthCompleteMessage).session)
+  );
+}
+
+export function isAuthCompleteAckMessage(message: MessageEvent): message is MessageEvent<AuthCompleteAckMessage> {
+  return message.origin === window.location.origin && isAuthCompleteAckPayload(message.data);
+}
+
+export function isAuthCompleteAckPayload(payload: unknown): payload is AuthCompleteAckMessage {
+  return (
+    typeof payload === "object" &&
+    payload !== null &&
+    "type" in payload &&
+    (payload as AuthCompleteAckMessage).type === authCompleteAckMessageType
   );
 }
 
@@ -199,22 +212,8 @@ export function publishAuthCodeAck(targetWindow: Window | null = window.opener):
   notifyPopupAuthCodeAck(targetWindow);
 }
 
-async function createLoginUrl(flow: "redirect" | "popup"): Promise<string> {
-  assertAuthConfigured();
-  const verifier = randomBase64Url(32);
-  const state = `${flow === "popup" ? parentHandledStatePrefix : ""}${randomBase64Url(16)}`;
-  const challenge = await sha256Base64Url(verifier);
-  localStorage.setItem(getVerifierKey(state), verifier);
-
-  const authUrl = new URL(`${getCognitoDomain()}/oauth2/authorize`);
-  authUrl.searchParams.set("client_id", env.cognito.clientId);
-  authUrl.searchParams.set("response_type", "code");
-  authUrl.searchParams.set("scope", "openid email profile");
-  authUrl.searchParams.set("redirect_uri", getRedirectUri());
-  authUrl.searchParams.set("state", state);
-  authUrl.searchParams.set("code_challenge_method", "S256");
-  authUrl.searchParams.set("code_challenge", challenge);
-  return authUrl.toString();
+export function publishAuthCompleteAck(targetWindow: Window | null = window.opener): void {
+  notifyPopupAuthCompleteAck(targetWindow);
 }
 
 export function signOut(): void {
@@ -232,8 +231,26 @@ export function signOut(): void {
 
 export function assertAuthConfigured(): void {
   if (!env.cognito.clientId || !env.cognito.domain) {
-    throw new Error("Cognito Hosted UIが設定されていません。");
+    throw new Error("Cognito Hosted UI が設定されていません。");
   }
+}
+
+async function createLoginUrl(): Promise<string> {
+  assertAuthConfigured();
+  const verifier = randomBase64Url(32);
+  const state = randomBase64Url(16);
+  const challenge = await sha256Base64Url(verifier);
+  localStorage.setItem(getVerifierKey(state), verifier);
+
+  const authUrl = new URL(`${getCognitoDomain()}/oauth2/authorize`);
+  authUrl.searchParams.set("client_id", env.cognito.clientId);
+  authUrl.searchParams.set("response_type", "code");
+  authUrl.searchParams.set("scope", "openid email profile");
+  authUrl.searchParams.set("redirect_uri", getRedirectUri());
+  authUrl.searchParams.set("state", state);
+  authUrl.searchParams.set("code_challenge_method", "S256");
+  authUrl.searchParams.set("code_challenge", challenge);
+  return authUrl.toString();
 }
 
 function clearSession(): void {
@@ -330,6 +347,19 @@ function notifyPopupAuthCodeAck(targetWindow: Window | null): void {
     {
       type: authCodeAckMessageType,
     } satisfies AuthCodeAckMessage,
+    window.location.origin,
+  );
+}
+
+function notifyPopupAuthCompleteAck(targetWindow: Window | null): void {
+  if (!targetWindow) {
+    return;
+  }
+
+  targetWindow.postMessage(
+    {
+      type: authCompleteAckMessageType,
+    } satisfies AuthCompleteAckMessage,
     window.location.origin,
   );
 }
