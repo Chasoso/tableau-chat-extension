@@ -5,10 +5,12 @@ import {
   completeLoginFromRedirect,
   completeLoginFromUrl,
   getStoredSession,
+  isAuthCodeAckMessage,
   isAuthCodeMessage,
   isAuthCodePayload,
   isAuthCompleteMessage,
   isAuthCompletePayload,
+  publishAuthCodeAck,
   sessionKey,
   startLoginPopup,
   storeSession,
@@ -16,6 +18,7 @@ import {
 import type { AuthSession } from "../types/auth";
 
 const popupWaitTimeoutMs = 5 * 60 * 1000;
+const popupCloseGracePeriodMs = 6_000;
 
 export type AuthGateRenderState = {
   session: AuthSession | null;
@@ -34,7 +37,9 @@ export default function AuthGate({ children }: Props) {
   const popupRef = useRef<Window | null>(null);
   const sessionPollerRef = useRef<number | undefined>(undefined);
   const signInTimerRef = useRef<number | undefined>(undefined);
+  const popupCloseGuardRef = useRef<number | undefined>(undefined);
   const authCodeExchangeRef = useRef(false);
+  const authPopupHandoffObservedRef = useRef(false);
   const [session, setSession] = useState<AuthSession | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -47,9 +52,22 @@ export default function AuthGate({ children }: Props) {
     }
   }
 
+  function clearPopupCloseGuard(): void {
+    if (popupCloseGuardRef.current) {
+      window.clearTimeout(popupCloseGuardRef.current);
+      popupCloseGuardRef.current = undefined;
+    }
+  }
+
+  function resetPopupTracking(): void {
+    popupRef.current = null;
+    authPopupHandoffObservedRef.current = false;
+    clearPopupCloseGuard();
+  }
+
   function stopSignInWaiting(message?: string): void {
     clearSignInTimer();
-    popupRef.current = null;
+    resetPopupTracking();
     setIsSigningIn(false);
     if (message) {
       setError(message);
@@ -59,7 +77,7 @@ export default function AuthGate({ children }: Props) {
   function acceptSession(nextSession: AuthSession): void {
     storeSession(nextSession);
     clearSignInTimer();
-    popupRef.current = null;
+    resetPopupTracking();
     setSession(nextSession);
     setError(null);
     setIsSigningIn(false);
@@ -97,6 +115,7 @@ export default function AuthGate({ children }: Props) {
       return false;
     }
 
+    authPopupHandoffObservedRef.current = true;
     return acceptAuthCodeUrl(popupUrl);
   }
 
@@ -145,15 +164,20 @@ export default function AuthGate({ children }: Props) {
       return;
     }
 
-    window.setTimeout(() => {
+    clearPopupCloseGuard();
+    popupCloseGuardRef.current = window.setTimeout(() => {
       if (acceptStoredSession()) {
+        return;
+      }
+
+      if (authCodeExchangeRef.current || authPopupHandoffObservedRef.current) {
         return;
       }
 
       if (popupRef.current?.closed) {
         stopSignInWaiting("サインイン画面を閉じました。もう一度サインインしてください。");
       }
-    }, 3_000);
+    }, popupCloseGracePeriodMs);
   }
 
   useEffect(() => {
@@ -166,7 +190,14 @@ export default function AuthGate({ children }: Props) {
       }
 
       if (isAuthCodeMessage(message)) {
+        authPopupHandoffObservedRef.current = true;
+        publishAuthCodeAck(popupRef.current);
         void acceptAuthCodeUrl(message.data.url);
+        return;
+      }
+
+      if (isAuthCodeAckMessage(message)) {
+        return;
       }
     }
 
@@ -194,6 +225,7 @@ export default function AuthGate({ children }: Props) {
         }
 
         if (isAuthCodePayload(event.data)) {
+          authPopupHandoffObservedRef.current = true;
           void acceptAuthCodeUrl(event.data.url);
         }
       });
@@ -203,7 +235,7 @@ export default function AuthGate({ children }: Props) {
     window.addEventListener("storage", handleStorage);
     window.addEventListener("focus", handleFocus);
     document.addEventListener("visibilitychange", handleFocus);
-    completeLoginFromRedirect()
+    void completeLoginFromRedirect()
       .then((nextSession) => {
         if (mountedRef.current && nextSession) {
           acceptSession(nextSession);
@@ -226,6 +258,7 @@ export default function AuthGate({ children }: Props) {
         window.clearInterval(sessionPollerRef.current);
       }
       clearSignInTimer();
+      clearPopupCloseGuard();
       channel?.close();
       window.removeEventListener("message", handleMessage);
       window.removeEventListener("storage", handleStorage);
@@ -237,6 +270,8 @@ export default function AuthGate({ children }: Props) {
   async function handleSignIn() {
     setIsSigningIn(true);
     setError(null);
+    authPopupHandoffObservedRef.current = false;
+    clearPopupCloseGuard();
 
     try {
       popupRef.current = await startLoginPopup();
@@ -250,8 +285,6 @@ export default function AuthGate({ children }: Props) {
 
         void acceptPopupRedirectSession();
 
-        // popup.closed can be unreliable while Cognito moves between Hosted UI
-        // steps. A hard timeout is still useful for abandoned sign-in attempts.
         if (Date.now() - startedAt > popupWaitTimeoutMs) {
           stopSignInWaiting("サインインがタイムアウトしました。もう一度サインインしてください。");
         }

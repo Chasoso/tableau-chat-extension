@@ -1,28 +1,49 @@
 import { useEffect, useState } from "react";
 import {
   completeLoginFromRedirect,
+  isAuthCodeAckMessage,
   isParentHandledAuthRedirect,
   publishAuthCode,
   publishAuthSession,
 } from "../auth/cognitoAuth";
 
+const popupAutoCloseTimeoutMs = 15_000;
+
 export default function AuthCallback() {
-  const [message, setMessage] = useState("サインインを完了しています...");
+  const [message, setMessage] = useState("サインイン結果を確認しています...");
 
   useEffect(() => {
     let interval: number | undefined;
     let closeTimer: number | undefined;
 
     if (isParentHandledAuthRedirect()) {
-      setMessage("サインイン結果を元の画面へ渡しています。このウィンドウは自動で閉じます。");
+      setMessage("サインイン結果を親画面へ送信しています。このウィンドウは自動で閉じます。");
+
+      const handleAck = (event: MessageEvent) => {
+        if (!isAuthCodeAckMessage(event)) {
+          return;
+        }
+
+        if (interval) {
+          window.clearInterval(interval);
+        }
+        if (closeTimer) {
+          window.clearTimeout(closeTimer);
+        }
+        window.close();
+      };
+
+      window.addEventListener("message", handleAck);
       interval = window.setInterval(() => publishAuthCode(), 250);
       closeTimer = window.setTimeout(() => {
         if (interval) {
           window.clearInterval(interval);
         }
         window.close();
-      }, 4_000);
+      }, popupAutoCloseTimeoutMs);
+
       return () => {
+        window.removeEventListener("message", handleAck);
         if (interval) {
           window.clearInterval(interval);
         }
@@ -32,17 +53,15 @@ export default function AuthCallback() {
       };
     }
 
-    completeLoginFromRedirect()
+    void completeLoginFromRedirect()
       .then((session) => {
         if (!session) {
-          setMessage("サインイン結果が見つかりませんでした。");
+          setMessage("サインイン結果を確認できませんでした。");
           return;
         }
 
-        setMessage("サインイン結果を元の画面へ渡しています。このウィンドウは自動で閉じます。");
+        setMessage("サインイン結果を親画面へ送信しています。このウィンドウは自動で閉じます。");
 
-        // Tableau Cloud iframe can miss a one-shot popup message, so repeat the
-        // same-origin handoff briefly before closing the popup.
         interval = window.setInterval(() => publishAuthSession(session), 250);
         closeTimer = window.setTimeout(() => {
           if (interval) {

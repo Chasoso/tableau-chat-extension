@@ -5,6 +5,7 @@ const sessionKey = "tableau-chat.auth.session";
 const verifierKeyPrefix = "tableau-chat.auth.pkce.verifier.";
 const authMessageType = "tableau-chat.auth.complete";
 const authCodeMessageType = "tableau-chat.auth.code";
+const authCodeAckMessageType = "tableau-chat.auth.code-ack";
 const authBroadcastChannelName = "tableau-chat.auth";
 const parentHandledStatePrefix = "parent.";
 
@@ -16,6 +17,10 @@ export type AuthCompleteMessage = {
 export type AuthCodeMessage = {
   type: typeof authCodeMessageType;
   url: string;
+};
+
+export type AuthCodeAckMessage = {
+  type: typeof authCodeAckMessageType;
 };
 
 export { authBroadcastChannelName, authMessageType, sessionKey };
@@ -157,6 +162,19 @@ export function isAuthCodePayload(payload: unknown): payload is AuthCodeMessage 
   );
 }
 
+export function isAuthCodeAckMessage(message: MessageEvent): message is MessageEvent<AuthCodeAckMessage> {
+  return message.origin === window.location.origin && isAuthCodeAckPayload(message.data);
+}
+
+export function isAuthCodeAckPayload(payload: unknown): payload is AuthCodeAckMessage {
+  return (
+    typeof payload === "object" &&
+    payload !== null &&
+    "type" in payload &&
+    (payload as AuthCodeAckMessage).type === authCodeAckMessageType
+  );
+}
+
 export function storeSession(session: AuthSession): void {
   localStorage.setItem(sessionKey, JSON.stringify(session));
 }
@@ -175,6 +193,10 @@ export function isParentHandledAuthRedirect(urlValue = window.location.href): bo
 export function publishAuthCode(urlValue = window.location.href): void {
   notifyOpenerAuthCode(urlValue);
   notifyBroadcastChannelAuthCode(urlValue);
+}
+
+export function publishAuthCodeAck(targetWindow: Window | null = window.opener): void {
+  notifyPopupAuthCodeAck(targetWindow);
 }
 
 async function createLoginUrl(flow: "redirect" | "popup"): Promise<string> {
@@ -297,6 +319,19 @@ function notifyBroadcastChannelAuthCode(urlValue: string): void {
     url: urlValue,
   } satisfies AuthCodeMessage);
   channel.close();
+}
+
+function notifyPopupAuthCodeAck(targetWindow: Window | null): void {
+  if (!targetWindow) {
+    return;
+  }
+
+  targetWindow.postMessage(
+    {
+      type: authCodeAckMessageType,
+    } satisfies AuthCodeAckMessage,
+    window.location.origin,
+  );
 }
 
 function getVerifierKey(state: string): string {
