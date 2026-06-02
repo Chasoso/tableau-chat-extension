@@ -321,6 +321,12 @@ Resources:
                 Resource: !GetAtt ChatHistoryTable.Arn
               - Effect: Allow
                 Action:
+                  - dynamodb:Query
+                Resource:
+                  - !GetAtt CognitoAuthTransactionsTable.Arn
+                  - !Sub "${CognitoAuthTransactionsTable.Arn}/index/*"
+              - Effect: Allow
+                Action:
                   - dynamodb:GetItem
                   - dynamodb:PutItem
                   - dynamodb:UpdateItem
