@@ -746,6 +746,214 @@ describe("TableauMcpContextProvider extraction helpers", () => {
     }
   });
 
+  it("builds a full-year query filter for a year-only question", () => {
+    const intent: ClassifiedQuestionIntent = {
+      intent: "metadata_lookup",
+      confidence: 0.85,
+      reasonBrief: "Need datasource metadata first.",
+      answerableFromDashboardContext: false,
+      needsMcp: true,
+      maxToolCalls: 5,
+    };
+    const tools = [
+      {
+        name: "query-datasource",
+        inputSchema: {
+          type: "object",
+          required: ["datasourceLuid", "query"],
+          properties: {
+            datasourceLuid: { type: "string" },
+            query: { type: "object" },
+            limit: { type: "number" },
+          },
+        },
+      },
+      { name: "list-datasources", inputSchema: { type: "object", properties: { limit: { type: "number" } } } },
+      { name: "get-datasource-metadata", inputSchema: { type: "object", properties: { datasourceLuid: { type: "string" } } } },
+    ];
+
+    const selection = buildDataAnalysisQueryRecoverySelection({
+      tools,
+      allowedToolNames: tools.map((tool) => tool.name),
+      input: {
+        ...baseInput,
+        question: "2026年に最もFavoriteを集めたVizをランキング形式で教えてください。",
+        dashboardContext: {
+          ...baseInput.dashboardContext,
+          capturedAt: "2026-06-03T00:00:00.000Z",
+          dataSources: [{ name: "Tableau Public Per Day(2025/04-)" }],
+        },
+      },
+      intent,
+      calledToolNames: new Set(["list-datasources", "get-datasource-metadata"]),
+      rawToolResults: [
+        {
+          toolName: "list-datasources",
+          result: {
+            content: [
+              {
+                text: JSON.stringify([
+                  {
+                    name: "Tableau Public Per Day(2025/04-)",
+                    id: "ds-123",
+                    project: { name: "Sandbox" },
+                  },
+                ]),
+              },
+            ],
+          },
+        },
+        {
+          toolName: "get-datasource-metadata",
+          result: {
+            content: [
+              {
+                text: JSON.stringify({
+                  datasourceModel: {
+                    name: "Tableau Public Per Day(2025/04-)",
+                    fields: [{ name: "Datetime(JST)" }, { name: "workbook_title" }, { name: "workbook_favoriteCount" }],
+                  },
+                }),
+              },
+            ],
+          },
+        },
+      ],
+      observations: [],
+      remainingToolBudget: 2,
+    });
+
+    expect(selection?.status).toBe("ready");
+    if (selection?.status === "ready") {
+      expect(selection.arguments.query).toEqual({
+        fields: [
+          { fieldCaption: "workbook_title", fieldAlias: "Dimension" },
+          {
+            fieldCaption: "workbook_favoriteCount",
+            function: "SUM",
+            fieldAlias: "Aggregated Value",
+            sortDirection: "DESC",
+            sortPriority: 1,
+          },
+        ],
+        filters: [
+          {
+            field: { fieldCaption: "Datetime(JST)" },
+            filterType: "QUANTITATIVE_DATE",
+            quantitativeFilterType: "RANGE",
+            minDate: "2026-01-01",
+            maxDate: "2026-12-31",
+            includeNulls: false,
+          },
+        ],
+      });
+    }
+  });
+
+  it("builds a rolling week query filter for a relative-period question", () => {
+    const intent: ClassifiedQuestionIntent = {
+      intent: "metadata_lookup",
+      confidence: 0.85,
+      reasonBrief: "Need datasource metadata first.",
+      answerableFromDashboardContext: false,
+      needsMcp: true,
+      maxToolCalls: 5,
+    };
+    const tools = [
+      {
+        name: "query-datasource",
+        inputSchema: {
+          type: "object",
+          required: ["datasourceLuid", "query"],
+          properties: {
+            datasourceLuid: { type: "string" },
+            query: { type: "object" },
+            limit: { type: "number" },
+          },
+        },
+      },
+      { name: "list-datasources", inputSchema: { type: "object", properties: { limit: { type: "number" } } } },
+      { name: "get-datasource-metadata", inputSchema: { type: "object", properties: { datasourceLuid: { type: "string" } } } },
+    ];
+
+    const selection = buildDataAnalysisQueryRecoverySelection({
+      tools,
+      allowedToolNames: tools.map((tool) => tool.name),
+      input: {
+        ...baseInput,
+        question: "直近1週間で最もFavoriteを集めたVizをランキング形式で教えてください。",
+        dashboardContext: {
+          ...baseInput.dashboardContext,
+          capturedAt: "2026-06-03T00:00:00.000Z",
+          dataSources: [{ name: "Tableau Public Per Day(2025/04-)" }],
+        },
+      },
+      intent,
+      calledToolNames: new Set(["list-datasources", "get-datasource-metadata"]),
+      rawToolResults: [
+        {
+          toolName: "list-datasources",
+          result: {
+            content: [
+              {
+                text: JSON.stringify([
+                  {
+                    name: "Tableau Public Per Day(2025/04-)",
+                    id: "ds-123",
+                    project: { name: "Sandbox" },
+                  },
+                ]),
+              },
+            ],
+          },
+        },
+        {
+          toolName: "get-datasource-metadata",
+          result: {
+            content: [
+              {
+                text: JSON.stringify({
+                  datasourceModel: {
+                    name: "Tableau Public Per Day(2025/04-)",
+                    fields: [{ name: "Datetime(JST)" }, { name: "workbook_title" }, { name: "workbook_favoriteCount" }],
+                  },
+                }),
+              },
+            ],
+          },
+        },
+      ],
+      observations: [],
+      remainingToolBudget: 2,
+    });
+
+    expect(selection?.status).toBe("ready");
+    if (selection?.status === "ready") {
+      expect(selection.arguments.query).toEqual({
+        fields: [
+          { fieldCaption: "workbook_title", fieldAlias: "Dimension" },
+          {
+            fieldCaption: "workbook_favoriteCount",
+            function: "SUM",
+            fieldAlias: "Aggregated Value",
+            sortDirection: "DESC",
+            sortPriority: 1,
+          },
+        ],
+        filters: [
+          {
+            field: { fieldCaption: "Datetime(JST)" },
+            filterType: "QUANTITATIVE_DATE",
+            quantitativeFilterType: "RANGE",
+            minDate: "2026-05-28",
+            maxDate: "2026-06-03",
+            includeNulls: false,
+          },
+        ],
+      });
+    }
+  });
+
   it("keeps narrowed datasource matches and avoids re-expanding to list-datasources full set", () => {
     const normalized = normalizeTableauContext({
       dashboardContext: {

@@ -323,6 +323,102 @@ describe("ChatService with mock provider", () => {
     expect(formatted).toContain("Tableau Public Per Day(2025/04-)");
   });
 
+  it("formats a year-only ranking answer with a year label", () => {
+    const formatted = buildStructuredDataAnalysisAnswer(
+      {
+        question: "2026年に最もFavoriteを集めたVizをランキング形式で教えてください。",
+        dashboardContext: {
+          dashboardName: "Statistics",
+          worksheets: [{ name: "Views" }],
+          filters: [],
+          parameters: [],
+          dataSources: [{ name: "Tableau Public Per Day(2025/04-)" }],
+          capturedAt: "2026-06-03T00:00:00.000Z",
+        },
+      },
+      {
+        provider: "tableau-mcp",
+        queryInsights: [
+          {
+            datasourceName: "Tableau Public Per Day(2025/04-)",
+            datasourceLuid: "ds-123",
+            dimensionField: "workbook_title",
+            metricField: "workbook_favoriteCount",
+            rowCount: 2,
+            rows: [
+              { label: "Viz A", value: 120 },
+              { label: "Viz B", value: 88 },
+            ],
+          },
+        ],
+        mcpExecutionDebug: {
+          intent: "data_analysis",
+          intentConfidence: 0.95,
+          answerableFromDashboardContext: false,
+          needsMcp: true,
+          maxToolCalls: 8,
+          plannedTools: ["list-datasources", "get-datasource-metadata", "query-datasource"],
+          blockedTools: [],
+          executedTools: ["list-datasources", "get-datasource-metadata", "query-datasource"],
+          skippedTools: [],
+          toolCallCount: 3,
+          replanUsed: true,
+          timingMs: { planning: 0, execution: 0 },
+        },
+      },
+    );
+
+    expect(formatted).toContain("2026年のFavorite数ランキング");
+  });
+
+  it("formats a relative-period ranking answer with a rolling-week label", () => {
+    const formatted = buildStructuredDataAnalysisAnswer(
+      {
+        question: "直近1週間で最もFavoriteを集めたVizをランキング形式で教えてください。",
+        dashboardContext: {
+          dashboardName: "Statistics",
+          worksheets: [{ name: "Views" }],
+          filters: [],
+          parameters: [],
+          dataSources: [{ name: "Tableau Public Per Day(2025/04-)" }],
+          capturedAt: "2026-06-03T00:00:00.000Z",
+        },
+      },
+      {
+        provider: "tableau-mcp",
+        queryInsights: [
+          {
+            datasourceName: "Tableau Public Per Day(2025/04-)",
+            datasourceLuid: "ds-123",
+            dimensionField: "workbook_title",
+            metricField: "workbook_favoriteCount",
+            rowCount: 2,
+            rows: [
+              { label: "Viz A", value: 120 },
+              { label: "Viz B", value: 88 },
+            ],
+          },
+        ],
+        mcpExecutionDebug: {
+          intent: "data_analysis",
+          intentConfidence: 0.95,
+          answerableFromDashboardContext: false,
+          needsMcp: true,
+          maxToolCalls: 8,
+          plannedTools: ["list-datasources", "get-datasource-metadata", "query-datasource"],
+          blockedTools: [],
+          executedTools: ["list-datasources", "get-datasource-metadata", "query-datasource"],
+          skippedTools: [],
+          toolCallCount: 3,
+          replanUsed: true,
+          timingMs: { planning: 0, execution: 0 },
+        },
+      },
+    );
+
+    expect(formatted).toContain("直近1週間のFavorite数ランキング");
+  });
+
   it("prefers structured query results over a manual SQL-style answer", () => {
     const finalized = finalizeUserFacingAnswer(
       [

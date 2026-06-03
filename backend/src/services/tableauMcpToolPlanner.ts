@@ -348,16 +348,30 @@ export function classifyQuestionIntent(
 
   const knownDatasourceMentioned =
     dashboardContext.dataSources?.some((dataSource) => normalizedQuestion.includes(dataSource.name.toLowerCase())) ?? false;
+  const hasRelativePeriodKeywords = /直近|過去|今週|先週|今月|先月|今年|昨年|去年/.test(normalizedQuestion);
   const hasSearchTool = allowedToolNames.includes("search-content");
   const hasQueryTool = allowedToolNames.includes("query-datasource");
   const clueCount =
     Number(hasHowToKeywords) +
     Number(hasFilterKeywords) +
     Number(hasMetadataKeywords) +
+    Number(hasRelativePeriodKeywords) +
     Number(hasAnalysisKeywords) +
     Number(hasContentSearchKeywords) +
     Number(hasDashboardExplanationKeywords) +
     Number(knownDatasourceMentioned);
+
+  if (hasRelativePeriodKeywords && hasQueryTool) {
+    const policy = QUESTION_INTENT_POLICY.data_analysis;
+    return {
+      intent: "data_analysis",
+      confidence: 0.86,
+      reasonBrief: "The question asks for time-bounded analysis, so an aggregate datasource query should be prioritized.",
+      answerableFromDashboardContext: policy.answerableFromDashboardContext,
+      needsMcp: policy.needsMcp,
+      maxToolCalls: policy.maxToolCalls,
+    };
+  }
 
   let intent: QuestionIntent = "unsupported";
   let confidence = 0.45;

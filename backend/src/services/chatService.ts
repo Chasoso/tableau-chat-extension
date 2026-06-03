@@ -5,6 +5,7 @@ import { createChatHistoryRepository, type ChatHistoryRepository } from "../repo
 import { DirectTableauApiContextProvider } from "../tableau/directTableauApiContextProvider";
 import { MockTableauContextProvider } from "../tableau/mockTableauContextProvider";
 import { TableauMcpContextProvider } from "../tableau/tableauMcpContextProvider";
+import { parseQuestionPeriod } from "../utils/questionPeriod";
 import type { TableauContextProvider } from "../tableau/contextProvider";
 import type { AuthenticatedUser } from "../types/auth";
 import type { ChatRequest, ChatResponse, ContextRequest, ContextResponse } from "../types/chat";
@@ -402,7 +403,9 @@ export function buildStructuredDataAnalysisAnswer(
     return undefined;
   }
 
-  const periodLabel = extractQuestionPeriodLabel(request.question);
+  const periodLabel = parseQuestionPeriod(request.question, {
+    referenceDate: request.dashboardContext.capturedAt,
+  })?.label;
   const metricLabel = describeMetricField(insight.metricField);
   const isRankingQuestion = /ランキング|rank(?:ing)?|上位|一覧|list/i.test(request.question);
   const visibleRows = rows.slice(0, isRankingQuestion ? Math.min(10, rows.length) : Math.min(3, rows.length));
@@ -421,22 +424,6 @@ export function buildStructuredDataAnalysisAnswer(
     "",
     body,
   ].join("\n");
-}
-
-function extractQuestionPeriodLabel(question: string): string | undefined {
-  const yearMonthMatch =
-    question.match(/(20\d{2})[年\/\-](\d{1,2})月?/) ?? question.match(/(20\d{2})\s*年\s*(\d{1,2})\s*月/);
-  if (!yearMonthMatch?.[1] || !yearMonthMatch?.[2]) {
-    return undefined;
-  }
-
-  const year = Number.parseInt(yearMonthMatch[1], 10);
-  const month = Number.parseInt(yearMonthMatch[2], 10);
-  if (!Number.isFinite(year) || !Number.isFinite(month) || month < 1 || month > 12) {
-    return undefined;
-  }
-
-  return `${year}年${month}月`;
 }
 
 function describeMetricField(fieldName: string): string {

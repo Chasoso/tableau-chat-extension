@@ -11,6 +11,7 @@ import {
   type ClassifiedQuestionIntent,
   type PlannedMcpToolCall,
 } from "../services/tableauMcpToolPlanner";
+import { parseQuestionPeriod } from "../utils/questionPeriod";
 import type {
   DatasourceFieldProfile,
   McpExecutionDebug,
@@ -1435,7 +1436,12 @@ export function buildDataAnalysisQueryRecoverySelection(input: {
     return undefined;
   }
 
-  const plannedArgs = buildAggregateQueryDatasourceArgs(selectedDatasource, input.rawToolResults, input.input.question);
+  const plannedArgs = buildAggregateQueryDatasourceArgs(
+    selectedDatasource,
+    input.rawToolResults,
+    input.input.question,
+    input.input.dashboardContext.capturedAt,
+  );
   if (!plannedArgs) {
     logInfo("tableau.mcp.query.recovery_skipped", {
       reason: "aggregate_query_args_not_buildable",
@@ -1509,7 +1515,7 @@ function isDataQuestion(question: string): boolean {
 }
 
 function isAggregateAnalysisQuestion(question: string): boolean {
-  return /query|aggregate|max|min|highest|lowest|most|least|top|bottom|rank|ranking|compare|sum|average|avg|count|countd|trend|increase|decrease|growth|クエリ|集計|最大|最小|最も|最多|ランキング|比較|推移|増加|減少/.test(
+  return /query|aggregate|max|min|highest|lowest|most|least|top|bottom|rank|ranking|compare|sum|average|avg|count|countd|trend|increase|decrease|growth|クエリ|集計|最大|最小|最も|最多|ランキング|比較|推移|増加|減少|直近|過去|今週|先週|今月|先月|今年|昨年|去年/.test(
     question.toLowerCase(),
   );
 }
@@ -2995,6 +3001,7 @@ function buildAggregateQueryDatasourceArgs(
   datasourceRef: ResolvedDatasourceRef,
   rawToolResults: RawMcpToolResult[],
   question: string,
+  referenceDate?: string,
 ): Record<string, unknown> | undefined {
   const datasourceLuid = readString(datasourceRef.luid) ?? readString(datasourceRef.id);
   if (!datasourceLuid) {
@@ -3019,7 +3026,7 @@ function buildAggregateQueryDatasourceArgs(
 
   const dimensionField = chooseAggregateDimensionField(fieldNames);
   const dateField = chooseAggregateDateField(fieldNames);
-  const dateRange = parseQuestionDateRange(question);
+  const period = parseQuestionPeriod(question, { referenceDate });
   const topN = inferAggregateTopN(question);
   const fields: Array<Record<string, unknown>> = [];
   if (dimensionField) {
@@ -3037,7 +3044,7 @@ function buildAggregateQueryDatasourceArgs(
   });
 
   const filters =
-    dateField && dateRange
+    dateField && period
       ? [
           {
             field: {
@@ -3045,8 +3052,8 @@ function buildAggregateQueryDatasourceArgs(
             },
             filterType: "QUANTITATIVE_DATE",
             quantitativeFilterType: "RANGE",
-            minDate: dateRange.start,
-            maxDate: dateRange.end,
+            minDate: period.startDate,
+            maxDate: period.endDate,
             includeNulls: false,
           },
         ]
@@ -3154,25 +3161,6 @@ function inferAggregateTopN(question: string): number {
   }
 
   return 10;
-}
-
-function parseQuestionDateRange(question: string): { start: string; end: string } | undefined {
-  const yearMonthMatch =
-    question.match(/(20\d{2})[年\/\-](\d{1,2})月?/) ?? question.match(/(20\d{2})\s*年\s*(\d{1,2})\s*月/);
-  if (!yearMonthMatch?.[1] || !yearMonthMatch?.[2]) {
-    return undefined;
-  }
-
-  const year = Number.parseInt(yearMonthMatch[1], 10);
-  const month = Number.parseInt(yearMonthMatch[2], 10);
-  if (!Number.isFinite(year) || !Number.isFinite(month) || month < 1 || month > 12) {
-    return undefined;
-  }
-
-  const start = `${year.toString().padStart(4, "0")}-${month.toString().padStart(2, "0")}-01`;
-  const endDate = new Date(Date.UTC(year, month, 0));
-  const end = `${endDate.getUTCFullYear().toString().padStart(4, "0")}-${String(endDate.getUTCMonth() + 1).padStart(2, "0")}-${String(endDate.getUTCDate()).padStart(2, "0")}`;
-  return { start, end };
 }
 
 function selectBestResolvedDatasource(candidates: ResolvedDatasourceRef[]): ResolvedDatasourceRef | undefined {
