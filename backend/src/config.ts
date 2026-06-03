@@ -3,6 +3,14 @@ export type AppConfig = {
   useInMemoryRepository: boolean;
   chatMemoryMessageLimit: number;
   corsAllowedOrigin: string;
+  agent: {
+    enabled: boolean;
+    maxContextPasses: number;
+    planMaxOutputTokens: number;
+    evaluationMaxOutputTokens: number;
+    debugLogPromptExchange: boolean;
+    debugMaxChars: number;
+  };
   model: {
     provider: "mock" | "bedrock";
     bedrock: {
@@ -85,6 +93,14 @@ export function getConfig(): AppConfig {
     useInMemoryRepository: process.env.USE_IN_MEMORY_REPOSITORY !== "false",
     chatMemoryMessageLimit: Number(process.env.CHAT_MEMORY_MESSAGE_LIMIT ?? 10),
     corsAllowedOrigin: process.env.CORS_ALLOWED_ORIGIN ?? "*",
+    agent: {
+      enabled: process.env.CHAT_AGENT_ENABLED !== "false",
+      maxContextPasses: parsePositiveInt(process.env.CHAT_AGENT_MAX_CONTEXT_PASSES, 2),
+      planMaxOutputTokens: parsePositiveInt(process.env.CHAT_AGENT_PLAN_MAX_OUTPUT_TOKENS, 400),
+      evaluationMaxOutputTokens: parsePositiveInt(process.env.CHAT_AGENT_EVAL_MAX_OUTPUT_TOKENS, 300),
+      debugLogPromptExchange: process.env.CHAT_AGENT_DEBUG_LOG_PROMPT_EXCHANGE === "true",
+      debugMaxChars: parsePositiveInt(process.env.CHAT_AGENT_DEBUG_MAX_CHARS, 8000),
+    },
     model: {
       provider: parseModelProvider(process.env.MODEL_PROVIDER),
       bedrock: {

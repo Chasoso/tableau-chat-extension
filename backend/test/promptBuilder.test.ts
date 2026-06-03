@@ -91,4 +91,25 @@ describe("buildPrompt", () => {
     expect(prompt).toContain("Turn 1 user: What changed last week?");
     expect(prompt).toContain("Turn 1 assistant: Views declined compared with the prior week.");
   });
+
+  it("includes agent planning notes when provided", () => {
+    const prompt = buildPrompt(
+      request,
+      {
+        provider: "mock",
+      },
+      [],
+      {
+        agentPlanSummary: "Clarify the request as a datasource-backed ranking.",
+        investigationQuestion: "2026年のFavorite数を集計してください。",
+        evaluationSummary: "Collected evidence is sufficient.",
+        evidenceGaps: ["none"],
+      },
+    );
+
+    expect(prompt).toContain("Agent plan: Clarify the request as a datasource-backed ranking.");
+    expect(prompt).toContain("Tool-planning question: 2026年のFavorite数を集計してください。");
+    expect(prompt).toContain("Evidence evaluation: Collected evidence is sufficient.");
+    expect(prompt).toContain("Remaining evidence gaps: none");
+  });
 });

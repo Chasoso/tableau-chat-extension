@@ -28,6 +28,8 @@ Default local settings:
 - `PORT=3001`
 - `USE_IN_MEMORY_REPOSITORY=true`
 - `TABLEAU_CONTEXT_PROVIDER=mock`
+- `CHAT_AGENT_ENABLED=true`
+- `CHAT_AGENT_MAX_CONTEXT_PASSES=2`
 
 ### Testing
 

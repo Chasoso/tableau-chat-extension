@@ -1,4 +1,5 @@
 import type { DashboardContext, TableauAdditionalContext } from "./tableau";
+import type { AgentExecutionDebug } from "./agent";
 
 export type ClientContext = {
   source?: string;
@@ -43,6 +44,7 @@ export type ChatResponse = {
     tableauContextProvider: TableauAdditionalContext["provider"];
     mcpExecutionDebug?: TableauAdditionalContext["mcpExecutionDebug"];
     mcpObservations?: TableauAdditionalContext["mcpObservations"];
+    agentExecutionDebug?: AgentExecutionDebug;
   };
 };
 

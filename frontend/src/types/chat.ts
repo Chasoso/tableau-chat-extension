@@ -51,6 +51,11 @@ export type ChatResponse = {
   debug?: {
     usedMock?: boolean;
     tableauContextProvider?: string;
+    agentExecutionDebug?: {
+      enabled: boolean;
+      planSource: "bedrock" | "heuristic";
+      passCount: number;
+    };
   };
 };
 

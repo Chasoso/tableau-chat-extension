@@ -1,9 +1,12 @@
+import type { ClassifiedQuestionIntent } from "../services/tableauMcpToolPlanner";
 import type { DashboardContext, TableauAdditionalContext } from "../types/tableau";
 import type { AuthenticatedUser } from "../types/auth";
 
 export type GetAdditionalContextInput = {
   dashboardContext: DashboardContext;
   question: string;
+  planningQuestion?: string;
+  intentHint?: ClassifiedQuestionIntent;
   authenticatedUser?: AuthenticatedUser;
   tableauSubject?: string;
 };

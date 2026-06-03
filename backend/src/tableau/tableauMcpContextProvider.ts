@@ -77,9 +77,11 @@ export class TableauMcpContextProvider implements TableauContextProvider {
   async getAdditionalContext(input: GetAdditionalContextInput): Promise<TableauAdditionalContext> {
     const config = getConfig();
     const mcpConfig = config.tableau.mcp;
+    const effectiveQuestion = input.planningQuestion?.trim() || input.question;
+    const planningInput = effectiveQuestion === input.question ? input : { ...input, question: effectiveQuestion };
 
     if (mcpConfig.transport === "http") {
-      return callHttpMcpStub(input);
+      return callHttpMcpStub(planningInput);
     }
 
     if (mcpConfig.transport !== "stdio") {
@@ -114,6 +116,7 @@ export class TableauMcpContextProvider implements TableauContextProvider {
         tableauSubjectHash: safeHash(input.tableauSubject),
         dashboardName: input.dashboardContext.dashboardName,
         workbookNamePresent: Boolean(input.dashboardContext.workbookName),
+        questionRewritten: effectiveQuestion !== input.question,
       });
 
       transport = new StdioClientTransport({
@@ -134,10 +137,16 @@ export class TableauMcpContextProvider implements TableauContextProvider {
       const toolsResponse = await client.listTools(undefined, { timeout: mcpConfig.timeoutMs });
       const tools = toolsResponse.tools as McpTool[];
       const allowedToolNames = resolveAllowedToolNames(tools, mcpConfig.allowedTools);
-      const intent = classifyQuestionIntent(input.question, input.dashboardContext, allowedToolNames);
+      const intent = input.intentHint ?? classifyQuestionIntent(effectiveQuestion, input.dashboardContext, allowedToolNames);
       const effectiveMaxToolCalls = Math.max(0, Math.min(mcpConfig.maxToolCalls, intent.maxToolCalls));
       const toolSummaries = tools.map(toToolSummary);
-      const initialToolSelection = await selectInitialTools(tools, mcpConfig.allowedTools, input, intent, effectiveMaxToolCalls);
+      const initialToolSelection = await selectInitialTools(
+        tools,
+        mcpConfig.allowedTools,
+        planningInput,
+        intent,
+        effectiveMaxToolCalls,
+      );
       const toolQueue = [...initialToolSelection.selections];
       const toolResults: TableauMcpToolResultSummary[] = [];
       const rawToolResults: RawMcpToolResult[] = [];
@@ -151,7 +160,7 @@ export class TableauMcpContextProvider implements TableauContextProvider {
       const recoverablePreconditionSuggestions = new Set<string>();
       let hasRecoverablePreconditionFailure = false;
       let fallbackReason: string | undefined;
-      const analysisIntentQuestion = isAggregateAnalysisQuestion(input.question);
+      const analysisIntentQuestion = isAggregateAnalysisQuestion(effectiveQuestion);
 
       logInfo("tableau.mcp.intent.classified", {
         intent: intent.intent,
@@ -171,7 +180,7 @@ export class TableauMcpContextProvider implements TableauContextProvider {
           const analysisRecoverySelection = buildDataAnalysisQueryRecoverySelection({
             tools,
             allowedToolNames,
-            input,
+            input: planningInput,
             intent,
             calledToolNames,
             rawToolResults,
@@ -189,7 +198,7 @@ export class TableauMcpContextProvider implements TableauContextProvider {
           const metadataRecoverySelection = buildMetadataIdentifierRecoverySelection({
             tools,
             allowedToolNames,
-            input,
+            input: planningInput,
             intent,
             calledToolNames,
             rawToolResults,
@@ -215,11 +224,18 @@ export class TableauMcpContextProvider implements TableauContextProvider {
           ) {
             dataReplanAttempted = true;
             const replanStartedAt = Date.now();
-            const replannedTools = await selectPlannedTools(tools, mcpConfig.allowedTools, input, intent, effectiveMaxToolCalls, {
+            const replannedTools = await selectPlannedTools(
+              tools,
+              mcpConfig.allowedTools,
+              planningInput,
+              intent,
+              effectiveMaxToolCalls,
+              {
               observations: toolResults,
               calledToolNames,
               preferredRecoveryTools: [...recoverablePreconditionSuggestions],
-            });
+              },
+            );
             planningTimeMs += Date.now() - replanStartedAt;
             blockedToolNames.push(...replannedTools.blockedTools);
             const readyReplannedTools = replannedTools.selections.filter((selection) => selection.status === "ready");
@@ -369,7 +385,7 @@ export class TableauMcpContextProvider implements TableauContextProvider {
             cacheHit: execution.cacheHit,
           });
 
-          const followUp = buildFollowUpToolSelection(selection.tool.name, result, tools, calledToolNames, input);
+          const followUp = buildFollowUpToolSelection(selection.tool.name, result, tools, calledToolNames, planningInput);
           if (followUp) {
             toolQueue.unshift(followUp);
           }
@@ -412,10 +428,10 @@ export class TableauMcpContextProvider implements TableauContextProvider {
         planningTimeMs,
         executionTimeMs,
       });
-      const extractedWorkbook = extractWorkbookFromToolResults(toolResults, input);
-      const extractedDatasources = extractDatasourcesFromRawToolResults(rawToolResults, input);
+      const extractedWorkbook = extractWorkbookFromToolResults(toolResults, planningInput);
+      const extractedDatasources = extractDatasourcesFromRawToolResults(rawToolResults, planningInput);
       const normalizedContext = normalizeTableauContext({
-        dashboardContext: input.dashboardContext,
+        dashboardContext: planningInput.dashboardContext,
         workbook: extractedWorkbook,
         rawToolResults,
         datasources: extractedDatasources,
@@ -480,6 +496,7 @@ export class TableauMcpContextProvider implements TableauContextProvider {
           intent: intent.intent,
           hasMetadata,
           datasourceFieldProfiles,
+          planningQuestion: effectiveQuestion,
         },
         mcpTools: toolSummaries,
         mcpToolResults: toolResults,

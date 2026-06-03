@@ -11,6 +11,7 @@ import type { AuthenticatedUser } from "../types/auth";
 import type { ChatRequest, ChatResponse, ContextRequest, ContextResponse } from "../types/chat";
 import type { DashboardContext, DatasourceFieldProfile } from "../types/tableau";
 import { BedrockAnswerGenerator, MockAnswerGenerator, type AnswerGenerator } from "./answerGenerator";
+import { BedrockChatAgent, NoopChatAgent, runLightweightAgentLoop, type ChatAgent } from "./chatAgent";
 import { buildPrompt } from "./promptBuilder";
 
 export class ChatService {
@@ -18,6 +19,7 @@ export class ChatService {
     private readonly contextProvider: TableauContextProvider,
     private readonly answerGenerator: AnswerGenerator,
     private readonly repository: ChatHistoryRepository,
+    private readonly chatAgent: ChatAgent = new NoopChatAgent(),
   ) {}
 
   async generateAnswer(request: ChatRequest, authenticatedUser?: AuthenticatedUser): Promise<ChatResponse> {
@@ -51,12 +53,15 @@ export class ChatService {
       questionLength: request.question.length,
       question: clipForDebugLog(request.question),
     });
-    const additionalContext = await this.contextProvider.getAdditionalContext({
-      dashboardContext: request.dashboardContext,
-      question: request.question,
+    const agentLoopResult = await runLightweightAgentLoop({
+      agent: this.chatAgent,
+      contextProvider: this.contextProvider,
+      request,
+      recentHistory,
       authenticatedUser,
       tableauSubject,
     });
+    const additionalContext = agentLoopResult.additionalContext;
     logInfo("chat.service.context_lookup.completed", {
       provider: additionalContext.provider,
       sessionId,
@@ -65,8 +70,9 @@ export class ChatService {
       hasWorkbook: Boolean(additionalContext.workbook),
       hasMetadata: hasResolvedMetadata(additionalContext),
       warningCount: additionalContext.warnings?.length ?? 0,
+      agentPassCount: agentLoopResult.debug?.passCount ?? 0,
     });
-    const prompt = buildPrompt(request, additionalContext, recentHistory);
+    const prompt = buildPrompt(request, additionalContext, recentHistory, agentLoopResult.promptContext);
     const answer = await this.answerGenerator.generate({
       request,
       prompt,
@@ -116,6 +122,7 @@ export class ChatService {
           ? {
               mcpExecutionDebug: additionalContext.mcpExecutionDebug,
               mcpObservations: additionalContext.mcpObservations,
+              agentExecutionDebug: agentLoopResult.debug,
             }
           : {}),
       },
@@ -532,8 +539,9 @@ export function createChatService(): ChatService {
   const config = getConfig();
   const provider = createContextProvider(config.tableau.contextProvider);
   const answerGenerator = createAnswerGenerator(config.model.provider);
+  const chatAgent = createChatAgent(config.model.provider);
 
-  return new ChatService(provider, answerGenerator, createChatHistoryRepository());
+  return new ChatService(provider, answerGenerator, createChatHistoryRepository(), chatAgent);
 }
 
 function createAnswerGenerator(providerName: ReturnType<typeof getConfig>["model"]["provider"]): AnswerGenerator {
@@ -543,6 +551,16 @@ function createAnswerGenerator(providerName: ReturnType<typeof getConfig>["model
     case "mock":
     default:
       return new MockAnswerGenerator();
+  }
+}
+
+function createChatAgent(providerName: ReturnType<typeof getConfig>["model"]["provider"]): ChatAgent {
+  switch (providerName) {
+    case "bedrock":
+      return new BedrockChatAgent();
+    case "mock":
+    default:
+      return new NoopChatAgent();
   }
 }
 
