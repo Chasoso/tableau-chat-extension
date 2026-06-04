@@ -72,7 +72,9 @@ describe("TableauMcpContextProvider extraction helpers", () => {
       ],
     };
 
-    expect(extractBestWorkbookId(result, "Statistics")).toBe("d351b42d-7545-4cbd-bd76-e23410275f1b");
+    expect(extractBestWorkbookId(result, "Statistics")).toBe(
+      "d351b42d-7545-4cbd-bd76-e23410275f1b",
+    );
   });
 
   it("extracts structured datasource records from untruncated list-datasources results", () => {
@@ -105,7 +107,12 @@ describe("TableauMcpContextProvider extraction helpers", () => {
       ],
     };
 
-    expect(extractDatasourcesFromRawToolResults([{ toolName: "list-datasources", result }], input)).toEqual([
+    expect(
+      extractDatasourcesFromRawToolResults(
+        [{ toolName: "list-datasources", result }],
+        input,
+      ),
+    ).toEqual([
       {
         type: "datasource",
         name: "Tableau Public Per Day(2025/04-)",
@@ -128,7 +135,10 @@ describe("TableauMcpContextProvider extraction helpers", () => {
               text: JSON.stringify({
                 datasourceModel: {
                   name: "Tableau Public Per Day(2025/04-)",
-                  fields: [{ name: "Datetime(JST)" }, { name: "workbook_title" }],
+                  fields: [
+                    { name: "Datetime(JST)" },
+                    { name: "workbook_title" },
+                  ],
                 },
                 fieldGroups: [
                   {
@@ -143,14 +153,17 @@ describe("TableauMcpContextProvider extraction helpers", () => {
       },
     ];
 
-    const profiles = extractDatasourceFieldProfilesFromRawToolResults(rawToolResults, [
-      {
-        type: "datasource",
-        name: "Tableau Public Per Day(2025/04-)",
-        id: "datasource-luid",
-        luid: "datasource-luid",
-      },
-    ]);
+    const profiles = extractDatasourceFieldProfilesFromRawToolResults(
+      rawToolResults,
+      [
+        {
+          type: "datasource",
+          name: "Tableau Public Per Day(2025/04-)",
+          id: "datasource-luid",
+          luid: "datasource-luid",
+        },
+      ],
+    );
 
     expect(profiles).toEqual([
       {
@@ -183,7 +196,12 @@ describe("TableauMcpContextProvider extraction helpers", () => {
       ],
     };
 
-    expect(extractDatasourcesFromRawToolResults([{ toolName: "search-content", result }], baseInput)).toEqual([
+    expect(
+      extractDatasourcesFromRawToolResults(
+        [{ toolName: "search-content", result }],
+        baseInput,
+      ),
+    ).toEqual([
       {
         type: "datasource",
         name: "Tableau Public Per Day(2025/04-)",
@@ -212,7 +230,12 @@ describe("TableauMcpContextProvider extraction helpers", () => {
       ],
     };
 
-    expect(extractDatasourcesFromRawToolResults([{ toolName: "list-views", result }], baseInput)).toEqual([]);
+    expect(
+      extractDatasourcesFromRawToolResults(
+        [{ toolName: "list-views", result }],
+        baseInput,
+      ),
+    ).toEqual([]);
   });
 
   it("keeps known datasource hint when only view records are present", () => {
@@ -236,14 +259,19 @@ describe("TableauMcpContextProvider extraction helpers", () => {
       },
     ];
 
-    const resolved = resolveDatasourceIdentifier(["Tableau Public Per Day(2025/04-)"], [], [], {
-      rawToolResults,
-      dashboardName: "Statistics",
-      viewName: "Statistics",
-      workbookName: "Tableau Public Insights",
-      worksheetNames: ["Views"],
-      projectNames: ["Sandbox"],
-    });
+    const resolved = resolveDatasourceIdentifier(
+      ["Tableau Public Per Day(2025/04-)"],
+      [],
+      [],
+      {
+        rawToolResults,
+        dashboardName: "Statistics",
+        viewName: "Statistics",
+        workbookName: "Tableau Public Insights",
+        worksheetNames: ["Views"],
+        projectNames: ["Sandbox"],
+      },
+    );
     expect(resolved).toEqual([
       {
         name: "Tableau Public Per Day(2025/04-)",
@@ -299,7 +327,9 @@ describe("TableauMcpContextProvider extraction helpers", () => {
         },
         dashboardContext: {
           ...baseInput.dashboardContext,
-          dataSources: [{ name: "Tableau Public Per Day(2025/04-)", id: "datasource-luid" }],
+          dataSources: [
+            { name: "Tableau Public Per Day(2025/04-)", id: "datasource-luid" },
+          ],
         },
         calledToolNames: new Set<string>(),
         executedToolResults: [],
@@ -338,7 +368,11 @@ describe("TableauMcpContextProvider extraction helpers", () => {
         dashboardContext: {
           ...baseInput.dashboardContext,
         },
-        calledToolNames: new Set<string>(["list-views", "list-workbooks", "search-content"]),
+        calledToolNames: new Set<string>([
+          "list-views",
+          "list-workbooks",
+          "search-content",
+        ]),
         executedToolResults: [
           {
             toolName: "list-views",
@@ -376,7 +410,12 @@ describe("TableauMcpContextProvider extraction helpers", () => {
         },
       },
     ];
-    const resolved = resolveDatasourceIdentifier(["Tableau Public Per Day(2025/04-)"], [], [], { rawToolResults });
+    const resolved = resolveDatasourceIdentifier(
+      ["Tableau Public Per Day(2025/04-)"],
+      [],
+      [],
+      { rawToolResults },
+    );
     expect(resolved[0]?.id).toBe("ds-123");
     expect(resolved[0]?.matchReason).toBe("exact_name_match");
   });
@@ -464,7 +503,9 @@ describe("TableauMcpContextProvider extraction helpers", () => {
         ...baseInput,
         dashboardContext: {
           ...baseInput.dashboardContext,
-          dataSources: [{ name: "Tableau Public Per Day(2025/04-)", id: "ds-123" }],
+          dataSources: [
+            { name: "Tableau Public Per Day(2025/04-)", id: "ds-123" },
+          ],
         },
       },
     );
@@ -498,9 +539,13 @@ describe("TableauMcpContextProvider extraction helpers", () => {
       },
     ];
 
-    const resolved = resolveDatasourceIdentifier(["Sales Daily"], [], [], { rawToolResults });
+    const resolved = resolveDatasourceIdentifier(["Sales Daily"], [], [], {
+      rawToolResults,
+    });
     expect(resolved.length).toBeGreaterThan(1);
-    expect(Math.abs(resolved[0]!.matchConfidence - resolved[1]!.matchConfidence)).toBeLessThanOrEqual(0.051);
+    expect(
+      Math.abs(resolved[0]!.matchConfidence - resolved[1]!.matchConfidence),
+    ).toBeLessThanOrEqual(0.051);
   });
 
   it("prioritizes datasource resolution tools for metadata lookup when datasource name exists", () => {
@@ -520,12 +565,42 @@ describe("TableauMcpContextProvider extraction helpers", () => {
       },
     };
     const tools = [
-      { name: "list-datasources", inputSchema: { type: "object", properties: { limit: { type: "number" } } } },
-      { name: "search-content", inputSchema: { type: "object", properties: { terms: { type: "string" } } } },
-      { name: "list-views", inputSchema: { type: "object", properties: { limit: { type: "number" } } } },
-      { name: "list-workbooks", inputSchema: { type: "object", properties: { limit: { type: "number" } } } },
+      {
+        name: "list-datasources",
+        inputSchema: {
+          type: "object",
+          properties: { limit: { type: "number" } },
+        },
+      },
+      {
+        name: "search-content",
+        inputSchema: {
+          type: "object",
+          properties: { terms: { type: "string" } },
+        },
+      },
+      {
+        name: "list-views",
+        inputSchema: {
+          type: "object",
+          properties: { limit: { type: "number" } },
+        },
+      },
+      {
+        name: "list-workbooks",
+        inputSchema: {
+          type: "object",
+          properties: { limit: { type: "number" } },
+        },
+      },
     ];
-    const selection = buildRuleBasedInitialSelections(tools, [], input, intent, 5);
+    const selection = buildRuleBasedInitialSelections(
+      tools,
+      [],
+      input,
+      intent,
+      5,
+    );
     expect(selection.plannedTools[0]).toBe("list-datasources");
   });
 
@@ -539,12 +614,48 @@ describe("TableauMcpContextProvider extraction helpers", () => {
       maxToolCalls: 5,
     };
     const tools = [
-      { name: "list-datasources", inputSchema: { type: "object", properties: { limit: { type: "number" } } } },
-      { name: "search-content", inputSchema: { type: "object", properties: { terms: { type: "string" } } } },
-      { name: "list-views", inputSchema: { type: "object", properties: { limit: { type: "number" } } } },
-      { name: "list-workbooks", inputSchema: { type: "object", properties: { limit: { type: "number" } } } },
-      { name: "get-workbook", inputSchema: { type: "object", properties: { workbookId: { type: "string" } } } },
-      { name: "get-datasource-metadata", inputSchema: { type: "object", properties: { datasourceLuid: { type: "string" } } } },
+      {
+        name: "list-datasources",
+        inputSchema: {
+          type: "object",
+          properties: { limit: { type: "number" } },
+        },
+      },
+      {
+        name: "search-content",
+        inputSchema: {
+          type: "object",
+          properties: { terms: { type: "string" } },
+        },
+      },
+      {
+        name: "list-views",
+        inputSchema: {
+          type: "object",
+          properties: { limit: { type: "number" } },
+        },
+      },
+      {
+        name: "list-workbooks",
+        inputSchema: {
+          type: "object",
+          properties: { limit: { type: "number" } },
+        },
+      },
+      {
+        name: "get-workbook",
+        inputSchema: {
+          type: "object",
+          properties: { workbookId: { type: "string" } },
+        },
+      },
+      {
+        name: "get-datasource-metadata",
+        inputSchema: {
+          type: "object",
+          properties: { datasourceLuid: { type: "string" } },
+        },
+      },
     ];
     const selection = buildMetadataIdentifierRecoverySelection({
       tools,
@@ -557,7 +668,11 @@ describe("TableauMcpContextProvider extraction helpers", () => {
         },
       },
       intent,
-      calledToolNames: new Set(["list-views", "get-workbook", "list-workbooks"]),
+      calledToolNames: new Set([
+        "list-views",
+        "get-workbook",
+        "list-workbooks",
+      ]),
       rawToolResults: [],
       observations: [],
       remainingToolBudget: 2,
@@ -578,9 +693,27 @@ describe("TableauMcpContextProvider extraction helpers", () => {
       maxToolCalls: 5,
     };
     const tools = [
-      { name: "list-datasources", inputSchema: { type: "object", properties: { limit: { type: "number" } } } },
-      { name: "search-content", inputSchema: { type: "object", properties: { terms: { type: "string" } } } },
-      { name: "get-datasource-metadata", inputSchema: { type: "object", properties: { datasourceLuid: { type: "string" } } } },
+      {
+        name: "list-datasources",
+        inputSchema: {
+          type: "object",
+          properties: { limit: { type: "number" } },
+        },
+      },
+      {
+        name: "search-content",
+        inputSchema: {
+          type: "object",
+          properties: { terms: { type: "string" } },
+        },
+      },
+      {
+        name: "get-datasource-metadata",
+        inputSchema: {
+          type: "object",
+          properties: { datasourceLuid: { type: "string" } },
+        },
+      },
     ];
     const selection = buildMetadataIdentifierRecoverySelection({
       tools,
@@ -598,7 +731,13 @@ describe("TableauMcpContextProvider extraction helpers", () => {
         {
           toolName: "list-datasources",
           result: {
-            content: [{ text: JSON.stringify([{ name: "Tableau Public Per Day(2025/04-)" }]) }],
+            content: [
+              {
+                text: JSON.stringify([
+                  { name: "Tableau Public Per Day(2025/04-)" },
+                ]),
+              },
+            ],
           },
         },
       ],
@@ -620,7 +759,15 @@ describe("TableauMcpContextProvider extraction helpers", () => {
       needsMcp: true,
       maxToolCalls: 5,
     };
-    const tools = [{ name: "list-datasources", inputSchema: { type: "object", properties: { limit: { type: "number" } } } }];
+    const tools = [
+      {
+        name: "list-datasources",
+        inputSchema: {
+          type: "object",
+          properties: { limit: { type: "number" } },
+        },
+      },
+    ];
     const selection = buildMetadataIdentifierRecoverySelection({
       tools,
       allowedToolNames: ["list-datasources"],
@@ -662,8 +809,20 @@ describe("TableauMcpContextProvider extraction helpers", () => {
           },
         },
       },
-      { name: "list-datasources", inputSchema: { type: "object", properties: { limit: { type: "number" } } } },
-      { name: "get-datasource-metadata", inputSchema: { type: "object", properties: { datasourceLuid: { type: "string" } } } },
+      {
+        name: "list-datasources",
+        inputSchema: {
+          type: "object",
+          properties: { limit: { type: "number" } },
+        },
+      },
+      {
+        name: "get-datasource-metadata",
+        inputSchema: {
+          type: "object",
+          properties: { datasourceLuid: { type: "string" } },
+        },
+      },
     ];
 
     const selection = buildDataAnalysisQueryRecoverySelection({
@@ -671,7 +830,8 @@ describe("TableauMcpContextProvider extraction helpers", () => {
       allowedToolNames: tools.map((tool) => tool.name),
       input: {
         ...baseInput,
-        question: "Show a ranking of the Viz with the most favorites in 2026/05.",
+        question:
+          "Show a ranking of the Viz with the most favorites in 2026/05.",
         dashboardContext: {
           ...baseInput.dashboardContext,
           dataSources: [{ name: "Tableau Public Per Day(2025/04-)" }],
@@ -704,7 +864,11 @@ describe("TableauMcpContextProvider extraction helpers", () => {
                 text: JSON.stringify({
                   datasourceModel: {
                     name: "Tableau Public Per Day(2025/04-)",
-                    fields: [{ name: "Datetime(JST)" }, { name: "workbook_title" }, { name: "workbook_favoriteCount" }],
+                    fields: [
+                      { name: "Datetime(JST)" },
+                      { name: "workbook_title" },
+                      { name: "workbook_favoriteCount" },
+                    ],
                   },
                 }),
               },
@@ -746,6 +910,248 @@ describe("TableauMcpContextProvider extraction helpers", () => {
     }
   });
 
+  it("builds a full-year query filter for a year-only question", () => {
+    const intent: ClassifiedQuestionIntent = {
+      intent: "metadata_lookup",
+      confidence: 0.85,
+      reasonBrief: "Need datasource metadata first.",
+      answerableFromDashboardContext: false,
+      needsMcp: true,
+      maxToolCalls: 5,
+    };
+    const tools = [
+      {
+        name: "query-datasource",
+        inputSchema: {
+          type: "object",
+          required: ["datasourceLuid", "query"],
+          properties: {
+            datasourceLuid: { type: "string" },
+            query: { type: "object" },
+            limit: { type: "number" },
+          },
+        },
+      },
+      {
+        name: "list-datasources",
+        inputSchema: {
+          type: "object",
+          properties: { limit: { type: "number" } },
+        },
+      },
+      {
+        name: "get-datasource-metadata",
+        inputSchema: {
+          type: "object",
+          properties: { datasourceLuid: { type: "string" } },
+        },
+      },
+    ];
+
+    const selection = buildDataAnalysisQueryRecoverySelection({
+      tools,
+      allowedToolNames: tools.map((tool) => tool.name),
+      input: {
+        ...baseInput,
+        question:
+          "2026年に最もFavoriteを集めたVizをランキング形式で教えてください。",
+        dashboardContext: {
+          ...baseInput.dashboardContext,
+          capturedAt: "2026-06-03T00:00:00.000Z",
+          dataSources: [{ name: "Tableau Public Per Day(2025/04-)" }],
+        },
+      },
+      intent,
+      calledToolNames: new Set(["list-datasources", "get-datasource-metadata"]),
+      rawToolResults: [
+        {
+          toolName: "list-datasources",
+          result: {
+            content: [
+              {
+                text: JSON.stringify([
+                  {
+                    name: "Tableau Public Per Day(2025/04-)",
+                    id: "ds-123",
+                    project: { name: "Sandbox" },
+                  },
+                ]),
+              },
+            ],
+          },
+        },
+        {
+          toolName: "get-datasource-metadata",
+          result: {
+            content: [
+              {
+                text: JSON.stringify({
+                  datasourceModel: {
+                    name: "Tableau Public Per Day(2025/04-)",
+                    fields: [
+                      { name: "Datetime(JST)" },
+                      { name: "workbook_title" },
+                      { name: "workbook_favoriteCount" },
+                    ],
+                  },
+                }),
+              },
+            ],
+          },
+        },
+      ],
+      observations: [],
+      remainingToolBudget: 2,
+    });
+
+    expect(selection?.status).toBe("ready");
+    if (selection?.status === "ready") {
+      expect(selection.arguments.query).toEqual({
+        fields: [
+          { fieldCaption: "workbook_title", fieldAlias: "Dimension" },
+          {
+            fieldCaption: "workbook_favoriteCount",
+            function: "SUM",
+            fieldAlias: "Aggregated Value",
+            sortDirection: "DESC",
+            sortPriority: 1,
+          },
+        ],
+        filters: [
+          {
+            field: { fieldCaption: "Datetime(JST)" },
+            filterType: "QUANTITATIVE_DATE",
+            quantitativeFilterType: "RANGE",
+            minDate: "2026-01-01",
+            maxDate: "2026-12-31",
+            includeNulls: false,
+          },
+        ],
+      });
+    }
+  });
+
+  it("builds a rolling week query filter for a relative-period question", () => {
+    const intent: ClassifiedQuestionIntent = {
+      intent: "metadata_lookup",
+      confidence: 0.85,
+      reasonBrief: "Need datasource metadata first.",
+      answerableFromDashboardContext: false,
+      needsMcp: true,
+      maxToolCalls: 5,
+    };
+    const tools = [
+      {
+        name: "query-datasource",
+        inputSchema: {
+          type: "object",
+          required: ["datasourceLuid", "query"],
+          properties: {
+            datasourceLuid: { type: "string" },
+            query: { type: "object" },
+            limit: { type: "number" },
+          },
+        },
+      },
+      {
+        name: "list-datasources",
+        inputSchema: {
+          type: "object",
+          properties: { limit: { type: "number" } },
+        },
+      },
+      {
+        name: "get-datasource-metadata",
+        inputSchema: {
+          type: "object",
+          properties: { datasourceLuid: { type: "string" } },
+        },
+      },
+    ];
+
+    const selection = buildDataAnalysisQueryRecoverySelection({
+      tools,
+      allowedToolNames: tools.map((tool) => tool.name),
+      input: {
+        ...baseInput,
+        question:
+          "直近1週間で最もFavoriteを集めたVizをランキング形式で教えてください。",
+        dashboardContext: {
+          ...baseInput.dashboardContext,
+          capturedAt: "2026-06-03T00:00:00.000Z",
+          dataSources: [{ name: "Tableau Public Per Day(2025/04-)" }],
+        },
+      },
+      intent,
+      calledToolNames: new Set(["list-datasources", "get-datasource-metadata"]),
+      rawToolResults: [
+        {
+          toolName: "list-datasources",
+          result: {
+            content: [
+              {
+                text: JSON.stringify([
+                  {
+                    name: "Tableau Public Per Day(2025/04-)",
+                    id: "ds-123",
+                    project: { name: "Sandbox" },
+                  },
+                ]),
+              },
+            ],
+          },
+        },
+        {
+          toolName: "get-datasource-metadata",
+          result: {
+            content: [
+              {
+                text: JSON.stringify({
+                  datasourceModel: {
+                    name: "Tableau Public Per Day(2025/04-)",
+                    fields: [
+                      { name: "Datetime(JST)" },
+                      { name: "workbook_title" },
+                      { name: "workbook_favoriteCount" },
+                    ],
+                  },
+                }),
+              },
+            ],
+          },
+        },
+      ],
+      observations: [],
+      remainingToolBudget: 2,
+    });
+
+    expect(selection?.status).toBe("ready");
+    if (selection?.status === "ready") {
+      expect(selection.arguments.query).toEqual({
+        fields: [
+          { fieldCaption: "workbook_title", fieldAlias: "Dimension" },
+          {
+            fieldCaption: "workbook_favoriteCount",
+            function: "SUM",
+            fieldAlias: "Aggregated Value",
+            sortDirection: "DESC",
+            sortPriority: 1,
+          },
+        ],
+        filters: [
+          {
+            field: { fieldCaption: "Datetime(JST)" },
+            filterType: "QUANTITATIVE_DATE",
+            quantitativeFilterType: "RANGE",
+            minDate: "2026-05-28",
+            maxDate: "2026-06-03",
+            includeNulls: false,
+          },
+        ],
+      });
+    }
+  });
+
   it("keeps narrowed datasource matches and avoids re-expanding to list-datasources full set", () => {
     const normalized = normalizeTableauContext({
       dashboardContext: {
@@ -769,9 +1175,21 @@ describe("TableauMcpContextProvider extraction helpers", () => {
             content: [
               {
                 text: JSON.stringify([
-                  { name: "Tableau Public Per Day(2025/04-)", id: "ds-target", project: { name: "Sandbox" } },
-                  { name: "Superstore Datasource", id: "ds-other-1", project: { name: "Sandbox" } },
-                  { name: "Admin Insights", id: "ds-other-2", project: { name: "Sandbox" } },
+                  {
+                    name: "Tableau Public Per Day(2025/04-)",
+                    id: "ds-target",
+                    project: { name: "Sandbox" },
+                  },
+                  {
+                    name: "Superstore Datasource",
+                    id: "ds-other-1",
+                    project: { name: "Sandbox" },
+                  },
+                  {
+                    name: "Admin Insights",
+                    id: "ds-other-2",
+                    project: { name: "Sandbox" },
+                  },
                 ]),
               },
             ],
@@ -781,7 +1199,9 @@ describe("TableauMcpContextProvider extraction helpers", () => {
     });
 
     expect(normalized.datasources).toHaveLength(1);
-    expect(normalized.datasources[0]?.name).toBe("Tableau Public Per Day(2025/04-)");
+    expect(normalized.datasources[0]?.name).toBe(
+      "Tableau Public Per Day(2025/04-)",
+    );
     expect(normalized.datasources[0]?.id).toBe("ds-target");
     expect(normalized.datasources[0]?.luid).toBe("ds-target");
   });
@@ -796,7 +1216,11 @@ describe("TableauMcpContextProvider extraction helpers", () => {
             query: {
               fields: [
                 { fieldCaption: "workbook_title", fieldAlias: "Dimension" },
-                { fieldCaption: "workbook_favoriteCount", function: "SUM", fieldAlias: "Aggregated Value" },
+                {
+                  fieldCaption: "workbook_favoriteCount",
+                  function: "SUM",
+                  fieldAlias: "Aggregated Value",
+                },
               ],
             },
           },
@@ -814,7 +1238,14 @@ describe("TableauMcpContextProvider extraction helpers", () => {
           },
         },
       ],
-      [{ type: "datasource", name: "Tableau Public Per Day(2025/04-)", id: "ds-123", luid: "ds-123" }],
+      [
+        {
+          type: "datasource",
+          name: "Tableau Public Per Day(2025/04-)",
+          id: "ds-123",
+          luid: "ds-123",
+        },
+      ],
     );
 
     expect(insights).toEqual([
@@ -832,5 +1263,3 @@ describe("TableauMcpContextProvider extraction helpers", () => {
     ]);
   });
 });
-
-

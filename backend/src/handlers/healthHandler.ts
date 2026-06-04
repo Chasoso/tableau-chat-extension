@@ -11,4 +11,3 @@ export async function handler(): Promise<ApiGatewayProxyResult> {
     body: JSON.stringify({ status: "ok" }),
   };
 }
-

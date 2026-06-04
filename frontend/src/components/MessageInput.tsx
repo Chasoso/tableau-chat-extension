@@ -8,7 +8,10 @@ type Props = {
 export default function MessageInput({ disabled, onSend }: Props) {
   const [question, setQuestion] = useState("");
 
-  const canSend = useMemo(() => Boolean(question.trim()) && !disabled, [question, disabled]);
+  const canSend = useMemo(
+    () => Boolean(question.trim()) && !disabled,
+    [question, disabled],
+  );
 
   function submitQuestion() {
     const trimmedQuestion = question.trim();
@@ -43,7 +46,11 @@ export default function MessageInput({ disabled, onSend }: Props) {
         onChange={(event) => setQuestion(event.target.value)}
         onKeyDown={handleKeyDown}
       />
-      <button className={canSend ? "send-active" : ""} disabled={!canSend} type="submit">
+      <button
+        className={canSend ? "send-active" : ""}
+        disabled={!canSend}
+        type="submit"
+      >
         <span className="sr-only">送信</span>
         <svg className="send-icon" viewBox="0 0 24 24" aria-hidden="true">
           <path d="M3 11.5 20.5 3l-4.2 18-5.1-6.2-4.1-3.3L3 11.5Z" />

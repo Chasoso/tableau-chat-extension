@@ -24,9 +24,13 @@ type CognitoTokenResponse = {
 };
 
 export class CognitoPopupAuthService {
-  constructor(private readonly repository = new CognitoAuthTransactionRepository()) {}
+  constructor(
+    private readonly repository = new CognitoAuthTransactionRepository(),
+  ) {}
 
-  async startPopupAuth(input: CognitoPopupStartRequest): Promise<CognitoPopupStartResponse> {
+  async startPopupAuth(
+    input: CognitoPopupStartRequest,
+  ): Promise<CognitoPopupStartResponse> {
     validatePopupAuthConfiguration();
 
     const transactionId = randomUUID();
@@ -35,7 +39,10 @@ export class CognitoPopupAuthService {
     const codeVerifier = randomBase64Url(64);
     const codeChallenge = await sha256Base64Url(codeVerifier);
     const now = new Date();
-    const expiresAtEpoch = Math.floor((now.getTime() + getConfig().auth.popup.transactionTtlSeconds * 1000) / 1000);
+    const expiresAtEpoch = Math.floor(
+      (now.getTime() + getConfig().auth.popup.transactionTtlSeconds * 1000) /
+        1000,
+    );
 
     const record: CognitoAuthTransactionRecord = {
       transactionId,
@@ -61,7 +68,10 @@ export class CognitoPopupAuthService {
     authUrl.searchParams.set("client_id", getConfig().auth.cognitoClientId);
     authUrl.searchParams.set("response_type", "code");
     authUrl.searchParams.set("scope", "openid email profile");
-    authUrl.searchParams.set("redirect_uri", getConfig().auth.popup.redirectUri);
+    authUrl.searchParams.set(
+      "redirect_uri",
+      getConfig().auth.popup.redirectUri,
+    );
     authUrl.searchParams.set("state", state);
     authUrl.searchParams.set("code_challenge_method", "S256");
     authUrl.searchParams.set("code_challenge", codeChallenge);
@@ -74,13 +84,18 @@ export class CognitoPopupAuthService {
     };
   }
 
-  async handlePopupCallback(input: { code?: string; state?: string }): Promise<{ redirectAfter?: string }> {
+  async handlePopupCallback(input: {
+    code?: string;
+    state?: string;
+  }): Promise<{ redirectAfter?: string }> {
     validatePopupAuthConfiguration();
     if (!input.code || !input.state) {
       throw new Error("Missing Cognito popup callback parameters.");
     }
 
-    const transaction = await this.repository.getTransactionByState(input.state);
+    const transaction = await this.repository.getTransactionByState(
+      input.state,
+    );
     if (!transaction) {
       throw new Error("Cognito popup auth transaction was not found.");
     }
@@ -95,7 +110,9 @@ export class CognitoPopupAuthService {
         throw new Error("Cognito popup auth transaction expired.");
       }
 
-      const codeVerifier = await decryptPopupCodeVerifier(transaction.codeVerifier);
+      const codeVerifier = await decryptPopupCodeVerifier(
+        transaction.codeVerifier,
+      );
       const tokenData = await exchangeAuthorizationCode({
         code: input.code,
         codeVerifier,
@@ -118,7 +135,10 @@ export class CognitoPopupAuthService {
       await this.repository.markFailed({
         transactionId: transaction.transactionId,
         errorCode: "callback_failed",
-        errorMessageSafe: error instanceof Error ? error.message : "Authentication callback failed.",
+        errorMessageSafe:
+          error instanceof Error
+            ? error.message
+            : "Authentication callback failed.",
       });
       logWarn("auth.popup.callback.failed", {
         transactionIdHash: safeHash(transaction.transactionId),
@@ -138,7 +158,9 @@ export class CognitoPopupAuthService {
       throw new Error("transactionId is required.");
     }
 
-    const transaction = await this.repository.getTransaction(input.transactionId);
+    const transaction = await this.repository.getTransaction(
+      input.transactionId,
+    );
     if (!transaction) {
       return {
         status: "failed",
@@ -146,7 +168,10 @@ export class CognitoPopupAuthService {
       };
     }
 
-    if (!input.pollToken || hashString(input.pollToken) !== transaction.pollTokenHash) {
+    if (
+      !input.pollToken ||
+      hashString(input.pollToken) !== transaction.pollTokenHash
+    ) {
       return {
         status: "failed",
         message: "Authentication transaction token is invalid.",
@@ -181,7 +206,11 @@ export function validatePopupAuthConfiguration(): void {
   if (!config.required) {
     throw new Error("Cognito authentication is not enabled.");
   }
-  if (!config.cognitoClientId || !config.cognitoDomain || !config.popup.redirectUri) {
+  if (
+    !config.cognitoClientId ||
+    !config.cognitoDomain ||
+    !config.popup.redirectUri
+  ) {
     throw new Error("Cognito popup auth is not configured.");
   }
 }
@@ -212,7 +241,9 @@ async function exchangeAuthorizationCode(input: {
       responseBodyHash: safeHash(raw),
       responseBodyLength: raw.length,
     });
-    throw new Error(`Cognito popup token exchange failed with status ${response.status}.`);
+    throw new Error(
+      `Cognito popup token exchange failed with status ${response.status}.`,
+    );
   }
 
   logInfo("auth.popup.callback.token_exchanged", {
@@ -221,7 +252,9 @@ async function exchangeAuthorizationCode(input: {
   return (await response.json()) as CognitoTokenResponse;
 }
 
-function buildFrontendSession(tokenData: CognitoTokenResponse): FrontendAuthSessionPayload {
+function buildFrontendSession(
+  tokenData: CognitoTokenResponse,
+): FrontendAuthSessionPayload {
   const claims = decodeIdTokenClaims(tokenData.id_token);
   return {
     accessToken: tokenData.access_token,
@@ -232,7 +265,10 @@ function buildFrontendSession(tokenData: CognitoTokenResponse): FrontendAuthSess
   };
 }
 
-function decodeIdTokenClaims(idToken: string): { email?: string; nickname?: string } {
+function decodeIdTokenClaims(idToken: string): {
+  email?: string;
+  nickname?: string;
+} {
   const [, payload] = idToken.split(".");
   if (!payload) {
     return {};
@@ -240,7 +276,9 @@ function decodeIdTokenClaims(idToken: string): { email?: string; nickname?: stri
 
   try {
     const normalized = payload.replace(/-/g, "+").replace(/_/g, "/");
-    const decoded = JSON.parse(Buffer.from(addBase64Padding(normalized), "base64").toString("utf8")) as {
+    const decoded = JSON.parse(
+      Buffer.from(addBase64Padding(normalized), "base64").toString("utf8"),
+    ) as {
       email?: string;
       nickname?: string;
     };

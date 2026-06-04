@@ -7,10 +7,15 @@ export default defineConfig({
     timeout: 5_000,
   },
   fullyParallel: true,
-  reporter: [["list"], ["html", { open: "never" }]],
+  reporter: [
+    ["list"],
+    ["html", { open: "never", outputFolder: "playwright-report" }],
+  ],
   use: {
-    baseURL: "http://127.0.0.1:5173",
-    trace: "on-first-retry",
+    baseURL: process.env.PLAYWRIGHT_BASE_URL ?? "http://127.0.0.1:5173",
+    trace: "retain-on-failure",
+    screenshot: "only-on-failure",
+    video: "retain-on-failure",
   },
   webServer: {
     command: "npm run dev -- --host 127.0.0.1",

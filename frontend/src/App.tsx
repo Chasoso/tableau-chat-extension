@@ -21,7 +21,8 @@ export default function App() {
 }
 
 function DashboardExtensionApp() {
-  const [dashboardContext, setDashboardContext] = useState<DashboardContext | null>(null);
+  const [dashboardContext, setDashboardContext] =
+    useState<DashboardContext | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -35,7 +36,11 @@ function DashboardExtensionApp() {
       })
       .catch((unknownError) => {
         if (isMounted) {
-          setError(unknownError instanceof Error ? unknownError.message : "Tableau初期化に失敗しました。");
+          setError(
+            unknownError instanceof Error
+              ? unknownError.message
+              : "Tableau初期化に失敗しました。",
+          );
         }
       });
 
@@ -49,7 +54,11 @@ function DashboardExtensionApp() {
   }
 
   if (!dashboardContext) {
-    return <div className="app-shell loading-state">ダッシュボード情報を読み込んでいます…</div>;
+    return (
+      <div className="app-shell loading-state">
+        ダッシュボード情報を読み込んでいます…
+      </div>
+    );
   }
 
   const renderPanel = ({
@@ -86,7 +95,9 @@ function DashboardExtensionApp() {
             : undefined
         }
         onDashboardContextPatch={(patch) => {
-          setDashboardContext((current) => (current ? { ...current, ...patch } : current));
+          setDashboardContext((current) =>
+            current ? { ...current, ...patch } : current,
+          );
         }}
       />
     </div>

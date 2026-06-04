@@ -6,7 +6,10 @@
     "dev": "tsx src/localServer.ts",
     "build": "tsc",
     "build:lambda": "esbuild src/handlers/chatHandler.ts src/handlers/healthHandler.ts --bundle --platform=node --target=node22 --format=cjs --outdir=dist-lambda --sourcemap --minify",
+    "lint": "eslint . && npm run format:check",
+    "format:check": "prettier --check \"src/**/*.ts\" \"test/**/*.ts\" \"*.json\" \"*.mjs\"",
     "test": "vitest run",
+    "test:unit": "vitest run",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
@@ -19,10 +22,16 @@
     "jsonwebtoken": "^9.0.2"
   },
   "devDependencies": {
+    "@eslint/js": "^9.30.1",
     "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^24.0.0",
     "esbuild": "^0.25.0",
+    "eslint": "^9.30.1",
+    "eslint-config-prettier": "^10.1.8",
+    "globals": "^16.3.0",
+    "prettier": "^3.6.2",
     "tsx": "^4.20.0",
+    "typescript-eslint": "^8.35.1",
     "typescript": "^5.8.0",
     "vitest": "^3.2.0"
   }

@@ -1,4 +1,7 @@
-import { BedrockRuntimeClient, ConverseCommand } from "@aws-sdk/client-bedrock-runtime";
+import {
+  BedrockRuntimeClient,
+  ConverseCommand,
+} from "@aws-sdk/client-bedrock-runtime";
 import { getConfig } from "../config";
 import { logError, logInfo, logWarn, safeErrorDetails } from "../logging";
 import type { DashboardContext, QuestionIntent } from "../types/tableau";
@@ -107,9 +110,24 @@ export type McpToolPlannerInput = {
 const PREFERRED_TOOL_NAMES_FOR_INTENT: Record<QuestionIntent, string[]> = {
   dashboard_explanation: ["list-workbooks", "get-workbook", "list-views"],
   filter_or_selection_state: ["list-views", "get-workbook"],
-  metadata_lookup: ["list-datasources", "get-datasource-metadata", "list-views", "get-workbook"],
-  data_analysis: ["list-datasources", "get-datasource-metadata", "query-datasource", "list-views"],
-  content_search: ["search-content", "list-workbooks", "list-views", "list-datasources"],
+  metadata_lookup: [
+    "list-datasources",
+    "get-datasource-metadata",
+    "list-views",
+    "get-workbook",
+  ],
+  data_analysis: [
+    "list-datasources",
+    "get-datasource-metadata",
+    "query-datasource",
+    "list-views",
+  ],
+  content_search: [
+    "search-content",
+    "list-workbooks",
+    "list-views",
+    "list-datasources",
+  ],
   how_to_use_tableau: [],
   unsupported: [],
 };
@@ -150,7 +168,9 @@ export function filterAllowedToolNamesByIntent(
 
 export class TableauMcpToolPlanner {
   constructor(
-    private readonly client = new BedrockRuntimeClient({ region: getConfig().model.bedrock.region }),
+    private readonly client = new BedrockRuntimeClient({
+      region: getConfig().model.bedrock.region,
+    }),
   ) {}
 
   async plan(input: McpToolPlannerInput): Promise<McpToolPlan | undefined> {
@@ -158,9 +178,8 @@ export class TableauMcpToolPlanner {
     const mcpConfig = config.tableau.mcp;
     const intentClassifierMode = mcpConfig.intentClassifierMode;
     const hasConfiguredAllowlist = input.allowedToolNames.length > 0;
-    const effectiveIntentToolFilterMode: PlannerToolFilterMode = hasConfiguredAllowlist
-      ? mcpConfig.intentToolFilterMode
-      : "off";
+    const effectiveIntentToolFilterMode: PlannerToolFilterMode =
+      hasConfiguredAllowlist ? mcpConfig.intentToolFilterMode : "off";
 
     if (!mcpConfig.toolPlanningEnabled) {
       return undefined;
@@ -173,7 +192,13 @@ export class TableauMcpToolPlanner {
       return undefined;
     }
 
-    const intent = input.intentHint ?? classifyQuestionIntent(input.question, input.dashboardContext, input.allowedToolNames);
+    const intent =
+      input.intentHint ??
+      classifyQuestionIntent(
+        input.question,
+        input.dashboardContext,
+        input.allowedToolNames,
+      );
     if (!intent.needsMcp || intent.maxToolCalls <= 0) {
       logInfo("tableau.mcp.tool_planner.skipped", {
         reason: "Intent indicates MCP is unnecessary.",
@@ -190,12 +215,22 @@ export class TableauMcpToolPlanner {
       };
     }
 
-    const baseAllowedToolNames = resolveAllowedToolNames(input.tools, input.allowedToolNames);
-    const allowedToolNames = filterAllowedToolNamesByIntent(baseAllowedToolNames, intent.intent, effectiveIntentToolFilterMode);
-    const maxToolCalls = Math.max(0, Math.min(input.maxToolCalls, intent.maxToolCalls));
-    const preferredToolNames = PREFERRED_TOOL_NAMES_FOR_INTENT[intent.intent].filter((toolName) =>
-      baseAllowedToolNames.includes(toolName),
+    const baseAllowedToolNames = resolveAllowedToolNames(
+      input.tools,
+      input.allowedToolNames,
     );
+    const allowedToolNames = filterAllowedToolNamesByIntent(
+      baseAllowedToolNames,
+      intent.intent,
+      effectiveIntentToolFilterMode,
+    );
+    const maxToolCalls = Math.max(
+      0,
+      Math.min(input.maxToolCalls, intent.maxToolCalls),
+    );
+    const preferredToolNames = PREFERRED_TOOL_NAMES_FOR_INTENT[
+      intent.intent
+    ].filter((toolName) => baseAllowedToolNames.includes(toolName));
     const bedrockDebugEnabled = config.model.bedrock.debugLogPromptExchange;
     const bedrockDebugMaxChars = config.model.bedrock.debugMaxChars;
     const prompt = buildPlannerPrompt({
@@ -265,7 +300,11 @@ export class TableauMcpToolPlanner {
           responsePreview: responseSnapshot.text,
         });
       }
-      const plan = parseToolPlanResponse(text, intent, getArgumentSanitizeOptionsFromConfig());
+      const plan = parseToolPlanResponse(
+        text,
+        intent,
+        getArgumentSanitizeOptionsFromConfig(),
+      );
 
       if (!plan?.toolCalls.length) {
         logWarn("tableau.mcp.tool_planner.empty_plan", {
@@ -283,14 +322,27 @@ export class TableauMcpToolPlanner {
         };
       }
 
-      const filteredToolCalls = plan.toolCalls.filter((call) => allowedToolNames.includes(call.toolName)).slice(0, maxToolCalls);
-      const blockedToolCount = Math.max(plan.toolCalls.length - filteredToolCalls.length, 0);
-      const effectiveIntent = intentClassifierMode === "hybrid" ? plan.intent : intent.intent;
-      const effectiveReasonBrief = intentClassifierMode === "hybrid" ? plan.reasonBrief : intent.reasonBrief;
-      const effectiveConfidence = intentClassifierMode === "hybrid" ? plan.confidence : intent.confidence;
-      const effectiveNeedsMcp = intentClassifierMode === "hybrid" ? plan.needsMcp : intent.needsMcp;
+      const filteredToolCalls = plan.toolCalls
+        .filter((call) => allowedToolNames.includes(call.toolName))
+        .slice(0, maxToolCalls);
+      const blockedToolCount = Math.max(
+        plan.toolCalls.length - filteredToolCalls.length,
+        0,
+      );
+      const effectiveIntent =
+        intentClassifierMode === "hybrid" ? plan.intent : intent.intent;
+      const effectiveReasonBrief =
+        intentClassifierMode === "hybrid"
+          ? plan.reasonBrief
+          : intent.reasonBrief;
+      const effectiveConfidence =
+        intentClassifierMode === "hybrid" ? plan.confidence : intent.confidence;
+      const effectiveNeedsMcp =
+        intentClassifierMode === "hybrid" ? plan.needsMcp : intent.needsMcp;
       const effectiveAnswerableFromContext =
-        intentClassifierMode === "hybrid" ? plan.answerableFromDashboardContext : intent.answerableFromDashboardContext;
+        intentClassifierMode === "hybrid"
+          ? plan.answerableFromDashboardContext
+          : intent.answerableFromDashboardContext;
 
       logInfo("tableau.mcp.tool_planner.completed", {
         plannedToolCount: filteredToolCalls.length,
@@ -325,74 +377,123 @@ export function classifyQuestionIntent(
 ): ClassifiedQuestionIntent {
   const normalizedQuestion = question.toLowerCase();
   const hasQuestionMark = /[?？]/.test(question);
-  const hasHowToKeywords = /how to|how do i|steps|procedure|使い方|やり方|方法|手順/.test(normalizedQuestion);
-  const hasFilterKeywords = /filter|filtered|selection|selected mark|parameter|where|slice|drill|フィルタ|絞り込み|パラメータ/.test(
-    normalizedQuestion,
-  );
-  const hasMetadataKeywords = /field|schema|column|metric definition|datasource|data source|metadata|workbook id|view id|フィールド|列|メタデータ|データソース/.test(
-    normalizedQuestion,
-  );
-  const hasAnalysisKeywords = /sum|average|avg|count|countd|rank|ranking|top|bottom|trend|month|week|day|compare|increase|decrease|growth|集計|ランキング|推移|増加|減少|比較/.test(
-    normalizedQuestion,
-  );
+  const hasHowToKeywords =
+    /how to|how do i|steps|procedure|使い方|やり方|方法|手順/.test(
+      normalizedQuestion,
+    );
+  const hasFilterKeywords =
+    /filter|filtered|selection|selected mark|parameter|where|slice|drill|フィルタ|絞り込み|パラメータ/.test(
+      normalizedQuestion,
+    );
+  const hasMetadataKeywords =
+    /field|schema|column|metric definition|datasource|data source|metadata|workbook id|view id|フィールド|列|メタデータ|データソース/.test(
+      normalizedQuestion,
+    );
+  const hasAnalysisKeywords =
+    /sum|average|avg|count|countd|rank|ranking|top|bottom|trend|month|week|day|compare|increase|decrease|growth|集計|ランキング|推移|増加|減少|比較/.test(
+      normalizedQuestion,
+    );
   const hasStrongAnalysisKeywords =
     /query|aggregate|max|min|highest|lowest|most|least|top|bottom|rank|ranking|compare|sum|average|avg|count|countd|trend|increase|decrease|growth|クエリ|集計|最大|最小|最も|最多|ランキング|比較|推移|増加|減少/.test(
       normalizedQuestion,
     );
-  const hasContentSearchKeywords = /search|find|locate|where is|which workbook|which view|content|asset|探す|検索|どこ/.test(
-    normalizedQuestion,
-  );
-  const hasDashboardExplanationKeywords = /what is this dashboard|describe this dashboard|overview|summary|このダッシュボード|概要|要約|説明/.test(
-    normalizedQuestion,
-  );
+  const hasContentSearchKeywords =
+    /search|find|locate|where is|which workbook|which view|content|asset|探す|検索|どこ/.test(
+      normalizedQuestion,
+    );
+  const hasDashboardExplanationKeywords =
+    /what is this dashboard|describe this dashboard|overview|summary|このダッシュボード|概要|要約|説明/.test(
+      normalizedQuestion,
+    );
 
   const knownDatasourceMentioned =
-    dashboardContext.dataSources?.some((dataSource) => normalizedQuestion.includes(dataSource.name.toLowerCase())) ?? false;
+    dashboardContext.dataSources?.some((dataSource) =>
+      normalizedQuestion.includes(dataSource.name.toLowerCase()),
+    ) ?? false;
+  const hasRelativePeriodKeywords =
+    /直近|過去|今週|先週|今月|先月|今年|昨年|去年/.test(normalizedQuestion);
   const hasSearchTool = allowedToolNames.includes("search-content");
   const hasQueryTool = allowedToolNames.includes("query-datasource");
   const clueCount =
     Number(hasHowToKeywords) +
     Number(hasFilterKeywords) +
     Number(hasMetadataKeywords) +
+    Number(hasRelativePeriodKeywords) +
     Number(hasAnalysisKeywords) +
     Number(hasContentSearchKeywords) +
     Number(hasDashboardExplanationKeywords) +
     Number(knownDatasourceMentioned);
 
+  if (hasRelativePeriodKeywords && hasQueryTool) {
+    const policy = QUESTION_INTENT_POLICY.data_analysis;
+    return {
+      intent: "data_analysis",
+      confidence: 0.86,
+      reasonBrief:
+        "The question asks for time-bounded analysis, so an aggregate datasource query should be prioritized.",
+      answerableFromDashboardContext: policy.answerableFromDashboardContext,
+      needsMcp: policy.needsMcp,
+      maxToolCalls: policy.maxToolCalls,
+    };
+  }
+
   let intent: QuestionIntent = "unsupported";
   let confidence = 0.45;
-  let reasonBrief = "The question does not clearly map to a supported Tableau context workflow.";
+  let reasonBrief =
+    "The question does not clearly map to a supported Tableau context workflow.";
 
   if (hasHowToKeywords) {
     intent = "how_to_use_tableau";
     confidence = hasFilterKeywords || hasMetadataKeywords ? 0.72 : 0.82;
-    reasonBrief = "The question asks procedural Tableau usage guidance rather than dashboard data retrieval.";
-  } else if (hasStrongAnalysisKeywords && (hasQueryTool || knownDatasourceMentioned || hasMetadataKeywords)) {
+    reasonBrief =
+      "The question asks procedural Tableau usage guidance rather than dashboard data retrieval.";
+  } else if (
+    hasStrongAnalysisKeywords &&
+    (hasQueryTool || knownDatasourceMentioned || hasMetadataKeywords)
+  ) {
     intent = "data_analysis";
     confidence = hasQueryTool ? 0.89 : 0.8;
-    reasonBrief = "The question asks for computed or ranked results, so aggregated datasource query should be prioritized.";
-  } else if (hasFilterKeywords && !hasMetadataKeywords && !hasAnalysisKeywords) {
+    reasonBrief =
+      "The question asks for computed or ranked results, so aggregated datasource query should be prioritized.";
+  } else if (
+    hasFilterKeywords &&
+    !hasMetadataKeywords &&
+    !hasAnalysisKeywords
+  ) {
     intent = "filter_or_selection_state";
     confidence = 0.82;
-    reasonBrief = "The question focuses on current filters, selections, or parameter state.";
+    reasonBrief =
+      "The question focuses on current filters, selections, or parameter state.";
   } else if (hasMetadataKeywords || knownDatasourceMentioned) {
     intent = "metadata_lookup";
-    confidence = hasAnalysisKeywords ? 0.78 : knownDatasourceMentioned ? 0.84 : 0.74;
+    confidence = hasAnalysisKeywords
+      ? 0.78
+      : knownDatasourceMentioned
+        ? 0.84
+        : 0.74;
     reasonBrief = hasAnalysisKeywords
       ? "The question includes datasource/field metadata cues, so metadata lookup should run before analysis."
       : "The question asks about datasources, fields, or workbook/view metadata.";
-  } else if (hasAnalysisKeywords || (knownDatasourceMentioned && hasQueryTool)) {
+  } else if (
+    hasAnalysisKeywords ||
+    (knownDatasourceMentioned && hasQueryTool)
+  ) {
     intent = "data_analysis";
     confidence = hasQueryTool ? 0.86 : 0.68;
-    reasonBrief = "The question asks for aggregated values, trends, or ranking analysis.";
+    reasonBrief =
+      "The question asks for aggregated values, trends, or ranking analysis.";
   } else if (hasContentSearchKeywords && hasSearchTool) {
     intent = "content_search";
     confidence = 0.78;
     reasonBrief = "The question asks to locate Tableau Cloud content.";
-  } else if (hasDashboardExplanationKeywords || dashboardContext.worksheets.length > 0) {
+  } else if (
+    hasDashboardExplanationKeywords ||
+    dashboardContext.worksheets.length > 0
+  ) {
     intent = "dashboard_explanation";
     confidence = hasDashboardExplanationKeywords ? 0.76 : 0.56;
-    reasonBrief = "The question can likely be handled from the active dashboard context.";
+    reasonBrief =
+      "The question can likely be handled from the active dashboard context.";
   }
 
   if (clueCount >= 2 && hasQuestionMark) {
@@ -428,23 +529,42 @@ export function parseToolPlanResponse(
     }
 
     const record = parsed as Record<string, unknown>;
-    const toolCallsSource = Array.isArray(record.toolCalls) ? record.toolCalls : Array.isArray(record.steps) ? record.steps : [];
+    const toolCallsSource = Array.isArray(record.toolCalls)
+      ? record.toolCalls
+      : Array.isArray(record.steps)
+        ? record.steps
+        : [];
     const normalizedCalls = toolCallsSource
       .map((call) => normalizeToolCall(call, sanitizeOptions))
       .filter((call): call is PlannedMcpToolCall => Boolean(call));
 
-    const intent = readIntent(record.intent) ?? fallbackIntent?.intent ?? "unsupported";
-    const confidence = clampNumber(record.confidence, 0, 1, fallbackIntent?.confidence ?? 0.6);
+    const intent =
+      readIntent(record.intent) ?? fallbackIntent?.intent ?? "unsupported";
+    const confidence = clampNumber(
+      record.confidence,
+      0,
+      1,
+      fallbackIntent?.confidence ?? 0.6,
+    );
     const answerableFromDashboardContext =
       typeof record.answerableFromDashboardContext === "boolean"
         ? record.answerableFromDashboardContext
         : (fallbackIntent?.answerableFromDashboardContext ?? false);
-    const needsMcp = typeof record.needsMcp === "boolean" ? record.needsMcp : (fallbackIntent?.needsMcp ?? true);
+    const needsMcp =
+      typeof record.needsMcp === "boolean"
+        ? record.needsMcp
+        : (fallbackIntent?.needsMcp ?? true);
     const reasonBrief =
       typeof record.reasonBrief === "string" && record.reasonBrief.trim()
         ? record.reasonBrief.trim().slice(0, 220)
-        : (fallbackIntent?.reasonBrief ?? "Planner selected MCP tools for this question.");
-    const maxToolCalls = clampNumber(record.maxToolCalls, 0, 12, fallbackIntent?.maxToolCalls ?? normalizedCalls.length);
+        : (fallbackIntent?.reasonBrief ??
+          "Planner selected MCP tools for this question.");
+    const maxToolCalls = clampNumber(
+      record.maxToolCalls,
+      0,
+      12,
+      fallbackIntent?.maxToolCalls ?? normalizedCalls.length,
+    );
 
     return {
       intent,
@@ -460,7 +580,10 @@ export function parseToolPlanResponse(
   }
 }
 
-export function resolveAllowedToolNames(tools: McpToolForPlanning[], configuredAllowedTools: string[]): string[] {
+export function resolveAllowedToolNames(
+  tools: McpToolForPlanning[],
+  configuredAllowedTools: string[],
+): string[] {
   const availableToolNames = tools.map((tool) => tool.name).filter(Boolean);
   if (!configuredAllowedTools.length) {
     return [...new Set(availableToolNames)];
@@ -470,20 +593,35 @@ export function resolveAllowedToolNames(tools: McpToolForPlanning[], configuredA
   return configuredAllowedTools.filter((toolName) => available.has(toolName));
 }
 
-function normalizeToolCall(value: unknown, sanitizeOptions: ArgumentSanitizeOptions): PlannedMcpToolCall | undefined {
+function normalizeToolCall(
+  value: unknown,
+  sanitizeOptions: ArgumentSanitizeOptions,
+): PlannedMcpToolCall | undefined {
   if (!value || typeof value !== "object") {
     return undefined;
   }
 
   const record = value as Record<string, unknown>;
-  const toolName = typeof record.toolName === "string" ? record.toolName : typeof record.tool === "string" ? record.tool : "";
+  const toolName =
+    typeof record.toolName === "string"
+      ? record.toolName
+      : typeof record.tool === "string"
+        ? record.tool
+        : "";
   if (!toolName.trim()) {
     return undefined;
   }
 
-  const args = record.arguments && isPlainObject(record.arguments) ? sanitizeToolArguments(record.arguments, sanitizeOptions) : undefined;
-  const purpose = typeof record.purpose === "string" ? record.purpose.slice(0, 220) : undefined;
-  const reason = typeof record.reason === "string" ? record.reason.slice(0, 220) : undefined;
+  const args =
+    record.arguments && isPlainObject(record.arguments)
+      ? sanitizeToolArguments(record.arguments, sanitizeOptions)
+      : undefined;
+  const purpose =
+    typeof record.purpose === "string"
+      ? record.purpose.slice(0, 220)
+      : undefined;
+  const reason =
+    typeof record.reason === "string" ? record.reason.slice(0, 220) : undefined;
   const dependsOnTool =
     typeof record.dependsOnTool === "string"
       ? record.dependsOnTool.trim()
@@ -500,7 +638,10 @@ function normalizeToolCall(value: unknown, sanitizeOptions: ArgumentSanitizeOpti
   };
 }
 
-function sanitizeToolArguments(value: unknown, options: ArgumentSanitizeOptions): Record<string, unknown> | undefined {
+function sanitizeToolArguments(
+  value: unknown,
+  options: ArgumentSanitizeOptions,
+): Record<string, unknown> | undefined {
   if (!isPlainObject(value)) {
     return undefined;
   }
@@ -508,7 +649,8 @@ function sanitizeToolArguments(value: unknown, options: ArgumentSanitizeOptions)
   const entries = Object.entries(value).slice(0, options.maxObjectKeys);
   const sanitized: Record<string, unknown> = {};
   for (const [key, child] of entries) {
-    const isSensitive = /token|secret|password|jwt|authorization|credential|cookie/i.test(key);
+    const isSensitive =
+      /token|secret|password|jwt|authorization|credential|cookie/i.test(key);
     if (options.mode === "drop" && isSensitive) {
       continue;
     }
@@ -531,12 +673,19 @@ function sanitizeToolArguments(value: unknown, options: ArgumentSanitizeOptions)
   return Object.keys(sanitized).length ? sanitized : undefined;
 }
 
-function sanitizeJsonValue(value: unknown, depth: number, options: ArgumentSanitizeOptions): unknown {
+function sanitizeJsonValue(
+  value: unknown,
+  depth: number,
+  options: ArgumentSanitizeOptions,
+): unknown {
   if (depth > options.maxDepth) {
     return undefined;
   }
 
-  if (value === null || ["string", "number", "boolean"].includes(typeof value)) {
+  if (
+    value === null ||
+    ["string", "number", "boolean"].includes(typeof value)
+  ) {
     return value;
   }
 
@@ -550,8 +699,12 @@ function sanitizeJsonValue(value: unknown, depth: number, options: ArgumentSanit
 
   if (isPlainObject(value)) {
     const sanitizedObject: Record<string, unknown> = {};
-    for (const [key, child] of Object.entries(value).slice(0, options.maxObjectKeys)) {
-      const isSensitive = /token|secret|password|jwt|authorization|credential|cookie/i.test(key);
+    for (const [key, child] of Object.entries(value).slice(
+      0,
+      options.maxObjectKeys,
+    )) {
+      const isSensitive =
+        /token|secret|password|jwt|authorization|credential|cookie/i.test(key);
       if (isSensitive && options.mode === "drop") {
         continue;
       }
@@ -617,12 +770,21 @@ function readIntent(value: unknown): QuestionIntent | undefined {
   return undefined;
 }
 
-function clampNumber(value: unknown, min: number, max: number, fallback: number): number {
-  const numeric = typeof value === "number" && Number.isFinite(value) ? value : fallback;
+function clampNumber(
+  value: unknown,
+  min: number,
+  max: number,
+  fallback: number,
+): number {
+  const numeric =
+    typeof value === "number" && Number.isFinite(value) ? value : fallback;
   return Math.max(min, Math.min(max, numeric));
 }
 
-function clipForDebugLog(value: string, maxChars: number): { text: string; truncated: boolean } {
+function clipForDebugLog(
+  value: string,
+  maxChars: number,
+): { text: string; truncated: boolean } {
   if (value.length <= maxChars) {
     return { text: value, truncated: false };
   }
@@ -674,20 +836,31 @@ function buildPlannerPrompt(
     JSON.stringify({
       dashboardName: input.dashboardContext.dashboardName,
       workbookName: input.dashboardContext.workbookName,
-      worksheetNames: input.dashboardContext.worksheets.map((worksheet) => worksheet.name),
-      filterNames: input.dashboardContext.filters.map((filter) => filter.fieldName),
-      parameterNames: input.dashboardContext.parameters.map((parameter) => parameter.name),
-      dataSourceHints: input.dashboardContext.dataSources?.map((datasource) => ({
-        name: datasource.name,
-        id: datasource.id,
-      })),
+      worksheetNames: input.dashboardContext.worksheets.map(
+        (worksheet) => worksheet.name,
+      ),
+      filterNames: input.dashboardContext.filters.map(
+        (filter) => filter.fieldName,
+      ),
+      parameterNames: input.dashboardContext.parameters.map(
+        (parameter) => parameter.name,
+      ),
+      dataSourceHints: input.dashboardContext.dataSources?.map(
+        (datasource) => ({
+          name: datasource.name,
+          id: datasource.id,
+        }),
+      ),
     }),
     `User question: ${input.question}`,
     'Schema: {"intent":"data_analysis","confidence":0.0,"answerableFromDashboardContext":false,"needsMcp":true,"reasonBrief":"short reason","maxToolCalls":4,"toolCalls":[{"toolName":"list-datasources","purpose":"short purpose","arguments":{},"dependsOnTool":"optional-tool-name"}]}',
   ].join("\n");
 }
 
-function buildToolSummaries(tools: McpToolForPlanning[], allowedToolNames: string[]): Array<Record<string, unknown>> {
+function buildToolSummaries(
+  tools: McpToolForPlanning[],
+  allowedToolNames: string[],
+): Array<Record<string, unknown>> {
   const allowed = new Set(allowedToolNames);
   return tools
     .filter((tool) => allowed.has(tool.name))
@@ -698,4 +871,3 @@ function buildToolSummaries(tools: McpToolForPlanning[], allowedToolNames: strin
       properties: Object.keys(tool.inputSchema?.properties ?? {}).slice(0, 20),
     }));
 }
-

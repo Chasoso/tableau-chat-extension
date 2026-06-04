@@ -28,12 +28,29 @@ Default local settings:
 - `PORT=3001`
 - `USE_IN_MEMORY_REPOSITORY=true`
 - `TABLEAU_CONTEXT_PROVIDER=mock`
+- `CHAT_AGENT_ENABLED=true`
+- `CHAT_AGENT_MAX_CONTEXT_PASSES=2`
 
 ### Testing
 
 ```bash
 cd backend
 npm test
+```
+
+Repository-wide checks:
+
+```bash
+npm ci --prefix backend
+npm ci --prefix frontend
+cd frontend && npx playwright install --with-deps chromium
+cd ..
+npm run lint
+npm run typecheck
+npm run test:unit
+npm run build
+npm run test:e2e
+npm run ci
 ```
 
 ### Local Smoke Test

@@ -3,6 +3,14 @@ export type AppConfig = {
   useInMemoryRepository: boolean;
   chatMemoryMessageLimit: number;
   corsAllowedOrigin: string;
+  agent: {
+    enabled: boolean;
+    maxContextPasses: number;
+    planMaxOutputTokens: number;
+    evaluationMaxOutputTokens: number;
+    debugLogPromptExchange: boolean;
+    debugMaxChars: number;
+  };
   model: {
     provider: "mock" | "bedrock";
     bedrock: {
@@ -85,6 +93,27 @@ export function getConfig(): AppConfig {
     useInMemoryRepository: process.env.USE_IN_MEMORY_REPOSITORY !== "false",
     chatMemoryMessageLimit: Number(process.env.CHAT_MEMORY_MESSAGE_LIMIT ?? 10),
     corsAllowedOrigin: process.env.CORS_ALLOWED_ORIGIN ?? "*",
+    agent: {
+      enabled: process.env.CHAT_AGENT_ENABLED !== "false",
+      maxContextPasses: parsePositiveInt(
+        process.env.CHAT_AGENT_MAX_CONTEXT_PASSES,
+        2,
+      ),
+      planMaxOutputTokens: parsePositiveInt(
+        process.env.CHAT_AGENT_PLAN_MAX_OUTPUT_TOKENS,
+        400,
+      ),
+      evaluationMaxOutputTokens: parsePositiveInt(
+        process.env.CHAT_AGENT_EVAL_MAX_OUTPUT_TOKENS,
+        300,
+      ),
+      debugLogPromptExchange:
+        process.env.CHAT_AGENT_DEBUG_LOG_PROMPT_EXCHANGE === "true",
+      debugMaxChars: parsePositiveInt(
+        process.env.CHAT_AGENT_DEBUG_MAX_CHARS,
+        8000,
+      ),
+    },
     model: {
       provider: parseModelProvider(process.env.MODEL_PROVIDER),
       bedrock: {
@@ -92,8 +121,12 @@ export function getConfig(): AppConfig {
         modelId: process.env.BEDROCK_MODEL_ID ?? "us.amazon.nova-2-lite-v1:0",
         maxOutputTokens: Number(process.env.BEDROCK_MAX_OUTPUT_TOKENS ?? 2400),
         temperature: Number(process.env.BEDROCK_TEMPERATURE ?? 0.2),
-        debugLogPromptExchange: process.env.BEDROCK_DEBUG_LOG_PROMPT_EXCHANGE === "true",
-        debugMaxChars: parsePositiveInt(process.env.BEDROCK_DEBUG_MAX_CHARS, 12000),
+        debugLogPromptExchange:
+          process.env.BEDROCK_DEBUG_LOG_PROMPT_EXCHANGE === "true",
+        debugMaxChars: parsePositiveInt(
+          process.env.BEDROCK_DEBUG_MAX_CHARS,
+          12000,
+        ),
       },
     },
     auth: {
@@ -106,7 +139,10 @@ export function getConfig(): AppConfig {
         redirectUri: process.env.COGNITO_POPUP_REDIRECT_URI ?? "",
         transactionsTableName: process.env.COGNITO_AUTH_TRANSACTIONS_TABLE,
         transactionKeyParam: process.env.COGNITO_AUTH_TRANSACTION_KEY_PARAM,
-        transactionTtlSeconds: parsePositiveInt(process.env.COGNITO_AUTH_TRANSACTION_TTL_SECONDS, 600),
+        transactionTtlSeconds: parsePositiveInt(
+          process.env.COGNITO_AUTH_TRANSACTION_TTL_SECONDS,
+          600,
+        ),
       },
     },
     tableau: {
@@ -116,7 +152,9 @@ export function getConfig(): AppConfig {
       authMode: "connected-app",
       defaultSubject: process.env.TABLEAU_DEFAULT_SUBJECT ?? "",
       scopes: parseScopes(process.env.TABLEAU_SCOPES),
-      contextProvider: parseContextProvider(process.env.TABLEAU_CONTEXT_PROVIDER),
+      contextProvider: parseContextProvider(
+        process.env.TABLEAU_CONTEXT_PROVIDER,
+      ),
       mcp: {
         serverUrl: process.env.TABLEAU_MCP_SERVER_URL ?? "",
         transport: process.env.TABLEAU_MCP_TRANSPORT ?? "stdio",
@@ -127,18 +165,40 @@ export function getConfig(): AppConfig {
         allowedTools: parseCsv(process.env.TABLEAU_MCP_ALLOWED_TOOLS),
         maxToolCalls: Number(process.env.TABLEAU_MCP_MAX_TOOL_CALLS ?? 3),
         debugLogResults: process.env.TABLEAU_MCP_DEBUG_LOG_RESULTS === "true",
-        toolPlanningEnabled: process.env.TABLEAU_MCP_TOOL_PLANNING_ENABLED === "true",
-        plannerMaxOutputTokens: Number(process.env.TABLEAU_MCP_PLANNER_MAX_OUTPUT_TOKENS ?? 600),
-        intentToolFilterMode: parseIntentToolFilterMode(process.env.TABLEAU_MCP_INTENT_TOOL_FILTER_MODE),
-        intentClassifierMode: parseIntentClassifierMode(process.env.TABLEAU_MCP_INTENT_CLASSIFIER_MODE),
-        argSanitizeMode: parseArgSanitizeMode(process.env.TABLEAU_MCP_ARG_SANITIZE_MODE),
+        toolPlanningEnabled:
+          process.env.TABLEAU_MCP_TOOL_PLANNING_ENABLED === "true",
+        plannerMaxOutputTokens: Number(
+          process.env.TABLEAU_MCP_PLANNER_MAX_OUTPUT_TOKENS ?? 600,
+        ),
+        intentToolFilterMode: parseIntentToolFilterMode(
+          process.env.TABLEAU_MCP_INTENT_TOOL_FILTER_MODE,
+        ),
+        intentClassifierMode: parseIntentClassifierMode(
+          process.env.TABLEAU_MCP_INTENT_CLASSIFIER_MODE,
+        ),
+        argSanitizeMode: parseArgSanitizeMode(
+          process.env.TABLEAU_MCP_ARG_SANITIZE_MODE,
+        ),
         argMaxDepth: parsePositiveInt(process.env.TABLEAU_MCP_ARG_MAX_DEPTH, 5),
-        argMaxArrayLength: parsePositiveInt(process.env.TABLEAU_MCP_ARG_MAX_ARRAY, 50),
-        argMaxObjectKeys: parsePositiveInt(process.env.TABLEAU_MCP_ARG_MAX_OBJECT_KEYS, 30),
-        metadataCacheEnabled: process.env.TABLEAU_MCP_METADATA_CACHE_ENABLED !== "false",
-        metadataCacheTtlMs: Number(process.env.TABLEAU_MCP_METADATA_CACHE_TTL_MS ?? 30000),
-        queryDatasourceMaxLimit: Number(process.env.TABLEAU_MCP_QUERY_MAX_LIMIT ?? 50),
-        queryDatasourceMaxFields: Number(process.env.TABLEAU_MCP_QUERY_MAX_FIELDS ?? 6),
+        argMaxArrayLength: parsePositiveInt(
+          process.env.TABLEAU_MCP_ARG_MAX_ARRAY,
+          50,
+        ),
+        argMaxObjectKeys: parsePositiveInt(
+          process.env.TABLEAU_MCP_ARG_MAX_OBJECT_KEYS,
+          30,
+        ),
+        metadataCacheEnabled:
+          process.env.TABLEAU_MCP_METADATA_CACHE_ENABLED !== "false",
+        metadataCacheTtlMs: Number(
+          process.env.TABLEAU_MCP_METADATA_CACHE_TTL_MS ?? 30000,
+        ),
+        queryDatasourceMaxLimit: Number(
+          process.env.TABLEAU_MCP_QUERY_MAX_LIMIT ?? 50,
+        ),
+        queryDatasourceMaxFields: Number(
+          process.env.TABLEAU_MCP_QUERY_MAX_FIELDS ?? 6,
+        ),
       },
     },
     notion: {
@@ -148,20 +208,32 @@ export function getConfig(): AppConfig {
       connectionsTableName: process.env.NOTION_CONNECTIONS_TABLE,
       oauthStatesTableName: process.env.NOTION_OAUTH_STATES_TABLE,
       tokenEncryptionKeyParam: process.env.NOTION_TOKEN_ENCRYPTION_KEY_PARAM,
-      allowedTools: notionAllowedTools.length ? notionAllowedTools : ["notion-create-pages", "notion-fetch"],
-      defaultTargetParentPageId: process.env.NOTION_DEFAULT_TARGET_PARENT_PAGE_ID,
+      allowedTools: notionAllowedTools.length
+        ? notionAllowedTools
+        : ["notion-create-pages", "notion-fetch"],
+      defaultTargetParentPageId:
+        process.env.NOTION_DEFAULT_TARGET_PARENT_PAGE_ID,
       defaultTargetDatabaseId: process.env.NOTION_DEFAULT_TARGET_DATABASE_ID,
       localDevUserId: process.env.NOTION_LOCAL_DEV_USER_ID || "local-dev-user",
       oauthClientId: process.env.NOTION_OAUTH_CLIENT_ID,
       oauthClientSecret: process.env.NOTION_OAUTH_CLIENT_SECRET,
-      oauthAuthorizeUrl: process.env.NOTION_OAUTH_AUTHORIZE_URL ?? "https://api.notion.com/v1/oauth/authorize",
-      oauthTokenUrl: process.env.NOTION_OAUTH_TOKEN_URL ?? "https://api.notion.com/v1/oauth/token",
-      oauthStateTtlSeconds: parsePositiveInt(process.env.NOTION_OAUTH_STATE_TTL_SECONDS, 600),
+      oauthAuthorizeUrl:
+        process.env.NOTION_OAUTH_AUTHORIZE_URL ??
+        "https://api.notion.com/v1/oauth/authorize",
+      oauthTokenUrl:
+        process.env.NOTION_OAUTH_TOKEN_URL ??
+        "https://api.notion.com/v1/oauth/token",
+      oauthStateTtlSeconds: parsePositiveInt(
+        process.env.NOTION_OAUTH_STATE_TTL_SECONDS,
+        600,
+      ),
     },
   };
 }
 
-function parseModelProvider(value: string | undefined): AppConfig["model"]["provider"] {
+function parseModelProvider(
+  value: string | undefined,
+): AppConfig["model"]["provider"] {
   if (value === "bedrock") {
     return "bedrock";
   }
@@ -191,7 +263,9 @@ function parseCsv(value: string | undefined): string[] {
     .filter(Boolean);
 }
 
-function parseContextProvider(value: string | undefined): AppConfig["tableau"]["contextProvider"] {
+function parseContextProvider(
+  value: string | undefined,
+): AppConfig["tableau"]["contextProvider"] {
   if (value === "direct-api" || value === "direct") {
     return "direct-api";
   }
@@ -203,7 +277,9 @@ function parseContextProvider(value: string | undefined): AppConfig["tableau"]["
   return "mock";
 }
 
-function parseIntentToolFilterMode(value: string | undefined): AppConfig["tableau"]["mcp"]["intentToolFilterMode"] {
+function parseIntentToolFilterMode(
+  value: string | undefined,
+): AppConfig["tableau"]["mcp"]["intentToolFilterMode"] {
   if (value === "soft" || value === "off") {
     return value;
   }
@@ -211,7 +287,9 @@ function parseIntentToolFilterMode(value: string | undefined): AppConfig["tablea
   return "strict";
 }
 
-function parseIntentClassifierMode(value: string | undefined): AppConfig["tableau"]["mcp"]["intentClassifierMode"] {
+function parseIntentClassifierMode(
+  value: string | undefined,
+): AppConfig["tableau"]["mcp"]["intentClassifierMode"] {
   if (value === "hybrid") {
     return value;
   }
@@ -219,7 +297,9 @@ function parseIntentClassifierMode(value: string | undefined): AppConfig["tablea
   return "heuristic";
 }
 
-function parseArgSanitizeMode(value: string | undefined): AppConfig["tableau"]["mcp"]["argSanitizeMode"] {
+function parseArgSanitizeMode(
+  value: string | undefined,
+): AppConfig["tableau"]["mcp"]["argSanitizeMode"] {
   if (value === "mask") {
     return value;
   }

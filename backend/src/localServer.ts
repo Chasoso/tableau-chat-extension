@@ -11,29 +11,38 @@ const server = createServer(async (request, response) => {
   request.on("data", (chunk) => chunks.push(Buffer.from(chunk)));
   request.on("end", async () => {
     const body = Buffer.concat(chunks).toString("utf8");
-    const requestUrl = new URL(request.url ?? "/", `http://${request.headers.host ?? "localhost"}`);
+    const requestUrl = new URL(
+      request.url ?? "/",
+      `http://${request.headers.host ?? "localhost"}`,
+    );
     const event: ApiGatewayProxyEvent = {
       httpMethod: request.method,
       rawPath: requestUrl.pathname,
       rawQueryString: requestUrl.search ? requestUrl.search.slice(1) : "",
-      queryStringParameters: Object.fromEntries(requestUrl.searchParams.entries()),
-      headers: Object.fromEntries(Object.entries(request.headers).map(([key, value]) => [key, String(value)])),
+      queryStringParameters: Object.fromEntries(
+        requestUrl.searchParams.entries(),
+      ),
+      headers: Object.fromEntries(
+        Object.entries(request.headers).map(([key, value]) => [
+          key,
+          String(value),
+        ]),
+      ),
       body: body || null,
     };
 
-    const result =
-      requestUrl.pathname.startsWith("/health")
-        ? await healthHandler()
-        : requestUrl.pathname.startsWith("/chat") ||
-            requestUrl.pathname.startsWith("/context") ||
-            requestUrl.pathname.startsWith("/notion") ||
-            requestUrl.pathname.startsWith("/auth")
-          ? await chatHandler(event)
-          : {
-              statusCode: 404,
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ message: "Not found" }),
-            };
+    const result = requestUrl.pathname.startsWith("/health")
+      ? await healthHandler()
+      : requestUrl.pathname.startsWith("/chat") ||
+          requestUrl.pathname.startsWith("/context") ||
+          requestUrl.pathname.startsWith("/notion") ||
+          requestUrl.pathname.startsWith("/auth")
+        ? await chatHandler(event)
+        : {
+            statusCode: 404,
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ message: "Not found" }),
+          };
 
     response.writeHead(result.statusCode, result.headers);
     response.end(result.body);

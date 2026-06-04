@@ -9,4 +9,3 @@ export function getDynamoDbClient(): DynamoDBClient {
 
   return client;
 }
-

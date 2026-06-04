@@ -2,14 +2,23 @@
 import { InMemoryChatHistoryRepository } from "../src/repositories/chatHistoryRepository";
 import type { AnswerGenerator } from "../src/services/answerGenerator";
 import { MockAnswerGenerator } from "../src/services/answerGenerator";
-import { buildStructuredDataAnalysisAnswer, ChatService, finalizeUserFacingAnswer, sanitizeUserFacingAnswer } from "../src/services/chatService";
+import {
+  buildStructuredDataAnalysisAnswer,
+  ChatService,
+  finalizeUserFacingAnswer,
+  sanitizeUserFacingAnswer,
+} from "../src/services/chatService";
 import { MockTableauContextProvider } from "../src/tableau/mockTableauContextProvider";
 import type { AuthenticatedUser } from "../src/types/auth";
 
 describe("ChatService with mock provider", () => {
   it("returns a context-based answer and saves chat history", async () => {
     const repository = new InMemoryChatHistoryRepository();
-    const service = new ChatService(new MockTableauContextProvider(), new MockAnswerGenerator(), repository);
+    const service = new ChatService(
+      new MockTableauContextProvider(),
+      new MockAnswerGenerator(),
+      repository,
+    );
 
     const response = await service.generateAnswer({
       question: "Summarize this dashboard",
@@ -105,15 +114,20 @@ describe("ChatService with mock provider", () => {
       userB,
     );
 
-    expect(otherUserResponse.answer).not.toContain("Turn 1 user: First question");
-    expect(otherUserResponse.answer).not.toContain("Turn 1 assistant: First answer");
+    expect(otherUserResponse.answer).not.toContain(
+      "Turn 1 user: First question",
+    );
+    expect(otherUserResponse.answer).not.toContain(
+      "Turn 1 assistant: First answer",
+    );
   });
 
   it("sanitizes internal tool instructions in metadata-unavailable answers", () => {
     const sanitized = sanitizeUserFacingAnswer(
       "get-datasource-metadata and query-datasource need datasource-id",
       {
-        question: "このダッシュボードで使われているデータソースのフィールドを説明して",
+        question:
+          "このダッシュボードで使われているデータソースのフィールドを説明して",
         dashboardContext: {
           dashboardName: "Statistics",
           workbookName: "Tableau Public Insights",
@@ -130,7 +144,9 @@ describe("ChatService with mock provider", () => {
           dashboard: { name: "Statistics" },
           workbook: { type: "workbook", name: "Tableau Public Insights" },
           views: [],
-          datasources: [{ type: "datasource", name: "Tableau Public Per Day(2025/04-)" }],
+          datasources: [
+            { type: "datasource", name: "Tableau Public Per Day(2025/04-)" },
+          ],
           projects: [],
         },
         mcpExecutionDebug: {
@@ -154,7 +170,9 @@ describe("ChatService with mock provider", () => {
     expect(sanitized).not.toContain("get-datasource-metadata");
     expect(sanitized).not.toContain("query-datasource");
     expect(sanitized).not.toContain("datasource-id");
-    expect(sanitized).toContain("このダッシュボードで確認できているデータソース");
+    expect(sanitized).toContain(
+      "このダッシュボードで確認できているデータソース",
+    );
   });
 
   it("replaces hallucinated datasource fields with strict metadata-backed field list", () => {
@@ -183,7 +201,9 @@ describe("ChatService with mock provider", () => {
           dashboard: { name: "Statistics" },
           workbook: { type: "workbook", name: "Tableau Public Insights" },
           views: [],
-          datasources: [{ type: "datasource", name: "Tableau Public Per Day(2025/04-)" }],
+          datasources: [
+            { type: "datasource", name: "Tableau Public Per Day(2025/04-)" },
+          ],
           projects: [],
         },
         datasourceFieldProfiles: [
@@ -227,7 +247,8 @@ describe("ChatService with mock provider", () => {
         "```",
       ].join("\n"),
       {
-        question: "viewCountが最も多いworkbookは何か、データソースをクエリして求めてください。",
+        question:
+          "viewCountが最も多いworkbookは何か、データソースをクエリして求めてください。",
         dashboardContext: {
           dashboardName: "Statistics",
           worksheets: [{ name: "Views" }],
@@ -242,7 +263,9 @@ describe("ChatService with mock provider", () => {
         normalizedContext: {
           dashboard: { name: "Statistics" },
           views: [],
-          datasources: [{ type: "datasource", name: "Tableau Public Per Day(2025/04-)" }],
+          datasources: [
+            { type: "datasource", name: "Tableau Public Per Day(2025/04-)" },
+          ],
           projects: [],
         },
         mcpExecutionDebug: {
@@ -251,7 +274,11 @@ describe("ChatService with mock provider", () => {
           answerableFromDashboardContext: false,
           needsMcp: true,
           maxToolCalls: 8,
-          plannedTools: ["list-datasources", "get-datasource-metadata", "query-datasource"],
+          plannedTools: [
+            "list-datasources",
+            "get-datasource-metadata",
+            "query-datasource",
+          ],
           blockedTools: [],
           executedTools: ["list-datasources", "get-datasource-metadata"],
           skippedTools: [],
@@ -274,7 +301,8 @@ describe("ChatService with mock provider", () => {
   it("formats a direct ranking answer from successful datasource query results", () => {
     const formatted = buildStructuredDataAnalysisAnswer(
       {
-        question: "このダッシュボードで使われているデータソースから、2026年5月に最もFavoriteを集めたVizを、ランキング形式で出してください。",
+        question:
+          "このダッシュボードで使われているデータソースから、2026年5月に最もFavoriteを集めたVizを、ランキング形式で出してください。",
         dashboardContext: {
           dashboardName: "Statistics",
           worksheets: [{ name: "Views" }],
@@ -306,9 +334,17 @@ describe("ChatService with mock provider", () => {
           answerableFromDashboardContext: false,
           needsMcp: true,
           maxToolCalls: 8,
-          plannedTools: ["list-datasources", "get-datasource-metadata", "query-datasource"],
+          plannedTools: [
+            "list-datasources",
+            "get-datasource-metadata",
+            "query-datasource",
+          ],
           blockedTools: [],
-          executedTools: ["list-datasources", "get-datasource-metadata", "query-datasource"],
+          executedTools: [
+            "list-datasources",
+            "get-datasource-metadata",
+            "query-datasource",
+          ],
           skippedTools: [],
           toolCallCount: 3,
           replanUsed: true,
@@ -323,6 +359,120 @@ describe("ChatService with mock provider", () => {
     expect(formatted).toContain("Tableau Public Per Day(2025/04-)");
   });
 
+  it("formats a year-only ranking answer with a year label", () => {
+    const formatted = buildStructuredDataAnalysisAnswer(
+      {
+        question:
+          "2026年に最もFavoriteを集めたVizをランキング形式で教えてください。",
+        dashboardContext: {
+          dashboardName: "Statistics",
+          worksheets: [{ name: "Views" }],
+          filters: [],
+          parameters: [],
+          dataSources: [{ name: "Tableau Public Per Day(2025/04-)" }],
+          capturedAt: "2026-06-03T00:00:00.000Z",
+        },
+      },
+      {
+        provider: "tableau-mcp",
+        queryInsights: [
+          {
+            datasourceName: "Tableau Public Per Day(2025/04-)",
+            datasourceLuid: "ds-123",
+            dimensionField: "workbook_title",
+            metricField: "workbook_favoriteCount",
+            rowCount: 2,
+            rows: [
+              { label: "Viz A", value: 120 },
+              { label: "Viz B", value: 88 },
+            ],
+          },
+        ],
+        mcpExecutionDebug: {
+          intent: "data_analysis",
+          intentConfidence: 0.95,
+          answerableFromDashboardContext: false,
+          needsMcp: true,
+          maxToolCalls: 8,
+          plannedTools: [
+            "list-datasources",
+            "get-datasource-metadata",
+            "query-datasource",
+          ],
+          blockedTools: [],
+          executedTools: [
+            "list-datasources",
+            "get-datasource-metadata",
+            "query-datasource",
+          ],
+          skippedTools: [],
+          toolCallCount: 3,
+          replanUsed: true,
+          timingMs: { planning: 0, execution: 0 },
+        },
+      },
+    );
+
+    expect(formatted).toContain("2026年のFavorite数ランキング");
+  });
+
+  it("formats a relative-period ranking answer with a rolling-week label", () => {
+    const formatted = buildStructuredDataAnalysisAnswer(
+      {
+        question:
+          "直近1週間で最もFavoriteを集めたVizをランキング形式で教えてください。",
+        dashboardContext: {
+          dashboardName: "Statistics",
+          worksheets: [{ name: "Views" }],
+          filters: [],
+          parameters: [],
+          dataSources: [{ name: "Tableau Public Per Day(2025/04-)" }],
+          capturedAt: "2026-06-03T00:00:00.000Z",
+        },
+      },
+      {
+        provider: "tableau-mcp",
+        queryInsights: [
+          {
+            datasourceName: "Tableau Public Per Day(2025/04-)",
+            datasourceLuid: "ds-123",
+            dimensionField: "workbook_title",
+            metricField: "workbook_favoriteCount",
+            rowCount: 2,
+            rows: [
+              { label: "Viz A", value: 120 },
+              { label: "Viz B", value: 88 },
+            ],
+          },
+        ],
+        mcpExecutionDebug: {
+          intent: "data_analysis",
+          intentConfidence: 0.95,
+          answerableFromDashboardContext: false,
+          needsMcp: true,
+          maxToolCalls: 8,
+          plannedTools: [
+            "list-datasources",
+            "get-datasource-metadata",
+            "query-datasource",
+          ],
+          blockedTools: [],
+          executedTools: [
+            "list-datasources",
+            "get-datasource-metadata",
+            "query-datasource",
+          ],
+          skippedTools: [],
+          toolCallCount: 3,
+          replanUsed: true,
+          timingMs: { planning: 0, execution: 0 },
+        },
+      },
+    );
+
+    expect(formatted).toContain("直近1週間のFavorite数ランキング");
+  });
+
   it("prefers structured query results over a manual SQL-style answer", () => {
     const finalized = finalizeUserFacingAnswer(
       [
@@ -332,7 +482,8 @@ describe("ChatService with mock provider", () => {
         "```",
       ].join("\n"),
       {
-        question: "このダッシュボードで使われているデータソースから、2026年5月に最もFavoriteを集めたVizを、ランキング形式で出してください。",
+        question:
+          "このダッシュボードで使われているデータソースから、2026年5月に最もFavoriteを集めたVizを、ランキング形式で出してください。",
         dashboardContext: {
           dashboardName: "Statistics",
           worksheets: [{ name: "Views" }],
@@ -363,15 +514,25 @@ describe("ChatService with mock provider", () => {
           answerableFromDashboardContext: false,
           needsMcp: true,
           maxToolCalls: 8,
-          plannedTools: ["list-datasources", "get-datasource-metadata", "query-datasource"],
+          plannedTools: [
+            "list-datasources",
+            "get-datasource-metadata",
+            "query-datasource",
+          ],
           blockedTools: [],
-          executedTools: ["list-datasources", "get-datasource-metadata", "query-datasource"],
+          executedTools: [
+            "list-datasources",
+            "get-datasource-metadata",
+            "query-datasource",
+          ],
           skippedTools: [],
           toolCallCount: 3,
           replanUsed: true,
           timingMs: { planning: 0, execution: 0 },
         },
-        mcpToolResults: [{ toolName: "query-datasource", status: "success", summary: "ok" }],
+        mcpToolResults: [
+          { toolName: "query-datasource", status: "success", summary: "ok" },
+        ],
       },
     );
 
@@ -381,7 +542,11 @@ describe("ChatService with mock provider", () => {
 
   it("creates a notion draft preview when the question asks to save into Notion", async () => {
     const repository = new InMemoryChatHistoryRepository();
-    const service = new ChatService(new MockTableauContextProvider(), new MockAnswerGenerator(), repository);
+    const service = new ChatService(
+      new MockTableauContextProvider(),
+      new MockAnswerGenerator(),
+      repository,
+    );
 
     const response = await service.generateAnswer({
       question: "この分析をNotionに保存したい",
@@ -400,6 +565,8 @@ describe("ChatService with mock provider", () => {
 
     expect(response.notionPostIdeaDraft).toBeDefined();
     expect(response.notionPostIdeaDraft?.title).toContain("Notion");
-    expect(response.notionPostIdeaDraft?.suggestedPostText.length ?? 0).toBeGreaterThan(0);
+    expect(
+      response.notionPostIdeaDraft?.suggestedPostText.length ?? 0,
+    ).toBeGreaterThan(0);
   });
 });

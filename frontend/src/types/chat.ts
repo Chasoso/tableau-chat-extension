@@ -27,7 +27,9 @@ export type ContextRequest = {
   };
 };
 
-export type DashboardContextPatch = Partial<Pick<DashboardContext, "workbookName">>;
+export type DashboardContextPatch = Partial<
+  Pick<DashboardContext, "workbookName">
+>;
 
 export type ChatResponse = {
   answer: string;
@@ -51,6 +53,11 @@ export type ChatResponse = {
   debug?: {
     usedMock?: boolean;
     tableauContextProvider?: string;
+    agentExecutionDebug?: {
+      enabled: boolean;
+      planSource: "bedrock" | "heuristic";
+      passCount: number;
+    };
   };
 };
 

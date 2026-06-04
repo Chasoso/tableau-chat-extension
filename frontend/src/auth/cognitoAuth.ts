@@ -31,7 +31,9 @@ export async function completeLoginFromRedirect(): Promise<AuthSession | null> {
   return session;
 }
 
-export async function completeLoginFromUrl(urlValue: string): Promise<AuthSession | null> {
+export async function completeLoginFromUrl(
+  urlValue: string,
+): Promise<AuthSession | null> {
   const url = new URL(urlValue);
   const code = url.searchParams.get("code");
   const state = url.searchParams.get("state");
@@ -40,12 +42,16 @@ export async function completeLoginFromUrl(urlValue: string): Promise<AuthSessio
   }
 
   if (!state) {
-    throw new Error("サインイン状態を確認できませんでした。もう一度サインインしてください。");
+    throw new Error(
+      "サインイン状態を確認できませんでした。もう一度サインインしてください。",
+    );
   }
 
   const verifier = localStorage.getItem(getVerifierKey(state));
   if (!verifier) {
-    throw new Error("サインインセッションの情報が見つかりませんでした。もう一度サインインしてください。");
+    throw new Error(
+      "サインインセッションの情報が見つかりませんでした。もう一度サインインしてください。",
+    );
   }
 
   const tokenResponse = await fetch(`${getCognitoDomain()}/oauth2/token`, {
@@ -90,9 +96,15 @@ export async function startLogin(): Promise<void> {
 }
 
 export function openLoginPopupWindow(): Window {
-  const popup = window.open("", "tableau-chat-cognito-login", "popup,width=520,height=720");
+  const popup = window.open(
+    "",
+    "tableau-chat-cognito-login",
+    "popup,width=520,height=720",
+  );
   if (!popup) {
-    throw new Error("サインインウィンドウを開けませんでした。このサイトのポップアップを許可してください。");
+    throw new Error(
+      "サインインウィンドウを開けませんでした。このサイトのポップアップを許可してください。",
+    );
   }
 
   popup.focus();
@@ -128,7 +140,10 @@ export function isAuthRedirect(): boolean {
 }
 
 export function isAuthPopupStart(): boolean {
-  return new URL(window.location.href).searchParams.get("auth_action") === "login_popup";
+  return (
+    new URL(window.location.href).searchParams.get("auth_action") ===
+    "login_popup"
+  );
 }
 
 export function storeSession(session: AuthSession): void {
@@ -207,7 +222,10 @@ function randomBase64Url(byteLength: number): string {
 }
 
 async function sha256Base64Url(value: string): Promise<string> {
-  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
+  const digest = await crypto.subtle.digest(
+    "SHA-256",
+    new TextEncoder().encode(value),
+  );
   return base64Url(new Uint8Array(digest));
 }
 
@@ -225,8 +243,13 @@ function decodeClaims(token: string): Pick<AuthSession, "email" | "nickname"> {
   }
 
   try {
-    const normalized = addBase64Padding(payload.replaceAll("-", "+").replaceAll("_", "/"));
-    const decoded = JSON.parse(atob(normalized)) as { email?: string; nickname?: string };
+    const normalized = addBase64Padding(
+      payload.replaceAll("-", "+").replaceAll("_", "/"),
+    );
+    const decoded = JSON.parse(atob(normalized)) as {
+      email?: string;
+      nickname?: string;
+    };
     return {
       email: decoded.email,
       nickname: decoded.nickname,

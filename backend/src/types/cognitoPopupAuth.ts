@@ -1,6 +1,10 @@
 import type { EncryptedValue } from "./notion";
 
-export type CognitoPopupAuthStatus = "pending" | "completed" | "failed" | "consumed";
+export type CognitoPopupAuthStatus =
+  | "pending"
+  | "completed"
+  | "failed"
+  | "consumed";
 
 export type FrontendAuthSessionPayload = {
   accessToken: string;

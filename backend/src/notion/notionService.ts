@@ -1,8 +1,15 @@
 import { getConfig } from "../config";
 import { logDebug } from "../logging";
-import { getDefaultNotionConnectionId, NotionRepository } from "../repositories/notionRepository";
+import {
+  getDefaultNotionConnectionId,
+  NotionRepository,
+} from "../repositories/notionRepository";
 import type { AuthenticatedUser } from "../types/auth";
-import type { CreateNotionPostIdeaRequest, NotionPostIdeaSaveResponse, NotionStatusResponse } from "../types/notion";
+import type {
+  CreateNotionPostIdeaRequest,
+  NotionPostIdeaSaveResponse,
+  NotionStatusResponse,
+} from "../types/notion";
 import { categorizeNotionMcpError, NotionMcpClient } from "./notionMcpClient";
 import { NotionOAuthService } from "./notionOAuthService";
 
@@ -13,12 +20,19 @@ export class NotionService {
     private readonly notionMcpClient = new NotionMcpClient(),
   ) {}
 
-  async getStatus(user: AuthenticatedUser | undefined): Promise<NotionStatusResponse> {
+  async getStatus(
+    user: AuthenticatedUser | undefined,
+  ): Promise<NotionStatusResponse> {
     const userId = resolveNotionUserId(user);
     const config = getConfig().notion;
-    const connection = await this.repository.getConnection(userId, getDefaultNotionConnectionId());
-    const effectiveTargetParentPageId = connection?.targetParentPageId ?? config.defaultTargetParentPageId;
-    const effectiveTargetDatabaseId = connection?.targetDatabaseId ?? config.defaultTargetDatabaseId;
+    const connection = await this.repository.getConnection(
+      userId,
+      getDefaultNotionConnectionId(),
+    );
+    const effectiveTargetParentPageId =
+      connection?.targetParentPageId ?? config.defaultTargetParentPageId;
+    const effectiveTargetDatabaseId =
+      connection?.targetDatabaseId ?? config.defaultTargetDatabaseId;
 
     return {
       connected: Boolean(connection?.status === "connected"),
@@ -29,18 +43,27 @@ export class NotionService {
     };
   }
 
-  async connect(user: AuthenticatedUser | undefined, redirectAfter?: string): Promise<{ authorizationUrl: string }> {
+  async connect(
+    user: AuthenticatedUser | undefined,
+    redirectAfter?: string,
+  ): Promise<{ authorizationUrl: string }> {
     const userId = resolveNotionUserId(user);
     return this.oauthService.buildAuthorizationUrl({ userId, redirectAfter });
   }
 
-  async callback(code?: string, state?: string): Promise<{ redirectTo: string }> {
+  async callback(
+    code?: string,
+    state?: string,
+  ): Promise<{ redirectTo: string }> {
     return this.oauthService.handleCallback({ code, state });
   }
 
   async disconnect(user: AuthenticatedUser | undefined): Promise<void> {
     const userId = resolveNotionUserId(user);
-    await this.repository.deleteConnection(userId, getDefaultNotionConnectionId());
+    await this.repository.deleteConnection(
+      userId,
+      getDefaultNotionConnectionId(),
+    );
   }
 
   async updateSettings(
@@ -48,14 +71,18 @@ export class NotionService {
     input: { targetParentPageId?: string; targetDatabaseId?: string },
   ): Promise<void> {
     const userId = resolveNotionUserId(user);
-    const connection = await this.repository.getConnection(userId, getDefaultNotionConnectionId());
+    const connection = await this.repository.getConnection(
+      userId,
+      getDefaultNotionConnectionId(),
+    );
     if (!connection) {
       throw new Error("Notion is not connected.");
     }
 
     await this.repository.putConnection({
       ...connection,
-      targetParentPageId: input.targetParentPageId ?? connection.targetParentPageId,
+      targetParentPageId:
+        input.targetParentPageId ?? connection.targetParentPageId,
       targetDatabaseId: input.targetDatabaseId ?? connection.targetDatabaseId,
       updatedAt: new Date().toISOString(),
     });
@@ -66,10 +93,13 @@ export class NotionService {
     payload: CreateNotionPostIdeaRequest,
   ): Promise<NotionPostIdeaSaveResponse> {
     const userId = resolveNotionUserId(user);
-    const { connection, accessToken } = await this.oauthService.getConnectionForUse(userId);
+    const { connection, accessToken } =
+      await this.oauthService.getConnectionForUse(userId);
     const config = getConfig().notion;
-    const targetParentPageId = connection.targetParentPageId ?? config.defaultTargetParentPageId;
-    const targetDatabaseId = connection.targetDatabaseId ?? config.defaultTargetDatabaseId;
+    const targetParentPageId =
+      connection.targetParentPageId ?? config.defaultTargetParentPageId;
+    const targetDatabaseId =
+      connection.targetDatabaseId ?? config.defaultTargetDatabaseId;
     if (!targetParentPageId && !targetDatabaseId) {
       throw new Error("Notion target is not configured.");
     }
@@ -98,7 +128,9 @@ export class NotionService {
         logDebug("notion.create_post_idea.retry_after_token_refresh", {
           userIdPresent: Boolean(userId),
         });
-        const refreshed = await this.oauthService.getConnectionForUse(userId, { forceRefresh: true });
+        const refreshed = await this.oauthService.getConnectionForUse(userId, {
+          forceRefresh: true,
+        });
         created = await this.notionMcpClient.createPostIdeaPage({
           accessToken: refreshed.accessToken,
           title: payload.title,
@@ -114,7 +146,9 @@ export class NotionService {
           status: "refresh_failed",
           updatedAt: new Date().toISOString(),
         });
-        throw new Error("Notion access token is invalid after refresh. Please reconnect Notion.");
+        throw new Error(
+          "Notion access token is invalid after refresh. Please reconnect Notion.",
+        );
       }
       throw error;
     }
@@ -137,7 +171,8 @@ function isInvalidTokenError(error: unknown): boolean {
 }
 
 function buildPostIdeaMarkdown(payload: CreateNotionPostIdeaRequest): string {
-  const tags = payload.tags?.filter(Boolean).join(", ") || "Tableau, MCP, X Analytics";
+  const tags =
+    payload.tags?.filter(Boolean).join(", ") || "Tableau, MCP, X Analytics";
   return [
     `# 投稿アイデア: ${payload.title}`,
     "",
@@ -164,7 +199,9 @@ function buildPostIdeaMarkdown(payload: CreateNotionPostIdeaRequest): string {
   ].join("\n");
 }
 
-export function resolveNotionUserId(user: AuthenticatedUser | undefined): string {
+export function resolveNotionUserId(
+  user: AuthenticatedUser | undefined,
+): string {
   const config = getConfig();
   if (user?.userId) {
     return user.userId;

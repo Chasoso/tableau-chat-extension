@@ -12,7 +12,11 @@ export class TableauMetadataClient {
     this.serverUrl = options.serverUrl.replace(/\/$/, "");
   }
 
-  async query<T = unknown>(session: TableauSession, query: string, variables?: Record<string, unknown>): Promise<T> {
+  async query<T = unknown>(
+    session: TableauSession,
+    query: string,
+    variables?: Record<string, unknown>,
+  ): Promise<T> {
     const response = await fetch(`${this.serverUrl}/api/metadata/graphql`, {
       method: "POST",
       headers: {
@@ -24,17 +28,23 @@ export class TableauMetadataClient {
     });
 
     if (!response.ok) {
-      throw new TableauRequestError(`Tableau Metadata API request failed with status ${response.status}.`, {
-        operation: "metadata",
-        status: response.status,
-        path: "/api/metadata/graphql",
-      });
+      throw new TableauRequestError(
+        `Tableau Metadata API request failed with status ${response.status}.`,
+        {
+          operation: "metadata",
+          status: response.status,
+          path: "/api/metadata/graphql",
+        },
+      );
     }
 
     return response.json() as Promise<T>;
   }
 
-  async getBasicWorkbookMetadata(session: TableauSession, workbookNameOrId: string): Promise<unknown> {
+  async getBasicWorkbookMetadata(
+    session: TableauSession,
+    workbookNameOrId: string,
+  ): Promise<unknown> {
     const query = `
       query BasicWorkbookMetadata($name: String!) {
         workbooks(filter: { name: $name }) {
@@ -56,7 +66,10 @@ export class TableauMetadataClient {
     return this.query(session, query, { name: workbookNameOrId });
   }
 
-  async getBasicDashboardMetadata(session: TableauSession, dashboardName: string): Promise<unknown> {
+  async getBasicDashboardMetadata(
+    session: TableauSession,
+    dashboardName: string,
+  ): Promise<unknown> {
     const query = `
       query BasicDashboardMetadata($name: String!) {
         dashboards(filter: { name: $name }) {

@@ -25,7 +25,9 @@ type Props = {
     error: string | null;
     onSignIn: () => Promise<void>;
   };
-  onDashboardContextPatch?: (patch: Partial<Pick<DashboardContext, "workbookName">>) => void;
+  onDashboardContextPatch?: (
+    patch: Partial<Pick<DashboardContext, "workbookName">>,
+  ) => void;
 };
 
 const exampleQuestions = [
@@ -53,14 +55,20 @@ export default function ChatPanel({
   const [isAnswerLoading, setIsAnswerLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const [notionStatus, setNotionStatus] = useState<NotionStatusResponse | null>(null);
+  const [notionStatus, setNotionStatus] = useState<NotionStatusResponse | null>(
+    null,
+  );
   const [isNotionConnecting, setIsNotionConnecting] = useState(false);
   const [isNotionSaving, setIsNotionSaving] = useState(false);
   const [notionActionMenuOpen, setNotionActionMenuOpen] = useState(false);
-  const [notionDraft, setNotionDraft] = useState<NotionPostIdeaDraft | null>(null);
-  const [notionCompletion, setNotionCompletion] = useState<NotionCompletion | null>(null);
+  const [notionDraft, setNotionDraft] = useState<NotionPostIdeaDraft | null>(
+    null,
+  );
+  const [notionCompletion, setNotionCompletion] =
+    useState<NotionCompletion | null>(null);
 
-  const isSendLocked = isAnswerLoading || isNotionSaving || !isAuthenticated || isAuthLoading;
+  const isSendLocked =
+    isAnswerLoading || isNotionSaving || !isAuthenticated || isAuthLoading;
   const isBackgroundLocked = !isAuthenticated;
 
   useEffect(() => {
@@ -125,7 +133,9 @@ export default function ChatPanel({
         return;
       }
 
-      const payload = event.data as { type?: string; ok?: boolean; error?: string } | undefined;
+      const payload = event.data as
+        | { type?: string; ok?: boolean; error?: string }
+        | undefined;
       if (!payload || payload.type !== "tableau-chat.notion.complete") {
         return;
       }
@@ -240,7 +250,11 @@ export default function ChatPanel({
         setNotionDraft(null);
       }
     } catch (unknownError) {
-      setError(unknownError instanceof Error ? unknownError.message : "回答の生成に失敗しました。");
+      setError(
+        unknownError instanceof Error
+          ? unknownError.message
+          : "回答の生成に失敗しました。",
+      );
     } finally {
       setIsAnswerLoading(false);
     }
@@ -252,9 +266,15 @@ export default function ChatPanel({
       setNotionActionMenuOpen(false);
       setError(null);
 
-      const popup = window.open("about:blank", "tableau-chat-notion-connect", "popup,width=520,height=720");
+      const popup = window.open(
+        "about:blank",
+        "tableau-chat-notion-connect",
+        "popup,width=520,height=720",
+      );
       if (!popup) {
-        throw new Error("ポップアップを開けませんでした。ブラウザのポップアップ設定を確認してください。");
+        throw new Error(
+          "ポップアップを開けませんでした。ブラウザのポップアップ設定を確認してください。",
+        );
       }
       notionPopupRef.current = popup;
       popup.focus();
@@ -287,10 +307,16 @@ export default function ChatPanel({
 
         try {
           const popupUrl = currentPopup.location.href;
-          if (popupUrl.startsWith(window.location.origin) && popupUrl.includes("/notion/callback")) {
+          if (
+            popupUrl.startsWith(window.location.origin) &&
+            popupUrl.includes("/notion/callback")
+          ) {
             return;
           }
-          if (popupUrl.startsWith(window.location.origin) && !popupUrl.includes("/notion/callback")) {
+          if (
+            popupUrl.startsWith(window.location.origin) &&
+            !popupUrl.includes("/notion/callback")
+          ) {
             currentPopup.close();
             window.clearInterval(notionPopupPollerRef.current);
             notionPopupPollerRef.current = undefined;
@@ -303,7 +329,11 @@ export default function ChatPanel({
         }
       }, 500);
     } catch (unknownError) {
-      setError(unknownError instanceof Error ? unknownError.message : "Notion接続に失敗しました。");
+      setError(
+        unknownError instanceof Error
+          ? unknownError.message
+          : "Notion接続に失敗しました。",
+      );
       if (notionPopupPollerRef.current) {
         window.clearInterval(notionPopupPollerRef.current);
       }
@@ -331,7 +361,11 @@ export default function ChatPanel({
       });
       setNotionDraft(null);
     } catch (unknownError) {
-      setError(unknownError instanceof Error ? unknownError.message : "Notion保存に失敗しました。");
+      setError(
+        unknownError instanceof Error
+          ? unknownError.message
+          : "Notion保存に失敗しました。",
+      );
     } finally {
       setIsNotionSaving(false);
     }
@@ -347,7 +381,8 @@ export default function ChatPanel({
     return "Notionに接続";
   }, [isNotionConnecting, notionStatus?.connected]);
 
-  const notionActionDisabled = isNotionConnecting || Boolean(notionStatus?.connected);
+  const notionActionDisabled =
+    isNotionConnecting || Boolean(notionStatus?.connected);
 
   return (
     <section className="chat-panel" aria-label="Tableau Chat Panel">
@@ -369,9 +404,14 @@ export default function ChatPanel({
         </div>
       </header>
 
-      <div className={`${messages.length === 0 ? "chat-body has-starters" : "chat-body no-starters"}${isBackgroundLocked ? " locked" : ""}`}>
+      <div
+        className={`${messages.length === 0 ? "chat-body has-starters" : "chat-body no-starters"}${isBackgroundLocked ? " locked" : ""}`}
+      >
         {messages.length === 0 ? (
-          <section className="question-starters" aria-label="suggested questions">
+          <section
+            className="question-starters"
+            aria-label="suggested questions"
+          >
             <p>たとえば、このような質問ができます。</p>
             <div className="starter-user-row">
               {exampleQuestions.map((question) => (
@@ -395,7 +435,9 @@ export default function ChatPanel({
           loadingText="Tableau MCPでデータを確認しています…"
           notionCompletion={notionCompletion}
           onToggleNotionCompletion={() =>
-            setNotionCompletion((current) => (current ? { ...current, expanded: !current.expanded } : current))
+            setNotionCompletion((current) =>
+              current ? { ...current, expanded: !current.expanded } : current,
+            )
           }
         />
       </div>
@@ -426,7 +468,12 @@ export default function ChatPanel({
               </svg>
             </button>
             {notionActionMenuOpen && !isBackgroundLocked ? (
-              <div id="external-action-menu" className="action-menu" role="menu" aria-label="外部連携メニュー">
+              <div
+                id="external-action-menu"
+                className="action-menu"
+                role="menu"
+                aria-label="外部連携メニュー"
+              >
                 <button
                   type="button"
                   className="action-menu-item"
@@ -444,7 +491,10 @@ export default function ChatPanel({
 
       {notionDraft ? (
         <div className="notion-modal-backdrop" role="presentation">
-          <section className="notion-confirm-card notion-confirm-modal" aria-label="Notion保存前確認">
+          <section
+            className="notion-confirm-card notion-confirm-modal"
+            aria-label="Notion保存前確認"
+          >
             <h2>外部サービス連携アクション</h2>
             <div className="notion-confirm-row">
               <p className="notion-confirm-label">保存タイトル:</p>
@@ -452,14 +502,21 @@ export default function ChatPanel({
             </div>
             <div className="notion-confirm-row">
               <p className="notion-confirm-label">保存内容の要約:</p>
-              <p className="notion-confirm-value notion-confirm-summary">{buildDraftSummary(notionDraft)}</p>
+              <p className="notion-confirm-value notion-confirm-summary">
+                {buildDraftSummary(notionDraft)}
+              </p>
             </div>
             <div className="notion-confirm-row">
               <p className="notion-confirm-label">保存先:</p>
               <p className="notion-confirm-value">Notion</p>
             </div>
             <div className="notion-confirm-actions">
-              <button type="button" className="secondary" disabled={isNotionSaving} onClick={() => setNotionDraft(null)}>
+              <button
+                type="button"
+                className="secondary"
+                disabled={isNotionSaving}
+                onClick={() => setNotionDraft(null)}
+              >
                 キャンセル
               </button>
               <button
@@ -471,7 +528,9 @@ export default function ChatPanel({
                 Notionに登録
               </button>
             </div>
-            {!notionStatus?.connected ? <p className="hint">Notion接続後に保存できます。</p> : null}
+            {!notionStatus?.connected ? (
+              <p className="hint">Notion接続後に保存できます。</p>
+            ) : null}
           </section>
         </div>
       ) : null}
@@ -482,7 +541,9 @@ export default function ChatPanel({
           <section className="auth-overlay-card" aria-label="ログイン案内">
             <h2>Tableau Assistant</h2>
             <p>利用するには、ログインが必要です。</p>
-            {authOverlay?.error ? <div className="error-banner">{authOverlay.error}</div> : null}
+            {authOverlay?.error ? (
+              <div className="error-banner">{authOverlay.error}</div>
+            ) : null}
             <button
               type="button"
               disabled={Boolean(authOverlay?.isSigningIn)}
@@ -498,7 +559,9 @@ export default function ChatPanel({
 }
 
 function buildDraftSummary(draft: NotionPostIdeaDraft): string {
-  const parts = [draft.reason, draft.suggestedPostText].filter(Boolean).join(" ");
+  const parts = [draft.reason, draft.suggestedPostText]
+    .filter(Boolean)
+    .join(" ");
   const compact = parts.replace(/\s+/g, " ").trim();
   if (!compact) {
     return "保存内容の要約はありません。";

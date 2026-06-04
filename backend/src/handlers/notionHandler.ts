@@ -13,10 +13,13 @@ export async function handleNotionRoute(
 ): Promise<ApiGatewayProxyResult> {
   const config = getConfig();
   if (!config.notion.enabled) {
-    return jsonResponse(403, { message: "Notion MCP integration is disabled." });
+    return jsonResponse(403, {
+      message: "Notion MCP integration is disabled.",
+    });
   }
 
-  const method = event.httpMethod ?? event.requestContext?.http?.method ?? "GET";
+  const method =
+    event.httpMethod ?? event.requestContext?.http?.method ?? "GET";
   const path = event.rawPath ?? event.path ?? "";
 
   try {
@@ -26,7 +29,10 @@ export async function handleNotionRoute(
 
     if (path.endsWith("/notion/connect") && method === "POST") {
       const body = parseJsonBody<{ redirectAfter?: string }>(event.body);
-      return jsonResponse(200, await notionService.connect(user, body?.redirectAfter));
+      return jsonResponse(
+        200,
+        await notionService.connect(user, body?.redirectAfter),
+      );
     }
 
     if (path.endsWith("/notion/callback") && method === "GET") {
@@ -76,7 +82,10 @@ export async function handleNotionRoute(
     }
 
     if (path.endsWith("/notion/settings") && method === "POST") {
-      const body = parseJsonBody<{ targetParentPageId?: string; targetDatabaseId?: string }>(event.body);
+      const body = parseJsonBody<{
+        targetParentPageId?: string;
+        targetDatabaseId?: string;
+      }>(event.body);
       await notionService.updateSettings(user, body ?? {});
       return jsonResponse(200, { ok: true });
     }
@@ -120,13 +129,23 @@ function validateCreatePostIdeaBody(body: CreateNotionPostIdeaRequest): void {
   }
 }
 
-function toUserFacingMessage(error: unknown): { statusCode: number; text: string } {
-  const message = error instanceof Error ? error.message : "Notion integration failed.";
+function toUserFacingMessage(error: unknown): {
+  statusCode: number;
+  text: string;
+} {
+  const message =
+    error instanceof Error ? error.message : "Notion integration failed.";
   if (/not connected|Notion is not connected/i.test(message)) {
-    return { statusCode: 409, text: "Notion is not connected. Please connect Notion first." };
+    return {
+      statusCode: 409,
+      text: "Notion is not connected. Please connect Notion first.",
+    };
   }
   if (/state expired|state not found|OAuth state/i.test(message)) {
-    return { statusCode: 400, text: "Notion authorization session expired. Please connect again." };
+    return {
+      statusCode: 400,
+      text: "Notion authorization session expired. Please connect again.",
+    };
   }
   if (/required|missing/i.test(message)) {
     return { statusCode: 400, text: message };
@@ -143,7 +162,11 @@ function toUserFacingMessage(error: unknown): { statusCode: number; text: string
       text: "Notion保存先が未設定です。保存先ページまたはデータベースを設定してください。",
     };
   }
-  if (/object_not_found|Could not find page|Could not find database|data source/i.test(message)) {
+  if (
+    /object_not_found|Could not find page|Could not find database|data source/i.test(
+      message,
+    )
+  ) {
     return {
       statusCode: 400,
       text: "Notion保存先IDが見つからないか、アクセス権がありません。保存先設定を確認してください。",
@@ -159,13 +182,19 @@ function toUserFacingMessage(error: unknown): { statusCode: number; text: string
     return { statusCode: 403, text: message };
   }
   if (/refresh/i.test(message)) {
-    return { statusCode: 401, text: "Notion session refresh failed. Please reconnect Notion." };
+    return {
+      statusCode: 401,
+      text: "Notion session refresh failed. Please reconnect Notion.",
+    };
   }
 
   return { statusCode: 500, text: "Notion request failed. Please retry." };
 }
 
-function jsonResponse(statusCode: number, payload: unknown): ApiGatewayProxyResult {
+function jsonResponse(
+  statusCode: number,
+  payload: unknown,
+): ApiGatewayProxyResult {
   return {
     statusCode,
     headers: {
@@ -188,7 +217,11 @@ function htmlResponse(statusCode: number, html: string): ApiGatewayProxyResult {
   };
 }
 
-function buildNotionCallbackHtml(input: { ok: boolean; redirectTo: string; errorMessage?: string }): string {
+function buildNotionCallbackHtml(input: {
+  ok: boolean;
+  redirectTo: string;
+  errorMessage?: string;
+}): string {
   const redirectToJson = JSON.stringify(input.redirectTo || "/");
   const errorJson = JSON.stringify(input.errorMessage ?? "");
   const okJson = input.ok ? "true" : "false";

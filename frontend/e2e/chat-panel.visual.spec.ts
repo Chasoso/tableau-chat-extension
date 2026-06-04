@@ -26,7 +26,7 @@ async function mockApis(page: Page) {
 }
 
 test.describe("chat panel visual", () => {
-  test("matches the baseline on initial render", async ({ page }) => {
+  test("@visual matches the baseline on initial render", async ({ page }) => {
     await mockApis(page);
     await page.setViewportSize({ width: 1280, height: 720 });
     await page.goto("/");
@@ -42,4 +42,3 @@ test.describe("chat panel visual", () => {
     });
   });
 });
-

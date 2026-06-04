@@ -10,7 +10,8 @@ flowchart TD
   D --> E[AWS Lambda]
   E --> F[Cognito JWT Verification]
   F --> G[ChatService]
-  G --> H[TableauContextProvider]
+  G --> P[Lightweight Agent Loop]
+  P --> H[TableauContextProvider]
   H --> I[Mock Provider]
   H --> J[Direct Tableau REST API / Metadata API]
   H --> K[Tableau MCP stdio child process]
@@ -30,14 +31,16 @@ flowchart TD
 3. If authentication is required, the user signs in with Cognito Hosted UI.
 4. The frontend sends `POST /chat` with dashboard context and a Cognito token.
 5. Lambda verifies the Cognito JWT and derives the Tableau subject from the verified email claim.
-6. `ChatService` asks the selected `TableauContextProvider` for additional context.
+6. `ChatService` optionally runs a lightweight agent loop that rewrites ambiguous questions into a clearer investigation question, then evaluates whether one more context pass is needed.
 7. `mock` returns local test context, `direct-api` calls Tableau REST / Metadata API, and `mcp` launches Tableau MCP over stdio.
-8. `AnswerGenerator` either returns a deterministic context answer or calls Bedrock Nova Lite.
-9. Chat history is saved to DynamoDB.
+8. The Tableau MCP provider still enforces the allowlist, timeout, and identifier guardrails for actual tool execution.
+9. `AnswerGenerator` either returns a deterministic context answer or calls Bedrock Nova Lite.
+10. Chat history is saved to DynamoDB.
 
 ### Key Abstractions
 
 - `TableauContextProvider`: hides whether Tableau context came from REST API, Metadata API, MCP, or mocks.
+- `Lightweight Agent Loop`: adds question normalization, evidence sufficiency evaluation, and at most one extra context retrieval pass without introducing a large framework.
 - `AnswerGenerator`: hides whether answers come from deterministic mock logic or Bedrock.
 - `ChatHistoryRepository`: hides whether history is saved in DynamoDB or memory.
 

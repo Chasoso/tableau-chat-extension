@@ -1,16 +1,30 @@
 import type { ChatHistoryRecord, ChatRequest } from "../types/chat";
 import type { TableauAdditionalContext } from "../types/tableau";
-import { compressDashboardContext, renderCompressedContext } from "./contextCompressor";
+import {
+  compressDashboardContext,
+  renderCompressedContext,
+} from "./contextCompressor";
 
 const MAX_HISTORY_QUESTION_CHARS = 300;
 const MAX_HISTORY_ANSWER_CHARS = 700;
+
+export type PromptBuildOptions = {
+  agentPlanSummary?: string;
+  investigationQuestion?: string;
+  evaluationSummary?: string;
+  evidenceGaps?: string[];
+};
 
 export function buildPrompt(
   request: ChatRequest,
   additionalContext: TableauAdditionalContext,
   recentHistory: ChatHistoryRecord[] = [],
+  options: PromptBuildOptions = {},
 ): string {
-  const compressedContext = compressDashboardContext(request, additionalContext);
+  const compressedContext = compressDashboardContext(
+    request,
+    additionalContext,
+  );
   const observationCount = additionalContext.mcpObservations?.length ?? 0;
   const executionDebug = additionalContext.mcpExecutionDebug;
 
@@ -32,6 +46,16 @@ export function buildPrompt(
     "Do not confuse Tableau project names with datasource names.",
     "If datasource field evidence is present, list only those field names. Do not invent additional field names.",
     "If aggregated query results or ranking rows are present, answer with those results directly. Do not describe hypothetical SQL or execution steps.",
+    options.agentPlanSummary ? `Agent plan: ${options.agentPlanSummary}` : "",
+    options.investigationQuestion
+      ? `Tool-planning question: ${options.investigationQuestion}`
+      : "",
+    options.evaluationSummary
+      ? `Evidence evaluation: ${options.evaluationSummary}`
+      : "",
+    options.evidenceGaps?.length
+      ? `Remaining evidence gaps: ${options.evidenceGaps.join("; ")}`
+      : "",
     "If follow-up action is useful, suggest exactly one next check.",
     "When answering, clarify scope with phrases like 'In this dashboard context' or 'From retrieved Tableau Cloud information'.",
     observationCount

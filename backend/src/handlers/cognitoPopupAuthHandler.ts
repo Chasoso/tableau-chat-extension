@@ -6,9 +6,12 @@ import type { CognitoPopupStartRequest } from "../types/cognitoPopupAuth";
 
 const service = new CognitoPopupAuthService();
 
-export async function handleCognitoPopupAuthRoute(event: ApiGatewayProxyEvent): Promise<ApiGatewayProxyResult> {
+export async function handleCognitoPopupAuthRoute(
+  event: ApiGatewayProxyEvent,
+): Promise<ApiGatewayProxyResult> {
   const path = event.rawPath ?? event.path ?? "";
-  const method = event.httpMethod ?? event.requestContext?.http?.method ?? "GET";
+  const method =
+    event.httpMethod ?? event.requestContext?.http?.method ?? "GET";
 
   try {
     if (path === "/auth/cognito/popup/start" && method === "POST") {
@@ -23,7 +26,10 @@ export async function handleCognitoPopupAuthRoute(event: ApiGatewayProxyEvent): 
     if (path === "/auth/cognito/callback" && method === "GET") {
       const code = event.queryStringParameters?.code;
       const state = event.queryStringParameters?.state;
-      const { redirectAfter } = await service.handlePopupCallback({ code, state });
+      const { redirectAfter } = await service.handlePopupCallback({
+        code,
+        state,
+      });
       return htmlResponse(
         200,
         renderPopupCallbackHtml({
@@ -36,7 +42,10 @@ export async function handleCognitoPopupAuthRoute(event: ApiGatewayProxyEvent): 
     if (path === "/auth/cognito/popup/status" && method === "GET") {
       const transactionId = event.queryStringParameters?.transactionId ?? "";
       const pollToken = getHeader(event.headers, "x-auth-poll-token");
-      const response = await service.getPopupAuthStatus({ transactionId, pollToken });
+      const response = await service.getPopupAuthStatus({
+        transactionId,
+        pollToken,
+      });
       return jsonResponse(response.status === "failed" ? 400 : 200, response);
     }
 
@@ -48,7 +57,8 @@ export async function handleCognitoPopupAuthRoute(event: ApiGatewayProxyEvent): 
         500,
         renderPopupCallbackHtml({
           success: false,
-          message: "サインインの完了処理に失敗しました。このウィンドウを閉じて、もう一度お試しください。",
+          message:
+            "サインインの完了処理に失敗しました。このウィンドウを閉じて、もう一度お試しください。",
         }),
       );
     }
@@ -59,11 +69,18 @@ export async function handleCognitoPopupAuthRoute(event: ApiGatewayProxyEvent): 
       transactionIdHash: safeHash(event.queryStringParameters?.transactionId),
       ...safeErrorDetails(error),
     });
-    return jsonResponse(500, { message: error instanceof Error ? error.message : "Authentication request failed." });
+    return jsonResponse(500, {
+      message:
+        error instanceof Error
+          ? error.message
+          : "Authentication request failed.",
+    });
   }
 }
 
-function parseStartRequest(body: string | null | undefined): CognitoPopupStartRequest {
+function parseStartRequest(
+  body: string | null | undefined,
+): CognitoPopupStartRequest {
   if (!body) {
     return {};
   }
@@ -74,13 +91,17 @@ function parseStartRequest(body: string | null | undefined): CognitoPopupStartRe
   };
 }
 
-function jsonResponse(statusCode: number, payload: unknown): ApiGatewayProxyResult {
+function jsonResponse(
+  statusCode: number,
+  payload: unknown,
+): ApiGatewayProxyResult {
   const config = getConfig();
   return {
     statusCode,
     headers: {
       "Access-Control-Allow-Origin": config.corsAllowedOrigin,
-      "Access-Control-Allow-Headers": "Content-Type,Authorization,X-Auth-Poll-Token",
+      "Access-Control-Allow-Headers":
+        "Content-Type,Authorization,X-Auth-Poll-Token",
       "Access-Control-Allow-Methods": "OPTIONS,POST,GET",
       "Cache-Control": "no-store",
       "Content-Type": "application/json",
@@ -95,7 +116,8 @@ function htmlResponse(statusCode: number, html: string): ApiGatewayProxyResult {
     statusCode,
     headers: {
       "Access-Control-Allow-Origin": config.corsAllowedOrigin,
-      "Access-Control-Allow-Headers": "Content-Type,Authorization,X-Auth-Poll-Token",
+      "Access-Control-Allow-Headers":
+        "Content-Type,Authorization,X-Auth-Poll-Token",
       "Access-Control-Allow-Methods": "OPTIONS,POST,GET",
       "Cache-Control": "no-store",
       "Content-Type": "text/html; charset=utf-8",
@@ -114,7 +136,9 @@ function renderPopupCallbackHtml(input: {
     : input.success
       ? "サインインが完了しました。このウィンドウはまもなく閉じます。"
       : "サインインに失敗しました。このウィンドウを閉じて、もう一度お試しください。";
-  const redirectAfter = input.redirectAfter ? escapeHtml(input.redirectAfter) : "/";
+  const redirectAfter = input.redirectAfter
+    ? escapeHtml(input.redirectAfter)
+    : "/";
 
   return `<!doctype html>
 <html lang="ja">
@@ -146,8 +170,13 @@ function renderPopupCallbackHtml(input: {
 </html>`;
 }
 
-function getHeader(headers: Record<string, string | undefined> | undefined, name: string): string | undefined {
-  const entry = Object.entries(headers ?? {}).find(([key]) => key.toLowerCase() === name.toLowerCase());
+function getHeader(
+  headers: Record<string, string | undefined> | undefined,
+  name: string,
+): string | undefined {
+  const entry = Object.entries(headers ?? {}).find(
+    ([key]) => key.toLowerCase() === name.toLowerCase(),
+  );
   return entry?.[1];
 }
 

@@ -1,13 +1,21 @@
 import { getConfig } from "../config";
 import { authenticateRequest } from "../auth/cognitoAuth";
-import { logError, logInfo, logWarn, safeErrorDetails, safeHash } from "../logging";
+import {
+  logError,
+  logInfo,
+  logWarn,
+  safeErrorDetails,
+  safeHash,
+} from "../logging";
 import { createChatService } from "../services/chatService";
 import type { ApiGatewayProxyEvent, ApiGatewayProxyResult } from "../types/api";
 import type { ChatRequest, ContextRequest } from "../types/chat";
 import { handleNotionRoute } from "./notionHandler";
 import { handleCognitoPopupAuthRoute } from "./cognitoPopupAuthHandler";
 
-export async function handler(event: ApiGatewayProxyEvent): Promise<ApiGatewayProxyResult> {
+export async function handler(
+  event: ApiGatewayProxyEvent,
+): Promise<ApiGatewayProxyResult> {
   const requestId = event.requestContext?.requestId;
   const method = event.httpMethod ?? event.requestContext?.http?.method;
   const routePath = getRoutePath(event);
@@ -25,8 +33,13 @@ export async function handler(event: ApiGatewayProxyEvent): Promise<ApiGatewayPr
         ? { ok: true as const, user: undefined }
         : await authenticateRequest(event.headers);
     if (!authResult.ok) {
-      logWarn("chat.auth.rejected", { requestId, statusCode: authResult.statusCode });
-      return jsonResponse(authResult.statusCode, { message: authResult.message });
+      logWarn("chat.auth.rejected", {
+        requestId,
+        statusCode: authResult.statusCode,
+      });
+      return jsonResponse(authResult.statusCode, {
+        message: authResult.message,
+      });
     }
     logInfo("chat.auth.accepted", {
       requestId,
@@ -53,11 +66,16 @@ export async function handler(event: ApiGatewayProxyEvent): Promise<ApiGatewayPr
         return jsonResponse(400, { message: validationError });
       }
 
-      const response = await createChatService().getDashboardContextPatch(contextRequest, authResult.user);
+      const response = await createChatService().getDashboardContextPatch(
+        contextRequest,
+        authResult.user,
+      );
       logInfo("chat.context_request.completed", {
         requestId,
         provider: response.debug?.tableauContextProvider,
-        patchedFields: response.dashboardContextPatch?.workbookName ? ["workbookName"] : [],
+        patchedFields: response.dashboardContextPatch?.workbookName
+          ? ["workbookName"]
+          : [],
       });
       return jsonResponse(200, response);
     }
@@ -69,7 +87,10 @@ export async function handler(event: ApiGatewayProxyEvent): Promise<ApiGatewayPr
       return jsonResponse(400, { message: validationError });
     }
 
-    const response = await createChatService().generateAnswer(chatRequest, authResult.user);
+    const response = await createChatService().generateAnswer(
+      chatRequest,
+      authResult.user,
+    );
     logInfo("chat.request.completed", {
       requestId,
       provider: response.debug?.tableauContextProvider,
@@ -123,13 +144,17 @@ function getRoutePath(event: ApiGatewayProxyEvent): string {
   return event.rawPath ?? event.path ?? "";
 }
 
-function jsonResponse(statusCode: number, payload: unknown): ApiGatewayProxyResult {
+function jsonResponse(
+  statusCode: number,
+  payload: unknown,
+): ApiGatewayProxyResult {
   const config = getConfig();
   return {
     statusCode,
     headers: {
       "Access-Control-Allow-Origin": config.corsAllowedOrigin,
-      "Access-Control-Allow-Headers": "Content-Type,Authorization,X-Auth-Poll-Token",
+      "Access-Control-Allow-Headers":
+        "Content-Type,Authorization,X-Auth-Poll-Token",
       "Access-Control-Allow-Methods": "OPTIONS,POST,GET",
       "Content-Type": "application/json",
     },

@@ -1,7 +1,12 @@
 import type { ChatRequest } from "../types/chat";
-import type { DatasourceFieldProfile, QueryDatasourceInsight, TableauAdditionalContext } from "../types/tableau";
+import type {
+  DatasourceFieldProfile,
+  QueryDatasourceInsight,
+  TableauAdditionalContext,
+} from "../types/tableau";
 
-const REDACTED_KEYS = /token|secret|password|jwt|authorization|credential|cookie/i;
+const REDACTED_KEYS =
+  /token|secret|password|jwt|authorization|credential|cookie/i;
 
 export type CompressedDashboardContext = {
   dashboardName: string;
@@ -35,13 +40,20 @@ export function compressDashboardContext(
 
   return {
     dashboardName: dashboardContext.dashboardName,
-    workbookName: dashboardContext.workbookName ?? extractName(additionalContext.workbook) ?? "not available",
+    workbookName:
+      dashboardContext.workbookName ??
+      extractName(additionalContext.workbook) ??
+      "not available",
     workbookId: dashboardContext.workbookId ?? "not available",
     viewName: dashboardContext.viewName ?? "not available",
     viewId: dashboardContext.viewId ?? "not available",
-    worksheets: dashboardContext.worksheets.map((worksheet) => worksheet.name).filter(Boolean),
+    worksheets: dashboardContext.worksheets
+      .map((worksheet) => worksheet.name)
+      .filter(Boolean),
     filters: dashboardContext.filters.map((filter) => {
-      const values = filter.appliedValues?.length ? filter.appliedValues.join(", ") : "not specified";
+      const values = filter.appliedValues?.length
+        ? filter.appliedValues.join(", ")
+        : "not specified";
       return `${filter.worksheetName ? `${filter.worksheetName} / ` : ""}${filter.fieldName}: ${values}`;
     }),
     parameters: dashboardContext.parameters.map((parameter) => {
@@ -49,33 +61,52 @@ export function compressDashboardContext(
       return `${parameter.name}: ${String(value)}`;
     }),
     dataSources: [
-      ...extractAnswerDatasourceNames(dashboardContext.dataSources?.map((datasource) => datasource.name) ?? [], additionalContext),
+      ...extractAnswerDatasourceNames(
+        dashboardContext.dataSources?.map((datasource) => datasource.name) ??
+          [],
+        additionalContext,
+      ),
     ].filter(unique),
     provider: additionalContext.provider,
     intent: additionalContext.mcpExecutionDebug?.intent ?? "unknown",
-    answerableFromDashboardContext: additionalContext.mcpExecutionDebug?.answerableFromDashboardContext ?? false,
+    answerableFromDashboardContext:
+      additionalContext.mcpExecutionDebug?.answerableFromDashboardContext ??
+      false,
     needsMcp: additionalContext.mcpExecutionDebug?.needsMcp ?? false,
     workbookMetadata: safeJsonSnippet(additionalContext.workbook, 1600),
     additionalMetadata: safeJsonSnippet(additionalContext.metadata, 2400),
-    mcpTools: additionalContext.mcpTools?.map((tool) => tool.name).slice(0, 20) ?? [],
+    mcpTools:
+      additionalContext.mcpTools?.map((tool) => tool.name).slice(0, 20) ?? [],
     mcpToolResults:
       additionalContext.mcpToolResults?.map((result) => {
         const prefix = `${result.toolName}: ${result.status}`;
-        return result.summary ? `${prefix} - ${result.summary}` : result.warning ? `${prefix} - ${result.warning}` : prefix;
+        return result.summary
+          ? `${prefix} - ${result.summary}`
+          : result.warning
+            ? `${prefix} - ${result.warning}`
+            : prefix;
       }) ?? [],
     mcpObservations:
       additionalContext.mcpObservations?.map((observation) => {
         const status = observation.success ? "success" : "failed";
-        const reason = observation.resultSummary || observation.errorMessage || "no details";
-        return `${observation.tool} (${status}) purpose=${observation.purpose}; ${reason}`.slice(0, 420);
+        const reason =
+          observation.resultSummary || observation.errorMessage || "no details";
+        return `${observation.tool} (${status}) purpose=${observation.purpose}; ${reason}`.slice(
+          0,
+          420,
+        );
       }) ?? [],
-    datasourceFieldEvidence: renderDatasourceFieldEvidence(additionalContext.datasourceFieldProfiles ?? []),
+    datasourceFieldEvidence: renderDatasourceFieldEvidence(
+      additionalContext.datasourceFieldProfiles ?? [],
+    ),
     queryInsights: renderQueryInsights(additionalContext.queryInsights ?? []),
     warnings: additionalContext.warnings ?? [],
   };
 }
 
-export function renderCompressedContext(context: CompressedDashboardContext): string {
+export function renderCompressedContext(
+  context: CompressedDashboardContext,
+): string {
   return [
     `Dashboard: ${context.dashboardName}`,
     `Workbook: ${context.workbookName}`,
@@ -152,7 +183,9 @@ function unique(value: string, index: number, values: string[]): boolean {
   return value.trim().length > 0 && values.indexOf(value) === index;
 }
 
-function renderDatasourceFieldEvidence(profiles: DatasourceFieldProfile[]): string[] {
+function renderDatasourceFieldEvidence(
+  profiles: DatasourceFieldProfile[],
+): string[] {
   return profiles.slice(0, 5).map((profile) => {
     const topFields = profile.fieldNames.slice(0, 40).join(", ");
     const suffix = profile.fieldNames.length > 40 ? ", ..." : "";
