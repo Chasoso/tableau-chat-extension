@@ -65,7 +65,11 @@ describe("tableauMcpToolPlanner", () => {
       [],
     );
 
-    expect(allowed).toEqual(["list-workbooks", "query-datasource", "delete-everything"]);
+    expect(allowed).toEqual([
+      "list-workbooks",
+      "query-datasource",
+      "delete-everything",
+    ]);
   });
 
   it("intersects configured allowlist with tools exposed by MCP", () => {
@@ -142,7 +146,11 @@ describe("tableauMcpToolPlanner", () => {
       "soft",
     );
 
-    expect(allowed).toEqual(["list-views", "list-datasources", "search-content"]);
+    expect(allowed).toEqual([
+      "list-views",
+      "list-datasources",
+      "search-content",
+    ]);
   });
 
   it("restricts tools by intent in strict mode", () => {

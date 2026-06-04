@@ -20,7 +20,10 @@ export function decodeAes256GcmKey(encodedKey: string): Buffer {
 export function encryptString(plainText: string, key: Buffer): EncryptedValue {
   const iv = randomBytes(IV_LENGTH);
   const cipher = createCipheriv("aes-256-gcm", key, iv);
-  const ciphertext = Buffer.concat([cipher.update(plainText, "utf8"), cipher.final()]);
+  const ciphertext = Buffer.concat([
+    cipher.update(plainText, "utf8"),
+    cipher.final(),
+  ]);
   const authTag = cipher.getAuthTag();
 
   return {
@@ -31,9 +34,16 @@ export function encryptString(plainText: string, key: Buffer): EncryptedValue {
 }
 
 export function decryptString(value: EncryptedValue, key: Buffer): string {
-  const decipher = createDecipheriv("aes-256-gcm", key, Buffer.from(value.iv, "base64"));
+  const decipher = createDecipheriv(
+    "aes-256-gcm",
+    key,
+    Buffer.from(value.iv, "base64"),
+  );
   decipher.setAuthTag(Buffer.from(value.authTag, "base64"));
-  const plain = Buffer.concat([decipher.update(Buffer.from(value.ciphertext, "base64")), decipher.final()]);
+  const plain = Buffer.concat([
+    decipher.update(Buffer.from(value.ciphertext, "base64")),
+    decipher.final(),
+  ]);
 
   return plain.toString("utf8");
 }

@@ -1,4 +1,9 @@
-export type QuestionPeriodKind = "year" | "month" | "day" | "relative" | "range";
+export type QuestionPeriodKind =
+  | "year"
+  | "month"
+  | "day"
+  | "relative"
+  | "range";
 
 export type QuestionPeriod = {
   kind: QuestionPeriodKind;
@@ -15,7 +20,10 @@ export type QuestionPeriodParseOptions = {
 
 const JST_OFFSET_MINUTES = 9 * 60;
 
-export function parseQuestionPeriod(question: string, options: QuestionPeriodParseOptions = {}): QuestionPeriod | undefined {
+export function parseQuestionPeriod(
+  question: string,
+  options: QuestionPeriodParseOptions = {},
+): QuestionPeriod | undefined {
   const normalized = normalizeQuestion(question);
   const reference = getJstDateParts(options.referenceDate ?? new Date());
 
@@ -28,7 +36,10 @@ export function parseQuestionPeriod(question: string, options: QuestionPeriodPar
   );
 }
 
-function parseExplicitRange(question: string, reference: JstDateParts): QuestionPeriod | undefined {
+function parseExplicitRange(
+  question: string,
+  reference: JstDateParts,
+): QuestionPeriod | undefined {
   const patterns = [
     /(?<start>(?:20\d{2}[\/\-年]\d{1,2}[\/\-月]\d{1,2}日?|20\d{2}[\/\-年]\d{1,2}[\/\-月]|\d{1,2}[\/\-月]\d{1,2}日?|\d{1,2}[\/\-月]|\d{1,2}日))\s*(?:から|to|〜|～|~|-|–|―)\s*(?<end>(?:20\d{2}[\/\-年]\d{1,2}[\/\-月]\d{1,2}日?|20\d{2}[\/\-年]\d{1,2}[\/\-月]|\d{1,2}[\/\-月]\d{1,2}日?|\d{1,2}[\/\-月]|\d{1,2}日))/u,
   ];
@@ -40,7 +51,10 @@ function parseExplicitRange(question: string, reference: JstDateParts): Question
     }
 
     const startParts = parseDateExpression(match.groups.start, reference);
-    const endParts = parseDateExpression(match.groups.end, startParts ?? reference);
+    const endParts = parseDateExpression(
+      match.groups.end,
+      startParts ?? reference,
+    );
     if (!startParts || !endParts) {
       continue;
     }
@@ -71,14 +85,20 @@ function parseExplicitRange(question: string, reference: JstDateParts): Question
   return undefined;
 }
 
-function parseRelativePeriod(question: string, reference: JstDateParts): QuestionPeriod | undefined {
+function parseRelativePeriod(
+  question: string,
+  reference: JstDateParts,
+): QuestionPeriod | undefined {
   const compact = question.replace(/\s+/g, "");
 
   const numericRelativePatterns: Array<{
     pattern: RegExp;
     kind: "day" | "week";
     labelBuilder: (value: number) => string;
-    rangeBuilder: (value: number, ref: JstDateParts) => { startDate: string; endDate: string };
+    rangeBuilder: (
+      value: number,
+      ref: JstDateParts,
+    ) => { startDate: string; endDate: string };
   }> = [
     {
       pattern: /(?:直近|過去|past|last)\s*(\d{1,3})\s*(?:日|day|days)/i,
@@ -204,7 +224,11 @@ function parseRelativePeriod(question: string, reference: JstDateParts): Questio
   return undefined;
 }
 
-function parseDatePeriod(question: string, reference: JstDateParts, kind: "year" | "month" | "day"): QuestionPeriod | undefined {
+function parseDatePeriod(
+  question: string,
+  reference: JstDateParts,
+  kind: "year" | "month" | "day",
+): QuestionPeriod | undefined {
   const orderedCandidates =
     kind === "day"
       ? [
@@ -219,10 +243,7 @@ function parseDatePeriod(question: string, reference: JstDateParts, kind: "year"
             /(20\d{2})年(\d{1,2})月/,
             /(20\d{2})\/(\d{1,2})/,
           ]
-        : [
-            /(20\d{2})年/,
-            /\b(20\d{2})\b/,
-          ];
+        : [/(20\d{2})年/, /\b(20\d{2})\b/];
 
   for (const pattern of orderedCandidates) {
     const match = question.match(pattern);
@@ -238,7 +259,14 @@ function parseDatePeriod(question: string, reference: JstDateParts, kind: "year"
     if (kind === "day") {
       const month = Number.parseInt(match[2] ?? "", 10);
       const day = Number.parseInt(match[3] ?? "", 10);
-      if (!Number.isFinite(month) || !Number.isFinite(day) || month < 1 || month > 12 || day < 1 || day > 31) {
+      if (
+        !Number.isFinite(month) ||
+        !Number.isFinite(day) ||
+        month < 1 ||
+        month > 12 ||
+        day < 1 ||
+        day > 31
+      ) {
         continue;
       }
 
@@ -292,7 +320,10 @@ type JstDateParts = {
   day: number;
 };
 
-function parseDateExpression(value: string, fallback: JstDateParts): JstDateParts | undefined {
+function parseDateExpression(
+  value: string,
+  fallback: JstDateParts,
+): JstDateParts | undefined {
   const compact = value.trim();
   const dateMatch =
     compact.match(/^(20\d{2})[\/\-](\d{1,2})[\/\-](\d{1,2})$/) ??
@@ -314,7 +345,11 @@ function parseDateExpression(value: string, fallback: JstDateParts): JstDatePart
   const month = Number.parseInt(dateMatch[2] ?? `${fallback.month}`, 10);
   const day = Number.parseInt(dateMatch[3] ?? `${fallback.day}`, 10);
 
-  if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day)) {
+  if (
+    !Number.isFinite(year) ||
+    !Number.isFinite(month) ||
+    !Number.isFinite(day)
+  ) {
     return undefined;
   }
 
@@ -322,7 +357,8 @@ function parseDateExpression(value: string, fallback: JstDateParts): JstDatePart
 }
 
 function getJstDateParts(referenceDate: string | Date): JstDateParts {
-  const date = referenceDate instanceof Date ? referenceDate : new Date(referenceDate);
+  const date =
+    referenceDate instanceof Date ? referenceDate : new Date(referenceDate);
   const shifted = new Date(date.getTime() + JST_OFFSET_MINUTES * 60 * 1000);
   return {
     year: shifted.getUTCFullYear(),
@@ -342,7 +378,10 @@ function shiftYmd(reference: JstDateParts, deltaDays: number): string {
   return toYmd(fromUtcDate(addDays(toUtcDate(reference), deltaDays)));
 }
 
-function shiftMonth(reference: JstDateParts, deltaMonths: number): JstDateParts {
+function shiftMonth(
+  reference: JstDateParts,
+  deltaMonths: number,
+): JstDateParts {
   const utc = toUtcDate({ ...reference, day: 1 });
   utc.setUTCMonth(utc.getUTCMonth() + deltaMonths);
   return {

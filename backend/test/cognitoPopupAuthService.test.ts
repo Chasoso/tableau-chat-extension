@@ -22,15 +22,18 @@ describe("CognitoPopupAuthService", () => {
     COGNITO_CLIENT_ID: process.env.COGNITO_CLIENT_ID,
     COGNITO_DOMAIN: process.env.COGNITO_DOMAIN,
     COGNITO_POPUP_REDIRECT_URI: process.env.COGNITO_POPUP_REDIRECT_URI,
-    COGNITO_AUTH_TRANSACTION_TTL_SECONDS: process.env.COGNITO_AUTH_TRANSACTION_TTL_SECONDS,
+    COGNITO_AUTH_TRANSACTION_TTL_SECONDS:
+      process.env.COGNITO_AUTH_TRANSACTION_TTL_SECONDS,
   };
 
   beforeEach(() => {
     vi.clearAllMocks();
     process.env.AUTH_REQUIRED = "true";
     process.env.COGNITO_CLIENT_ID = "client-123";
-    process.env.COGNITO_DOMAIN = "https://demo.auth.ap-northeast-1.amazoncognito.com";
-    process.env.COGNITO_POPUP_REDIRECT_URI = "https://example.com/api/auth/cognito/callback";
+    process.env.COGNITO_DOMAIN =
+      "https://demo.auth.ap-northeast-1.amazoncognito.com";
+    process.env.COGNITO_POPUP_REDIRECT_URI =
+      "https://example.com/api/auth/cognito/callback";
     process.env.COGNITO_AUTH_TRANSACTION_TTL_SECONDS = "600";
 
     cryptoMocks.encryptPopupCodeVerifier.mockResolvedValue({
@@ -72,15 +75,22 @@ describe("CognitoPopupAuthService", () => {
     const repository = createRepositoryStub();
     const service = new CognitoPopupAuthService(repository as never);
 
-    const result = await service.startPopupAuth({ redirectAfter: "/dashboard" });
+    const result = await service.startPopupAuth({
+      redirectAfter: "/dashboard",
+    });
 
     expect(repository.putTransaction).toHaveBeenCalledTimes(1);
-    const record = repository.putTransaction.mock.calls[0][0] as CognitoAuthTransactionRecord;
+    const record = repository.putTransaction.mock
+      .calls[0][0] as CognitoAuthTransactionRecord;
     expect(record.status).toBe("pending");
     expect(record.redirectAfter).toBe("/dashboard");
     expect(record.codeVerifier.ciphertext).toBe("enc-verifier");
-    expect(result.authorizationUrl).toContain("https://demo.auth.ap-northeast-1.amazoncognito.com/oauth2/authorize");
-    expect(result.authorizationUrl).toContain("redirect_uri=https%3A%2F%2Fexample.com%2Fapi%2Fauth%2Fcognito%2Fcallback");
+    expect(result.authorizationUrl).toContain(
+      "https://demo.auth.ap-northeast-1.amazoncognito.com/oauth2/authorize",
+    );
+    expect(result.authorizationUrl).toContain(
+      "redirect_uri=https%3A%2F%2Fexample.com%2Fapi%2Fauth%2Fcognito%2Fcallback",
+    );
     expect(result.transactionId).toBe(record.transactionId);
     expect(result.pollToken).toBeTruthy();
   });
@@ -109,7 +119,10 @@ describe("CognitoPopupAuthService", () => {
         ok: true,
         json: async () => ({
           access_token: "access-token",
-          id_token: createFakeJwt({ email: "user@example.com", nickname: "Chasoso" }),
+          id_token: createFakeJwt({
+            email: "user@example.com",
+            nickname: "Chasoso",
+          }),
           expires_in: 3600,
           token_type: "Bearer",
         }),
@@ -129,7 +142,8 @@ describe("CognitoPopupAuthService", () => {
     const service = new CognitoPopupAuthService(repository as never);
 
     const start = await service.startPopupAuth({});
-    const putRecord = repository.putTransaction.mock.calls[0][0] as CognitoAuthTransactionRecord;
+    const putRecord = repository.putTransaction.mock
+      .calls[0][0] as CognitoAuthTransactionRecord;
     repository.getTransaction.mockResolvedValue({
       ...putRecord,
       status: "completed",
@@ -156,7 +170,8 @@ describe("CognitoPopupAuthService", () => {
     const service = new CognitoPopupAuthService(repository as never);
 
     const start = await service.startPopupAuth({});
-    const putRecord = repository.putTransaction.mock.calls[0][0] as CognitoAuthTransactionRecord;
+    const putRecord = repository.putTransaction.mock
+      .calls[0][0] as CognitoAuthTransactionRecord;
     repository.getTransaction.mockResolvedValue(putRecord);
 
     const result = await service.getPopupAuthStatus({
@@ -183,7 +198,9 @@ function createRepositoryStub() {
 }
 
 function createFakeJwt(claims: Record<string, unknown>): string {
-  const header = Buffer.from(JSON.stringify({ alg: "none", typ: "JWT" })).toString("base64url");
+  const header = Buffer.from(
+    JSON.stringify({ alg: "none", typ: "JWT" }),
+  ).toString("base64url");
   const payload = Buffer.from(JSON.stringify(claims)).toString("base64url");
   return `${header}.${payload}.signature`;
 }

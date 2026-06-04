@@ -13,14 +13,19 @@ export type PopupAuthStatusResponse =
   | { status: "completed"; session: AuthSession }
   | { status: "failed" | "consumed"; message: string };
 
-export async function startPopupAuth(input: { redirectAfter?: string }): Promise<PopupAuthStartResponse> {
-  const response = await fetch(`${env.apiBaseUrl.replace(/\/$/, "")}/auth/cognito/popup/start`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
+export async function startPopupAuth(input: {
+  redirectAfter?: string;
+}): Promise<PopupAuthStartResponse> {
+  const response = await fetch(
+    `${env.apiBaseUrl.replace(/\/$/, "")}/auth/cognito/popup/start`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(input),
     },
-    body: JSON.stringify(input),
-  });
+  );
 
   if (!response.ok) {
     throw await toApiError(response);
@@ -33,7 +38,10 @@ export async function getPopupAuthStatus(
   transactionId: string,
   pollToken: string,
 ): Promise<PopupAuthStatusResponse> {
-  const url = new URL(`${env.apiBaseUrl.replace(/\/$/, "")}/auth/cognito/popup/status`, window.location.origin);
+  const url = new URL(
+    `${env.apiBaseUrl.replace(/\/$/, "")}/auth/cognito/popup/status`,
+    window.location.origin,
+  );
   url.searchParams.set("transactionId", transactionId);
 
   const response = await fetch(url.toString(), {
@@ -43,13 +51,16 @@ export async function getPopupAuthStatus(
     },
   });
 
-  const body = (await response.json().catch(() => ({ message: `Request failed with status ${response.status}` }))) as
-    | PopupAuthStatusResponse
-    | { message?: string };
+  const body = (await response.json().catch(() => ({
+    message: `Request failed with status ${response.status}`,
+  }))) as PopupAuthStatusResponse | { message?: string };
 
   if (!response.ok && (!("status" in body) || body.status !== "failed")) {
     const message =
-      typeof body === "object" && body !== null && "message" in body && typeof body.message === "string"
+      typeof body === "object" &&
+      body !== null &&
+      "message" in body &&
+      typeof body.message === "string"
         ? body.message
         : `Request failed with status ${response.status}`;
     throw new Error(message);
@@ -59,8 +70,10 @@ export async function getPopupAuthStatus(
 }
 
 async function toApiError(response: Response): Promise<Error> {
-  const body = (await response
-    .json()
-    .catch(() => ({ message: `Request failed with status ${response.status}` }))) as { message?: string };
-  return new Error(body.message ?? `Request failed with status ${response.status}`);
+  const body = (await response.json().catch(() => ({
+    message: `Request failed with status ${response.status}`,
+  }))) as { message?: string };
+  return new Error(
+    body.message ?? `Request failed with status ${response.status}`,
+  );
 }

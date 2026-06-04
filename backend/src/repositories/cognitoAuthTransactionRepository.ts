@@ -8,7 +8,10 @@ import {
 import { marshall, unmarshall } from "@aws-sdk/util-dynamodb";
 import { getDynamoDbClient } from "../aws/dynamodb";
 import { getConfig } from "../config";
-import type { CognitoAuthTransactionRecord, CognitoPopupAuthStatus } from "../types/cognitoPopupAuth";
+import type {
+  CognitoAuthTransactionRecord,
+  CognitoPopupAuthStatus,
+} from "../types/cognitoPopupAuth";
 
 const STATE_INDEX_NAME = "StateIndex";
 
@@ -22,7 +25,9 @@ export class CognitoAuthTransactionRepository {
     );
   }
 
-  async getTransaction(transactionId: string): Promise<CognitoAuthTransactionRecord | null> {
+  async getTransaction(
+    transactionId: string,
+  ): Promise<CognitoAuthTransactionRecord | null> {
     const response = await getDynamoDbClient().send(
       new GetItemCommand({
         TableName: getTableName(),
@@ -37,7 +42,9 @@ export class CognitoAuthTransactionRepository {
     return unmarshall(response.Item) as CognitoAuthTransactionRecord;
   }
 
-  async getTransactionByState(state: string): Promise<CognitoAuthTransactionRecord | null> {
+  async getTransactionByState(
+    state: string,
+  ): Promise<CognitoAuthTransactionRecord | null> {
     const response = await getDynamoDbClient().send(
       new QueryCommand({
         TableName: getTableName(),
@@ -96,7 +103,12 @@ export class CognitoAuthTransactionRepository {
 
   private async updateTransaction(
     transactionId: string,
-    values: Partial<Pick<CognitoAuthTransactionRecord, "status" | "session" | "errorCode" | "errorMessageSafe" | "updatedAt">>,
+    values: Partial<
+      Pick<
+        CognitoAuthTransactionRecord,
+        "status" | "session" | "errorCode" | "errorMessageSafe" | "updatedAt"
+      >
+    >,
   ): Promise<void> {
     const attributeNames: Record<string, string> = {};
     const attributeValues: Record<string, unknown> = {};
@@ -124,7 +136,9 @@ export class CognitoAuthTransactionRepository {
         Key: marshall({ transactionId }),
         UpdateExpression: `SET ${updates.join(", ")}`,
         ExpressionAttributeNames: attributeNames,
-        ExpressionAttributeValues: marshall(attributeValues, { removeUndefinedValues: true }),
+        ExpressionAttributeValues: marshall(attributeValues, {
+          removeUndefinedValues: true,
+        }),
       }),
     );
   }
@@ -133,12 +147,16 @@ export class CognitoAuthTransactionRepository {
 function getTableName(): string {
   const tableName = getConfig().auth.popup.transactionsTableName;
   if (!tableName) {
-    throw new Error("COGNITO_AUTH_TRANSACTIONS_TABLE is required for Cognito popup auth.");
+    throw new Error(
+      "COGNITO_AUTH_TRANSACTIONS_TABLE is required for Cognito popup auth.",
+    );
   }
 
   return tableName;
 }
 
-export function isTerminalPopupAuthStatus(status: CognitoPopupAuthStatus): boolean {
+export function isTerminalPopupAuthStatus(
+  status: CognitoPopupAuthStatus,
+): boolean {
   return status === "completed" || status === "failed" || status === "consumed";
 }

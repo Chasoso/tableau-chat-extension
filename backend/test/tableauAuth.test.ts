@@ -25,7 +25,8 @@ describe("generateTableauConnectedAppJwt", () => {
       scp: ["tableau:content:read"],
     });
     expect((decoded?.payload as { jti?: string }).jti).toBeTruthy();
-    expect((decoded?.payload as { exp?: number }).exp).toBeGreaterThan(Math.floor(Date.now() / 1000));
+    expect((decoded?.payload as { exp?: number }).exp).toBeGreaterThan(
+      Math.floor(Date.now() / 1000),
+    );
   });
 });
-

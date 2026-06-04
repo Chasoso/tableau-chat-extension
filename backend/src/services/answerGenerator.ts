@@ -1,4 +1,7 @@
-import { BedrockRuntimeClient, ConverseCommand } from "@aws-sdk/client-bedrock-runtime";
+import {
+  BedrockRuntimeClient,
+  ConverseCommand,
+} from "@aws-sdk/client-bedrock-runtime";
 import { getConfig } from "../config";
 import { logError, logInfo, logWarn, safeErrorDetails } from "../logging";
 import type { ChatRequest } from "../types/chat";
@@ -30,7 +33,9 @@ export class BedrockAnswerGenerator implements AnswerGenerator {
   readonly name = "bedrock";
 
   constructor(
-    private readonly client = new BedrockRuntimeClient({ region: getConfig().model.bedrock.region }),
+    private readonly client = new BedrockRuntimeClient({
+      region: getConfig().model.bedrock.region,
+    }),
   ) {}
 
   async generate(input: {
@@ -48,7 +53,10 @@ export class BedrockAnswerGenerator implements AnswerGenerator {
         promptLength: input.prompt.length,
       });
       if (config.debugLogPromptExchange) {
-        const promptSnapshot = clipForDebugLog(input.prompt, config.debugMaxChars);
+        const promptSnapshot = clipForDebugLog(
+          input.prompt,
+          config.debugMaxChars,
+        );
         logInfo("answer.bedrock.prompt_debug", {
           region: config.region,
           modelId: config.modelId,
@@ -81,7 +89,10 @@ export class BedrockAnswerGenerator implements AnswerGenerator {
         .join("\n")
         .trim();
       if (config.debugLogPromptExchange) {
-        const responseSnapshot = clipForDebugLog(answer ?? "", config.debugMaxChars);
+        const responseSnapshot = clipForDebugLog(
+          answer ?? "",
+          config.debugMaxChars,
+        );
         logInfo("answer.bedrock.response_debug", {
           region: config.region,
           modelId: config.modelId,
@@ -142,7 +153,10 @@ export class BedrockAnswerGenerator implements AnswerGenerator {
   }
 }
 
-function clipForDebugLog(value: string, maxChars: number): { text: string; truncated: boolean } {
+function clipForDebugLog(
+  value: string,
+  maxChars: number,
+): { text: string; truncated: boolean } {
   if (value.length <= maxChars) {
     return { text: value, truncated: false };
   }
@@ -161,7 +175,10 @@ function appendTruncationNotice(answer: string): string {
   ].join("\n");
 }
 
-function buildDeterministicAnswer(request: ChatRequest, additionalContext: TableauAdditionalContext): string {
+function buildDeterministicAnswer(
+  request: ChatRequest,
+  additionalContext: TableauAdditionalContext,
+): string {
   const context = compressDashboardContext(request, additionalContext);
 
   return [

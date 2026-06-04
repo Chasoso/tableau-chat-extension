@@ -23,28 +23,39 @@ export type NotionPostIdeaDraft = {
   tags?: string[];
 };
 
-export async function getNotionStatus(accessToken?: string): Promise<NotionStatusResponse> {
-  const response = await fetch(`${env.apiBaseUrl.replace(/\/$/, "")}/notion/status`, {
-    method: "GET",
-    headers: {
-      ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+export async function getNotionStatus(
+  accessToken?: string,
+): Promise<NotionStatusResponse> {
+  const response = await fetch(
+    `${env.apiBaseUrl.replace(/\/$/, "")}/notion/status`,
+    {
+      method: "GET",
+      headers: {
+        ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+      },
     },
-  });
+  );
   if (!response.ok) {
     throw await toApiError(response);
   }
   return response.json() as Promise<NotionStatusResponse>;
 }
 
-export async function startNotionConnect(input: { redirectAfter?: string }, accessToken?: string): Promise<string> {
-  const response = await fetch(`${env.apiBaseUrl.replace(/\/$/, "")}/notion/connect`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+export async function startNotionConnect(
+  input: { redirectAfter?: string },
+  accessToken?: string,
+): Promise<string> {
+  const response = await fetch(
+    `${env.apiBaseUrl.replace(/\/$/, "")}/notion/connect`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+      },
+      body: JSON.stringify(input),
     },
-    body: JSON.stringify(input),
-  });
+  );
   if (!response.ok) {
     throw await toApiError(response);
   }
@@ -53,26 +64,35 @@ export async function startNotionConnect(input: { redirectAfter?: string }, acce
 }
 
 export async function disconnectNotion(accessToken?: string): Promise<void> {
-  const response = await fetch(`${env.apiBaseUrl.replace(/\/$/, "")}/notion/disconnect`, {
-    method: "POST",
-    headers: {
-      ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+  const response = await fetch(
+    `${env.apiBaseUrl.replace(/\/$/, "")}/notion/disconnect`,
+    {
+      method: "POST",
+      headers: {
+        ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+      },
     },
-  });
+  );
   if (!response.ok) {
     throw await toApiError(response);
   }
 }
 
-export async function savePostIdeaToNotion(draft: NotionPostIdeaDraft, accessToken?: string): Promise<{ pageUrl?: string }> {
-  const response = await fetch(`${env.apiBaseUrl.replace(/\/$/, "")}/notion/create-post-idea`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+export async function savePostIdeaToNotion(
+  draft: NotionPostIdeaDraft,
+  accessToken?: string,
+): Promise<{ pageUrl?: string }> {
+  const response = await fetch(
+    `${env.apiBaseUrl.replace(/\/$/, "")}/notion/create-post-idea`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+      },
+      body: JSON.stringify(draft),
     },
-    body: JSON.stringify(draft),
-  });
+  );
   if (!response.ok) {
     throw await toApiError(response);
   }
@@ -80,8 +100,10 @@ export async function savePostIdeaToNotion(draft: NotionPostIdeaDraft, accessTok
 }
 
 async function toApiError(response: Response): Promise<Error> {
-  const body = await response
-    .json()
-    .catch(() => ({ message: `Request failed with status ${response.status}` })) as { message?: string };
-  return new Error(body.message ?? `Request failed with status ${response.status}`);
+  const body = (await response.json().catch(() => ({
+    message: `Request failed with status ${response.status}`,
+  }))) as { message?: string };
+  return new Error(
+    body.message ?? `Request failed with status ${response.status}`,
+  );
 }

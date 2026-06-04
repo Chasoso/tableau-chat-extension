@@ -27,8 +27,11 @@ export class TableauRestClient {
 
   constructor(options: TableauRestClientOptions = {}) {
     const config = getConfig();
-    this.serverUrl = trimTrailingSlash(options.serverUrl ?? config.tableau.serverUrl);
-    this.siteContentUrl = options.siteContentUrl ?? config.tableau.siteContentUrl;
+    this.serverUrl = trimTrailingSlash(
+      options.serverUrl ?? config.tableau.serverUrl,
+    );
+    this.siteContentUrl =
+      options.siteContentUrl ?? config.tableau.siteContentUrl;
     this.apiVersion = options.apiVersion ?? config.tableau.apiVersion;
     this.subject = options.subject ?? config.tableau.defaultSubject;
     this.scopes = options.scopes ?? config.tableau.scopes;
@@ -56,30 +59,36 @@ export class TableauRestClient {
       scopes: this.scopes,
     });
 
-    const response = await fetch(`${this.serverUrl}/api/${this.apiVersion}/auth/signin`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Accept: "application/json",
-      },
-      body: JSON.stringify({
-        credentials: {
-          jwt: token,
-          site: {
-            contentUrl: this.siteContentUrl,
-          },
+    const response = await fetch(
+      `${this.serverUrl}/api/${this.apiVersion}/auth/signin`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json",
         },
-      }),
-    });
+        body: JSON.stringify({
+          credentials: {
+            jwt: token,
+            site: {
+              contentUrl: this.siteContentUrl,
+            },
+          },
+        }),
+      },
+    );
 
     if (!response.ok) {
       const tableauError = await readTableauError(response);
-      throw new TableauRequestError(`Tableau sign in failed with status ${response.status}.`, {
-        operation: "signin",
-        status: response.status,
-        path: `/api/${this.apiVersion}/auth/signin`,
-        ...tableauError,
-      });
+      throw new TableauRequestError(
+        `Tableau sign in failed with status ${response.status}.`,
+        {
+          operation: "signin",
+          status: response.status,
+          path: `/api/${this.apiVersion}/auth/signin`,
+          ...tableauError,
+        },
+      );
     }
 
     const body = (await response.json()) as {
@@ -92,7 +101,9 @@ export class TableauRestClient {
 
     const credentials = body.credentials;
     if (!credentials?.token || !credentials.site?.id || !credentials.user?.id) {
-      throw new Error("Tableau sign in response did not include required credentials.");
+      throw new Error(
+        "Tableau sign in response did not include required credentials.",
+      );
     }
 
     return {
@@ -108,16 +119,31 @@ export class TableauRestClient {
     });
   }
 
-  async getWorkbook(session: TableauSession, workbookId: string): Promise<unknown> {
-    return this.makeAuthenticatedRequest(session, `/sites/${session.siteId}/workbooks/${workbookId}`);
+  async getWorkbook(
+    session: TableauSession,
+    workbookId: string,
+  ): Promise<unknown> {
+    return this.makeAuthenticatedRequest(
+      session,
+      `/sites/${session.siteId}/workbooks/${workbookId}`,
+    );
   }
 
-  async getWorkbookConnections(session: TableauSession, workbookId: string): Promise<unknown> {
-    return this.makeAuthenticatedRequest(session, `/sites/${session.siteId}/workbooks/${workbookId}/connections`);
+  async getWorkbookConnections(
+    session: TableauSession,
+    workbookId: string,
+  ): Promise<unknown> {
+    return this.makeAuthenticatedRequest(
+      session,
+      `/sites/${session.siteId}/workbooks/${workbookId}/connections`,
+    );
   }
 
   async listDatasources(session: TableauSession): Promise<unknown> {
-    return this.makeAuthenticatedRequest(session, `/sites/${session.siteId}/datasources`);
+    return this.makeAuthenticatedRequest(
+      session,
+      `/sites/${session.siteId}/datasources`,
+    );
   }
 
   async makeAuthenticatedRequest<T = unknown>(
@@ -125,23 +151,29 @@ export class TableauRestClient {
     path: string,
     init: RequestInit = {},
   ): Promise<T> {
-    const response = await fetch(`${this.serverUrl}/api/${this.apiVersion}${path}`, {
-      ...init,
-      headers: {
-        Accept: "application/json",
-        ...(init.headers ?? {}),
-        "X-Tableau-Auth": session.token,
+    const response = await fetch(
+      `${this.serverUrl}/api/${this.apiVersion}${path}`,
+      {
+        ...init,
+        headers: {
+          Accept: "application/json",
+          ...(init.headers ?? {}),
+          "X-Tableau-Auth": session.token,
+        },
       },
-    });
+    );
 
     if (!response.ok) {
       const tableauError = await readTableauError(response);
-      throw new TableauRequestError(`Tableau REST API request failed with status ${response.status}.`, {
-        operation: "rest",
-        status: response.status,
-        path,
-        ...tableauError,
-      });
+      throw new TableauRequestError(
+        `Tableau REST API request failed with status ${response.status}.`,
+        {
+          operation: "rest",
+          status: response.status,
+          path,
+          ...tableauError,
+        },
+      );
     }
 
     if (response.status === 204) {

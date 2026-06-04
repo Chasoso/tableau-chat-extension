@@ -37,9 +37,14 @@ export class NotionMcpClient {
     try {
       await client.connect(transport);
       const tools = (await client.listTools()).tools as McpTool[];
-      const allowedTools = resolveAllowedNotionTools(config.allowedTools, tools.map((tool) => tool.name));
+      const allowedTools = resolveAllowedNotionTools(
+        config.allowedTools,
+        tools.map((tool) => tool.name),
+      );
       if (!allowedTools.has("notion-create-pages")) {
-        throw new Error("notion-create-pages is not allowed by NOTION_MCP_ALLOWED_TOOLS.");
+        throw new Error(
+          "notion-create-pages is not allowed by NOTION_MCP_ALLOWED_TOOLS.",
+        );
       }
 
       const parents = buildParentCandidates(input);
@@ -81,7 +86,9 @@ export class NotionMcpClient {
         }
       }
 
-      throw lastError instanceof Error ? lastError : new Error("Notion page creation failed.");
+      throw lastError instanceof Error
+        ? lastError
+        : new Error("Notion page creation failed.");
     } catch (error) {
       logWarn("notion.mcp.create_pages.failed", {
         errorCategory: categorizeNotionMcpError(error),
@@ -102,7 +109,11 @@ export function categorizeNotionMcpError(error: unknown): string {
   if (/forbidden|insufficient/i.test(message)) {
     return "insufficient_permission";
   }
-  if (/object_not_found|Could not find page|Could not find database/i.test(message)) {
+  if (
+    /object_not_found|Could not find page|Could not find database/i.test(
+      message,
+    )
+  ) {
     return "target_not_found";
   }
   if (/timed out|timeout/i.test(message)) {
@@ -111,8 +122,13 @@ export function categorizeNotionMcpError(error: unknown): string {
   return "unknown";
 }
 
-function resolveAllowedNotionTools(configuredTools: string[], discoveredToolNames: string[]): Set<string> {
-  const configured = configuredTools.map((toolName) => toolName.trim()).filter(Boolean);
+function resolveAllowedNotionTools(
+  configuredTools: string[],
+  discoveredToolNames: string[],
+): Set<string> {
+  const configured = configuredTools
+    .map((toolName) => toolName.trim())
+    .filter(Boolean);
   if (!configured.length) {
     return new Set(discoveredToolNames);
   }
@@ -156,7 +172,9 @@ export function buildParentCandidates(input: {
   const pageId = normalizeNotionIdentifier(input.targetParentPageId);
   const dataSourceId = normalizeNotionIdentifier(input.targetDatabaseId);
   if (!pageId && !dataSourceId) {
-    throw new Error("Notion target is not configured. Set targetParentPageId or targetDatabaseId.");
+    throw new Error(
+      "Notion target is not configured. Set targetParentPageId or targetDatabaseId.",
+    );
   }
 
   // Prefer page parent in PoC mode because it is the most broadly compatible target.
@@ -204,15 +222,24 @@ function extractUuidFromNotionUrl(value: string): string | undefined {
       return undefined;
     }
 
-    const match = tail.match(/[0-9a-f]{32}|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i);
+    const match = tail.match(
+      /[0-9a-f]{32}|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i,
+    );
     return match?.[0];
   } catch {
     return undefined;
   }
 }
 
-function isToolErrorResult(result: unknown): result is { isError: boolean; content?: unknown } {
-  return Boolean(result && typeof result === "object" && "isError" in result && (result as { isError?: unknown }).isError);
+function isToolErrorResult(
+  result: unknown,
+): result is { isError: boolean; content?: unknown } {
+  return Boolean(
+    result &&
+    typeof result === "object" &&
+    "isError" in result &&
+    (result as { isError?: unknown }).isError,
+  );
 }
 
 function summarizeToolError(result: { content?: unknown }): string {
@@ -220,14 +247,19 @@ function summarizeToolError(result: { content?: unknown }): string {
   return text.length > 500 ? `${text.slice(0, 500)}...` : text;
 }
 
-function extractNotionPageRef(result: unknown): { pageUrl?: string; pageId?: string } {
+function extractNotionPageRef(result: unknown): {
+  pageUrl?: string;
+  pageId?: string;
+} {
   if (!result || typeof result !== "object") {
     return {};
   }
 
   const text = JSON.stringify(result);
   const notionUrl = text.match(/https:\/\/www\.notion\.so\/[^\s"']+/)?.[0];
-  const pageId = text.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i)?.[0];
+  const pageId = text.match(
+    /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i,
+  )?.[0];
   return {
     pageUrl: notionUrl,
     pageId,

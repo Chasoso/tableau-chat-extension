@@ -18,7 +18,9 @@ export type ContextRequest = {
   clientContext?: ClientContext;
 };
 
-export type DashboardContextPatch = Partial<Pick<DashboardContext, "workbookName">>;
+export type DashboardContextPatch = Partial<
+  Pick<DashboardContext, "workbookName">
+>;
 
 export type ChatResponse = {
   answer: string;

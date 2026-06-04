@@ -38,6 +38,21 @@ cd backend
 npm test
 ```
 
+Repository-wide checks:
+
+```bash
+npm ci --prefix backend
+npm ci --prefix frontend
+cd frontend && npx playwright install --with-deps chromium
+cd ..
+npm run lint
+npm run typecheck
+npm run test:unit
+npm run build
+npm run test:e2e
+npm run ci
+```
+
 ### Local Smoke Test
 
 ```bash

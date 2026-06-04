@@ -1,9 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { runLightweightAgentLoop, type ChatAgent } from "../src/services/chatAgent";
-import type { GetAdditionalContextInput, TableauContextProvider } from "../src/tableau/contextProvider";
+import {
+  runLightweightAgentLoop,
+  type ChatAgent,
+} from "../src/services/chatAgent";
+import type {
+  GetAdditionalContextInput,
+  TableauContextProvider,
+} from "../src/tableau/contextProvider";
 import type { AgentEvaluation, AgentPlan } from "../src/types/agent";
 import type { ChatRequest } from "../src/types/chat";
-import type { TableauAdditionalContext } from "../src/types/tableau";
 
 const request: ChatRequest = {
   question: "曖昧な依頼です。人気のVizをいい感じに見せて",
@@ -52,10 +57,12 @@ describe("runLightweightAgentLoop", () => {
     const plan: AgentPlan = {
       intent: "data_analysis",
       confidence: 0.92,
-      normalizedQuestion: "2026年のFavorite数をデータソース集計でランキングしてください。",
+      normalizedQuestion:
+        "2026年のFavorite数をデータソース集計でランキングしてください。",
       needsMcp: true,
       answerStyle: "ranking",
-      reasonBrief: "The original request is ambiguous, so make the ranking target explicit.",
+      reasonBrief:
+        "The original request is ambiguous, so make the ranking target explicit.",
       requiredEvidence: ["datasource-backed aggregate ranking"],
     };
     const agent: ChatAgent = {
@@ -82,7 +89,9 @@ describe("runLightweightAgentLoop", () => {
     expect(inputs[0]?.question).toBe(request.question);
     expect(inputs[0]?.planningQuestion).toBe(plan.normalizedQuestion);
     expect(inputs[0]?.intentHint?.intent).toBe("data_analysis");
-    expect(result.promptContext.investigationQuestion).toBe(plan.normalizedQuestion);
+    expect(result.promptContext.investigationQuestion).toBe(
+      plan.normalizedQuestion,
+    );
     expect(result.debug?.planSource).toBe("heuristic");
   });
 
@@ -148,7 +157,8 @@ describe("runLightweightAgentLoop", () => {
     const plan: AgentPlan = {
       intent: "metadata_lookup",
       confidence: 0.9,
-      normalizedQuestion: "まず関連データソースを特定して必要なメタデータを取得してください。",
+      normalizedQuestion:
+        "まず関連データソースを特定して必要なメタデータを取得してください。",
       needsMcp: true,
       answerStyle: "summary",
       reasonBrief: "Need metadata before answering safely.",
@@ -160,7 +170,8 @@ describe("runLightweightAgentLoop", () => {
         confidence: 0.72,
         reasonBrief: "Metadata is still missing.",
         missingEvidence: ["datasource metadata"],
-        followUpQuestion: "関連データソースのメタデータを特定したうえでFavorite数を集計してください。",
+        followUpQuestion:
+          "関連データソースのメタデータを特定したうえでFavorite数を集計してください。",
       },
       {
         isSufficient: true,
@@ -191,7 +202,9 @@ describe("runLightweightAgentLoop", () => {
 
     expect(inputs).toHaveLength(2);
     expect(inputs[1]?.planningQuestion).toContain("Favorite数");
-    expect(result.additionalContext.queryInsights?.[0]?.rows[0]?.label).toBe("Viz A");
+    expect(result.additionalContext.queryInsights?.[0]?.rows[0]?.label).toBe(
+      "Viz A",
+    );
     expect(result.additionalContext.mcpExecutionDebug?.toolCallCount).toBe(3);
     expect(result.debug?.passCount).toBe(2);
     expect(result.promptContext.evaluationSummary).toContain("sufficient=true");

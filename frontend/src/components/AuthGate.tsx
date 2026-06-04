@@ -1,7 +1,15 @@
 import { useEffect, useRef, useState } from "react";
 import type React from "react";
-import { getPopupAuthStatus, startPopupAuth, type PopupAuthStartResponse } from "../api/authApi";
-import { getStoredSession, openLoginPopupWindow, storeSession } from "../auth/cognitoAuth";
+import {
+  getPopupAuthStatus,
+  startPopupAuth,
+  type PopupAuthStartResponse,
+} from "../api/authApi";
+import {
+  getStoredSession,
+  openLoginPopupWindow,
+  storeSession,
+} from "../auth/cognitoAuth";
 import type { AuthSession } from "../types/auth";
 
 const popupWaitTimeoutMs = 90_000;
@@ -48,7 +56,10 @@ export default function AuthGate({ children }: Props) {
   }
 
   function stopSignIn(message?: string): void {
-    logAuthDebug("popup_sign_in_stopped", { hasMessage: Boolean(message), message });
+    logAuthDebug("popup_sign_in_stopped", {
+      hasMessage: Boolean(message),
+      message,
+    });
     clearPollTimer();
     resetPopupState();
     setIsSigningIn(false);
@@ -58,7 +69,10 @@ export default function AuthGate({ children }: Props) {
   }
 
   function acceptSession(nextSession: AuthSession): void {
-    logAuthDebug("popup_sign_in_completed", { email: nextSession.email, nickname: nextSession.nickname });
+    logAuthDebug("popup_sign_in_completed", {
+      email: nextSession.email,
+      nickname: nextSession.nickname,
+    });
     storeSession(nextSession);
     clearPollTimer();
     try {
@@ -79,21 +93,33 @@ export default function AuthGate({ children }: Props) {
     }
 
     try {
-      logAuthDebug("popup_status_poll", { transactionId: transaction.transactionId });
-      const response = await getPopupAuthStatus(transaction.transactionId, transaction.pollToken);
+      logAuthDebug("popup_status_poll", {
+        transactionId: transaction.transactionId,
+      });
+      const response = await getPopupAuthStatus(
+        transaction.transactionId,
+        transaction.pollToken,
+      );
       if (response.status === "completed") {
         acceptSession(response.session);
         return;
       }
 
       if (response.status === "failed" || response.status === "consumed") {
-        logAuthDebug("popup_status_failed", { transactionId: transaction.transactionId, message: response.message });
-        stopSignIn(response.message || "ƒTƒCƒ“ƒCƒ“‚É¸”s‚µ‚Ü‚µ‚½B‚à‚¤ˆê“x‚¨‚µ‚­‚¾‚³‚¢B");
+        logAuthDebug("popup_status_failed", {
+          transactionId: transaction.transactionId,
+          message: response.message,
+        });
+        stopSignIn(
+          response.message || "ï¿½Tï¿½Cï¿½ï¿½ï¿½Cï¿½ï¿½ï¿½Éï¿½ï¿½sï¿½ï¿½ï¿½Ü‚ï¿½ï¿½ï¿½ï¿½Bï¿½ï¿½ï¿½ï¿½ï¿½ï¿½xï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½B",
+        );
         return;
       }
     } catch (unknownError) {
       stopSignIn(
-        unknownError instanceof Error ? unknownError.message : "ƒTƒCƒ“ƒCƒ“ó‘Ô‚ÌŠm”F‚É¸”s‚µ‚Ü‚µ‚½B‚à‚¤ˆê“x‚¨‚µ‚­‚¾‚³‚¢B",
+        unknownError instanceof Error
+          ? unknownError.message
+          : "ï¿½Tï¿½Cï¿½ï¿½ï¿½Cï¿½ï¿½ï¿½ï¿½Ô‚ÌŠmï¿½Fï¿½Éï¿½ï¿½sï¿½ï¿½ï¿½Ü‚ï¿½ï¿½ï¿½ï¿½Bï¿½ï¿½ï¿½ï¿½ï¿½ï¿½xï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½B",
       );
       return;
     }
@@ -107,7 +133,9 @@ export default function AuthGate({ children }: Props) {
     }
 
     if (Date.now() - transaction.startedAt >= popupWaitTimeoutMs) {
-      stopSignIn("ƒTƒCƒ“ƒCƒ“‚ªƒ^ƒCƒ€ƒAƒEƒg‚µ‚Ü‚µ‚½B‚à‚¤ˆê“xƒTƒCƒ“ƒCƒ“‚µ‚Ä‚­‚¾‚³‚¢B");
+      stopSignIn(
+        "ï¿½Tï¿½Cï¿½ï¿½ï¿½Cï¿½ï¿½ï¿½ï¿½ï¿½^ï¿½Cï¿½ï¿½ï¿½Aï¿½Eï¿½gï¿½ï¿½ï¿½Ü‚ï¿½ï¿½ï¿½ï¿½Bï¿½ï¿½ï¿½ï¿½ï¿½ï¿½xï¿½Tï¿½Cï¿½ï¿½ï¿½Cï¿½ï¿½ï¿½ï¿½ï¿½Ä‚ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½B",
+      );
     }
   }
 
@@ -158,7 +186,9 @@ export default function AuthGate({ children }: Props) {
         // Ignore popup close failures on startup error.
       }
       stopSignIn(
-        unknownError instanceof Error ? unknownError.message : "ƒTƒCƒ“ƒCƒ“‚ÌŠJn‚É¸”s‚µ‚Ü‚µ‚½B‚à‚¤ˆê“x‚¨‚µ‚­‚¾‚³‚¢B",
+        unknownError instanceof Error
+          ? unknownError.message
+          : "ï¿½Tï¿½Cï¿½ï¿½ï¿½Cï¿½ï¿½ï¿½ÌŠJï¿½nï¿½Éï¿½ï¿½sï¿½ï¿½ï¿½Ü‚ï¿½ï¿½ï¿½ï¿½Bï¿½ï¿½ï¿½ï¿½ï¿½ï¿½xï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½B",
       );
     }
   }
@@ -176,10 +206,14 @@ export default function AuthGate({ children }: Props) {
   );
 }
 
-function logAuthDebug(event: string, details: Record<string, unknown> = {}): void {
+function logAuthDebug(
+  event: string,
+  details: Record<string, unknown> = {},
+): void {
   const shouldLog =
     typeof window !== "undefined" &&
-    (localStorage.getItem(authDebugStorageKey) === "true" || import.meta.env.DEV);
+    (localStorage.getItem(authDebugStorageKey) === "true" ||
+      import.meta.env.DEV);
   if (!shouldLog) {
     return;
   }

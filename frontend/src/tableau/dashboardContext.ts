@@ -14,12 +14,6 @@ type TableauDashboard = {
   getParametersAsync?: () => Promise<unknown[]>;
 };
 
-type TableauWorkbook = {
-  name?: string;
-  workbookName?: string;
-  getAllDataSourcesAsync?: () => Promise<unknown[]>;
-};
-
 type DashboardContextOptions = {
   workbook?: unknown;
   referrer?: string;
@@ -34,7 +28,9 @@ type TableauWorksheet = {
   getDataSourcesAsync?: () => Promise<unknown[]>;
 };
 
-export function createMockDashboardContext(contextWarning = "モックのダッシュボード情報を使用しています。"): DashboardContext {
+export function createMockDashboardContext(
+  contextWarning = "モックのダッシュボード情報を使用しています。",
+): DashboardContext {
   return {
     dashboardName: "Mock Executive Sales Dashboard",
     workbookName: "Mock Sales Workbook",
@@ -106,17 +102,21 @@ export async function getDashboardContext(
   const workbookId = resolveWorkbookId(options.workbook);
   const referrerParts = parseReferrerParts(options.referrer);
 
-  const worksheetSummaries: WorksheetSummary[] = worksheets.map((worksheet) => ({
-    name: worksheet.name ?? "Untitled worksheet",
-    sheetType: worksheet.sheetType ?? null,
-    size: worksheet.size
-      ? {
-          width: worksheet.size.width ?? null,
-          height: worksheet.size.height ?? null,
-        }
-      : undefined,
-    summary: worksheet.name ? `Worksheet available in the active dashboard: ${worksheet.name}` : null,
-  }));
+  const worksheetSummaries: WorksheetSummary[] = worksheets.map(
+    (worksheet) => ({
+      name: worksheet.name ?? "Untitled worksheet",
+      sheetType: worksheet.sheetType ?? null,
+      size: worksheet.size
+        ? {
+            width: worksheet.size.width ?? null,
+            height: worksheet.size.height ?? null,
+          }
+        : undefined,
+      summary: worksheet.name
+        ? `Worksheet available in the active dashboard: ${worksheet.name}`
+        : null,
+    }),
+  );
 
   const [filters, selectedMarks, dataSources, parameters] = await Promise.all([
     collectFilters(worksheets),
@@ -140,7 +140,9 @@ export async function getDashboardContext(
     availability: {
       workbookId: workbookId ? "available" : "not_supported",
       viewId: "not_supported",
-      datasourceFields: dataSources.some((datasource) => datasource.fieldsAvailability === "available")
+      datasourceFields: dataSources.some(
+        (datasource) => datasource.fieldsAvailability === "available",
+      )
         ? "available"
         : "not_implemented",
     },
@@ -149,7 +151,10 @@ export async function getDashboardContext(
   };
 }
 
-function resolveWorkbookName(dashboard: TableauDashboard, options: DashboardContextOptions): string | null {
+function resolveWorkbookName(
+  dashboard: TableauDashboard,
+  options: DashboardContextOptions,
+): string | null {
   const urlName = parseWorkbookNameFromUrl(options.referrer);
   const explicitName =
     normalizeName(readStringProperty(dashboard.workbook, "name")) ??
@@ -167,20 +172,26 @@ function resolveWorkbookName(dashboard: TableauDashboard, options: DashboardCont
   return urlName;
 }
 
-function parseWorkbookNameFromUrl(value: string | null | undefined): string | null {
+function parseWorkbookNameFromUrl(
+  value: string | null | undefined,
+): string | null {
   if (!value) {
     return null;
   }
 
   try {
     const parsed = new URL(value);
-    const hashPath = parsed.hash.startsWith("#") ? parsed.hash.slice(1) : parsed.hash;
+    const hashPath = parsed.hash.startsWith("#")
+      ? parsed.hash.slice(1)
+      : parsed.hash;
     const pathCandidates = [hashPath, parsed.pathname].filter(Boolean);
 
     for (const path of pathCandidates) {
       const match = path.match(/\/views\/([^/?#]+)\//);
       const workbookContentUrl = match?.[1];
-      const name = normalizeName(workbookContentUrl ? decodeURIComponent(workbookContentUrl) : undefined);
+      const name = normalizeName(
+        workbookContentUrl ? decodeURIComponent(workbookContentUrl) : undefined,
+      );
       if (name) {
         return name;
       }
@@ -196,21 +207,27 @@ function resolveWorkbookId(workbook: unknown): string | null {
   return normalizeName(readStringProperty(workbook, "id")) ?? null;
 }
 
-function parseReferrerParts(value: string | null | undefined): { workbookContentUrl: string | null; viewName: string | null } {
+function parseReferrerParts(value: string | null | undefined): {
+  workbookContentUrl: string | null;
+  viewName: string | null;
+} {
   if (!value) {
     return { workbookContentUrl: null, viewName: null };
   }
 
   try {
     const parsed = new URL(value);
-    const hashPath = parsed.hash.startsWith("#") ? parsed.hash.slice(1) : parsed.hash;
+    const hashPath = parsed.hash.startsWith("#")
+      ? parsed.hash.slice(1)
+      : parsed.hash;
     const pathCandidates = [hashPath, parsed.pathname].filter(Boolean);
 
     for (const path of pathCandidates) {
       const match = path.match(/\/views\/([^/?#]+)\/([^/?#]+)/);
       if (match) {
         return {
-          workbookContentUrl: normalizeName(decodeURIComponent(match[1])) ?? null,
+          workbookContentUrl:
+            normalizeName(decodeURIComponent(match[1])) ?? null,
           viewName: normalizeName(decodeURIComponent(match[2])) ?? null,
         };
       }
@@ -240,7 +257,9 @@ function normalizeName(value: string | undefined): string | null {
   return trimmed ? trimmed : null;
 }
 
-async function collectFilters(worksheets: TableauWorksheet[]): Promise<FilterSummary[]> {
+async function collectFilters(
+  worksheets: TableauWorksheet[],
+): Promise<FilterSummary[]> {
   const allFilters = await Promise.all(
     worksheets.map(async (worksheet) => {
       if (!worksheet.getFiltersAsync) {
@@ -249,7 +268,9 @@ async function collectFilters(worksheets: TableauWorksheet[]): Promise<FilterSum
 
       try {
         const filters = await worksheet.getFiltersAsync();
-        return filters.map((filter) => mapFilter(filter, worksheet.name ?? null));
+        return filters.map((filter) =>
+          mapFilter(filter, worksheet.name ?? null),
+        );
       } catch {
         return [];
       }
@@ -259,7 +280,10 @@ async function collectFilters(worksheets: TableauWorksheet[]): Promise<FilterSum
   return allFilters.flat();
 }
 
-function mapFilter(filter: unknown, worksheetName: string | null): FilterSummary {
+function mapFilter(
+  filter: unknown,
+  worksheetName: string | null,
+): FilterSummary {
   const value = filter as {
     fieldName?: string;
     filterType?: string;
@@ -272,11 +296,16 @@ function mapFilter(filter: unknown, worksheetName: string | null): FilterSummary
     fieldName: value.fieldName ?? "Unknown field",
     filterType: value.filterType ?? null,
     isAllSelected: value.isAllSelected ?? null,
-    appliedValues: value.appliedValues?.map((item) => item.formattedValue ?? String(item.value ?? "")) ?? [],
+    appliedValues:
+      value.appliedValues?.map(
+        (item) => item.formattedValue ?? String(item.value ?? ""),
+      ) ?? [],
   };
 }
 
-async function collectParameters(dashboard: TableauDashboard): Promise<ParameterSummary[]> {
+async function collectParameters(
+  dashboard: TableauDashboard,
+): Promise<ParameterSummary[]> {
   if (!dashboard.getParametersAsync) {
     return [];
   }
@@ -286,18 +315,27 @@ async function collectParameters(dashboard: TableauDashboard): Promise<Parameter
     return parameters.map((parameter) => {
       const value = parameter as {
         name?: string;
-        currentValue?: { formattedValue?: string; value?: string | number | boolean };
+        currentValue?: {
+          formattedValue?: string;
+          value?: string | number | boolean;
+        };
         dataType?: string;
-        allowableValues?: { allowableValues?: Array<{ formattedValue?: string; value?: unknown }> };
+        allowableValues?: {
+          allowableValues?: Array<{ formattedValue?: string; value?: unknown }>;
+        };
       };
 
       return {
         name: value.name ?? "Unknown parameter",
-        currentValue: value.currentValue?.formattedValue ?? value.currentValue?.value ?? null,
+        currentValue:
+          value.currentValue?.formattedValue ??
+          value.currentValue?.value ??
+          null,
         dataType: value.dataType ?? null,
         allowableValues:
-          value.allowableValues?.allowableValues?.map((item) => item.formattedValue ?? String(item.value ?? "")) ??
-          undefined,
+          value.allowableValues?.allowableValues?.map(
+            (item) => item.formattedValue ?? String(item.value ?? ""),
+          ) ?? undefined,
       };
     });
   } catch {
@@ -305,7 +343,9 @@ async function collectParameters(dashboard: TableauDashboard): Promise<Parameter
   }
 }
 
-async function collectSelectedMarks(worksheets: TableauWorksheet[]): Promise<SelectedMarkSummary[]> {
+async function collectSelectedMarks(
+  worksheets: TableauWorksheet[],
+): Promise<SelectedMarkSummary[]> {
   const summaries = await Promise.all(
     worksheets.map(async (worksheet) => {
       if (!worksheet.getSelectedMarksAsync) {
@@ -317,12 +357,18 @@ async function collectSelectedMarks(worksheets: TableauWorksheet[]): Promise<Sel
 
       try {
         const selected = (await worksheet.getSelectedMarksAsync()) as {
-          data?: Array<{ columns?: Array<{ fieldName?: string }>; data?: unknown[] }>;
+          data?: Array<{
+            columns?: Array<{ fieldName?: string }>;
+            data?: unknown[];
+          }>;
         };
         const firstTable = selected.data?.[0];
         return {
           worksheetName: worksheet.name ?? "Untitled worksheet",
-          columns: firstTable?.columns?.map((column) => column.fieldName ?? "Unknown column") ?? [],
+          columns:
+            firstTable?.columns?.map(
+              (column) => column.fieldName ?? "Unknown column",
+            ) ?? [],
           rowCount: firstTable?.data?.length ?? 0,
           status: "available" as const,
         };
@@ -338,7 +384,9 @@ async function collectSelectedMarks(worksheets: TableauWorksheet[]): Promise<Sel
   return summaries;
 }
 
-async function collectDataSources(worksheets: TableauWorksheet[]): Promise<DataSourceSummary[]> {
+async function collectDataSources(
+  worksheets: TableauWorksheet[],
+): Promise<DataSourceSummary[]> {
   const summaries = await Promise.all(
     worksheets.map(async (worksheet) => {
       if (!worksheet.getDataSourcesAsync) {
@@ -348,17 +396,27 @@ async function collectDataSources(worksheets: TableauWorksheet[]): Promise<DataS
       try {
         const dataSources = await worksheet.getDataSourcesAsync();
         return dataSources.map((source) => {
-          const value = source as { name?: string; id?: string; fields?: Array<{ name?: string }> };
+          const value = source as {
+            name?: string;
+            id?: string;
+            fields?: Array<{ name?: string }>;
+          };
           const fields =
             Array.isArray(value.fields) && value.fields.length
-              ? value.fields.map((field) => field.name).filter((fieldName): fieldName is string => Boolean(fieldName))
+              ? value.fields
+                  .map((field) => field.name)
+                  .filter((fieldName): fieldName is string =>
+                    Boolean(fieldName),
+                  )
               : null;
           return {
             worksheetName: worksheet.name ?? null,
             name: value.name ?? "Unknown datasource",
             id: value.id ?? null,
             fields,
-            fieldsAvailability: fields?.length ? ("available" as const) : ("not_implemented" as const),
+            fieldsAvailability: fields?.length
+              ? ("available" as const)
+              : ("not_implemented" as const),
           };
         });
       } catch {

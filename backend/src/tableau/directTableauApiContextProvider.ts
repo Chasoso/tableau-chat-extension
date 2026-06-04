@@ -1,7 +1,16 @@
 import { getConfig } from "../config";
-import { logError, logInfo, logWarn, safeErrorDetails, safeHash } from "../logging";
+import {
+  logError,
+  logInfo,
+  logWarn,
+  safeErrorDetails,
+  safeHash,
+} from "../logging";
 import type { TableauAdditionalContext } from "../types/tableau";
-import type { GetAdditionalContextInput, TableauContextProvider } from "./contextProvider";
+import type {
+  GetAdditionalContextInput,
+  TableauContextProvider,
+} from "./contextProvider";
 import { TableauMetadataClient } from "./tableauMetadataClient";
 import { TableauRestClient, type TableauSession } from "./tableauRestClient";
 
@@ -10,13 +19,19 @@ export class DirectTableauApiContextProvider implements TableauContextProvider {
 
   constructor(
     private readonly restClient = new TableauRestClient(),
-    private readonly metadataClient = new TableauMetadataClient({ serverUrl: getConfig().tableau.serverUrl }),
+    private readonly metadataClient = new TableauMetadataClient({
+      serverUrl: getConfig().tableau.serverUrl,
+    }),
   ) {}
 
-  async getAdditionalContext(input: GetAdditionalContextInput): Promise<TableauAdditionalContext> {
+  async getAdditionalContext(
+    input: GetAdditionalContextInput,
+  ): Promise<TableauAdditionalContext> {
     const warnings: string[] = [];
     let session: TableauSession | undefined;
-    const restClient = input.tableauSubject ? new TableauRestClient({ subject: input.tableauSubject }) : this.restClient;
+    const restClient = input.tableauSubject
+      ? new TableauRestClient({ subject: input.tableauSubject })
+      : this.restClient;
 
     try {
       logInfo("tableau.direct.sign_in.started", {
@@ -33,13 +48,22 @@ export class DirectTableauApiContextProvider implements TableauContextProvider {
       const [datasourcesResult, metadataResult] = await Promise.allSettled([
         restClient.listDatasources(session),
         input.dashboardContext.workbookName
-          ? this.metadataClient.getBasicWorkbookMetadata(session, input.dashboardContext.workbookName)
-          : this.metadataClient.getBasicDashboardMetadata(session, input.dashboardContext.dashboardName),
+          ? this.metadataClient.getBasicWorkbookMetadata(
+              session,
+              input.dashboardContext.workbookName,
+            )
+          : this.metadataClient.getBasicDashboardMetadata(
+              session,
+              input.dashboardContext.dashboardName,
+            ),
       ]);
 
       if (datasourcesResult.status === "rejected") {
         warnings.push("Datasource lookup failed.");
-        logWarn("tableau.direct.datasources.failed", safeErrorDetails(datasourcesResult.reason));
+        logWarn(
+          "tableau.direct.datasources.failed",
+          safeErrorDetails(datasourcesResult.reason),
+        );
       } else {
         logInfo("tableau.direct.datasources.completed", {
           resultType: typeof datasourcesResult.value,
@@ -48,7 +72,10 @@ export class DirectTableauApiContextProvider implements TableauContextProvider {
 
       if (metadataResult.status === "rejected") {
         warnings.push("Metadata lookup failed.");
-        logWarn("tableau.direct.metadata.failed", safeErrorDetails(metadataResult.reason));
+        logWarn(
+          "tableau.direct.metadata.failed",
+          safeErrorDetails(metadataResult.reason),
+        );
       } else {
         logInfo("tableau.direct.metadata.completed", {
           hasMetadata: Boolean(metadataResult.value),
@@ -57,9 +84,16 @@ export class DirectTableauApiContextProvider implements TableauContextProvider {
 
       return {
         provider: this.name,
-        workbook: metadataResult.status === "fulfilled" ? extractWorkbookFromMetadata(metadataResult.value) : undefined,
-        datasources: datasourcesResult.status === "fulfilled" ? [datasourcesResult.value] : [],
-        metadata: metadataResult.status === "fulfilled" ? metadataResult.value : null,
+        workbook:
+          metadataResult.status === "fulfilled"
+            ? extractWorkbookFromMetadata(metadataResult.value)
+            : undefined,
+        datasources:
+          datasourcesResult.status === "fulfilled"
+            ? [datasourcesResult.value]
+            : [],
+        metadata:
+          metadataResult.status === "fulfilled" ? metadataResult.value : null,
         warnings,
       };
     } catch (error) {
@@ -70,7 +104,8 @@ export class DirectTableauApiContextProvider implements TableauContextProvider {
       };
     } finally {
       if (session) {
-        await restClient.signOut(session)
+        await restClient
+          .signOut(session)
           .then(() => {
             logInfo("tableau.direct.sign_out.completed", {
               siteIdHash: safeHash(session?.siteId),
@@ -113,19 +148,34 @@ function findArraysByKey(value: unknown, key: string): unknown[][] {
 
   const record = value as Record<string, unknown>;
   const direct = Array.isArray(record[key]) ? [record[key] as unknown[]] : [];
-  return [...direct, ...Object.values(record).flatMap((item) => findArraysByKey(item, key))];
+  return [
+    ...direct,
+    ...Object.values(record).flatMap((item) => findArraysByKey(item, key)),
+  ];
 }
 
 function buildSafeLookupWarning(error: unknown): string {
   const details =
-    error instanceof Error && "details" in error && typeof error.details === "object"
+    error instanceof Error &&
+    "details" in error &&
+    typeof error.details === "object"
       ? (error.details as Record<string, unknown>)
       : undefined;
-  const status = typeof details?.status === "number" ? `status ${details.status}` : undefined;
-  const tableauCode = typeof details?.tableauErrorCode === "string" ? `Tableau error ${details.tableauErrorCode}` : undefined;
+  const status =
+    typeof details?.status === "number"
+      ? `status ${details.status}`
+      : undefined;
+  const tableauCode =
+    typeof details?.tableauErrorCode === "string"
+      ? `Tableau error ${details.tableauErrorCode}`
+      : undefined;
   const tableauSummary =
-    typeof details?.tableauErrorSummary === "string" ? `summary: ${details.tableauErrorSummary}` : undefined;
-  const reason = [status, tableauCode, tableauSummary].filter(Boolean).join(", ");
+    typeof details?.tableauErrorSummary === "string"
+      ? `summary: ${details.tableauErrorSummary}`
+      : undefined;
+  const reason = [status, tableauCode, tableauSummary]
+    .filter(Boolean)
+    .join(", ");
 
   return reason
     ? `Direct Tableau API context lookup failed (${reason}). Falling back to frontend dashboard context only.`

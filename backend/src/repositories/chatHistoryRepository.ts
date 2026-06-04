@@ -6,7 +6,11 @@ import type { ChatHistoryRecord } from "../types/chat";
 
 export interface ChatHistoryRepository {
   save(record: ChatHistoryRecord): Promise<void>;
-  listRecentBySession(input: { sessionId: string; ownerUserId?: string; limit: number }): Promise<ChatHistoryRecord[]>;
+  listRecentBySession(input: {
+    sessionId: string;
+    ownerUserId?: string;
+    limit: number;
+  }): Promise<ChatHistoryRecord[]>;
 }
 
 export class InMemoryChatHistoryRepository implements ChatHistoryRepository {
@@ -16,13 +20,21 @@ export class InMemoryChatHistoryRepository implements ChatHistoryRepository {
     this.records.push(record);
   }
 
-  async listRecentBySession(input: { sessionId: string; ownerUserId?: string; limit: number }): Promise<ChatHistoryRecord[]> {
+  async listRecentBySession(input: {
+    sessionId: string;
+    ownerUserId?: string;
+    limit: number;
+  }): Promise<ChatHistoryRecord[]> {
     if (!input.ownerUserId) {
       return [];
     }
 
     return this.records
-      .filter((record) => record.sessionId === input.sessionId && record.ownerUserId === input.ownerUserId)
+      .filter(
+        (record) =>
+          record.sessionId === input.sessionId &&
+          record.ownerUserId === input.ownerUserId,
+      )
       .slice(-input.limit);
   }
 
@@ -47,7 +59,11 @@ export class DynamoDbChatHistoryRepository implements ChatHistoryRepository {
     );
   }
 
-  async listRecentBySession(input: { sessionId: string; ownerUserId?: string; limit: number }): Promise<ChatHistoryRecord[]> {
+  async listRecentBySession(input: {
+    sessionId: string;
+    ownerUserId?: string;
+    limit: number;
+  }): Promise<ChatHistoryRecord[]> {
     if (!input.ownerUserId) {
       return [];
     }
@@ -79,13 +95,18 @@ export function createChatHistoryRepository(): ChatHistoryRepository {
   }
 
   if (!config.chatHistoryTableName) {
-    throw new Error("CHAT_HISTORY_TABLE_NAME is required when USE_IN_MEMORY_REPOSITORY=false.");
+    throw new Error(
+      "CHAT_HISTORY_TABLE_NAME is required when USE_IN_MEMORY_REPOSITORY=false.",
+    );
   }
 
   return new DynamoDbChatHistoryRepository(config.chatHistoryTableName);
 }
 
-function buildSessionPartitionKey(ownerUserId: string | null | undefined, sessionId: string): string {
+function buildSessionPartitionKey(
+  ownerUserId: string | null | undefined,
+  sessionId: string,
+): string {
   if (!ownerUserId) {
     return `ANON_SESSION#${sessionId}`;
   }

@@ -87,9 +87,13 @@ describe("buildPrompt", () => {
       recentHistory,
     );
 
-    expect(prompt).toContain("Recent conversation in the same authenticated session:");
+    expect(prompt).toContain(
+      "Recent conversation in the same authenticated session:",
+    );
     expect(prompt).toContain("Turn 1 user: What changed last week?");
-    expect(prompt).toContain("Turn 1 assistant: Views declined compared with the prior week.");
+    expect(prompt).toContain(
+      "Turn 1 assistant: Views declined compared with the prior week.",
+    );
   });
 
   it("includes agent planning notes when provided", () => {
@@ -107,9 +111,15 @@ describe("buildPrompt", () => {
       },
     );
 
-    expect(prompt).toContain("Agent plan: Clarify the request as a datasource-backed ranking.");
-    expect(prompt).toContain("Tool-planning question: 2026年のFavorite数を集計してください。");
-    expect(prompt).toContain("Evidence evaluation: Collected evidence is sufficient.");
+    expect(prompt).toContain(
+      "Agent plan: Clarify the request as a datasource-backed ranking.",
+    );
+    expect(prompt).toContain(
+      "Tool-planning question: 2026年のFavorite数を集計してください。",
+    );
+    expect(prompt).toContain(
+      "Evidence evaluation: Collected evidence is sufficient.",
+    );
     expect(prompt).toContain("Remaining evidence gaps: none");
   });
 });

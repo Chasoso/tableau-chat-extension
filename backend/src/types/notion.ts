@@ -1,4 +1,7 @@
-export type NotionConnectionStatus = "connected" | "disconnected" | "refresh_failed";
+export type NotionConnectionStatus =
+  | "connected"
+  | "disconnected"
+  | "refresh_failed";
 
 export type EncryptedValue = {
   ciphertext: string;
@@ -25,7 +28,10 @@ export type NotionConnectionRecord = {
   oauthClientSecretAuthTag?: string;
   oauthTokenEndpoint?: string;
   oauthAuthorizationEndpoint?: string;
-  oauthTokenEndpointAuthMethod?: "none" | "client_secret_basic" | "client_secret_post";
+  oauthTokenEndpointAuthMethod?:
+    | "none"
+    | "client_secret_basic"
+    | "client_secret_post";
   oauthResource?: string;
   expiresAt?: number;
   scopes?: string[];
@@ -47,7 +53,10 @@ export type NotionOAuthStateRecord = {
   oauthClientSecretAuthTag?: string;
   oauthTokenEndpoint?: string;
   oauthAuthorizationEndpoint?: string;
-  oauthTokenEndpointAuthMethod?: "none" | "client_secret_basic" | "client_secret_post";
+  oauthTokenEndpointAuthMethod?:
+    | "none"
+    | "client_secret_basic"
+    | "client_secret_post";
   oauthResource?: string;
   redirectAfter?: string;
   createdAt: string;

@@ -1,8 +1,14 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { getConfig } from "../config";
 import { logInfo, logWarn, safeErrorDetails, safeHash } from "../logging";
-import type { NotionConnectionRecord, NotionOAuthStateRecord } from "../types/notion";
-import { getDefaultNotionConnectionId, NotionRepository } from "../repositories/notionRepository";
+import type {
+  NotionConnectionRecord,
+  NotionOAuthStateRecord,
+} from "../types/notion";
+import {
+  getDefaultNotionConnectionId,
+  NotionRepository,
+} from "../repositories/notionRepository";
 import { decryptToken, encryptToken } from "./notionTokenCrypto";
 
 type NotionTokenResponse = {
@@ -36,7 +42,10 @@ let cachedMcpOAuthMetadata: OAuthMetadata | null = null;
 type OAuthClientContext = {
   clientId: string;
   clientSecret?: string;
-  tokenEndpointAuthMethod: "none" | "client_secret_basic" | "client_secret_post";
+  tokenEndpointAuthMethod:
+    | "none"
+    | "client_secret_basic"
+    | "client_secret_post";
   authorizationEndpoint: string;
   tokenEndpoint: string;
   resource: string;
@@ -66,7 +75,9 @@ export class NotionOAuthService {
     const codeVerifier = createCodeVerifier();
     const state = randomUUID();
     const createdAt = new Date();
-    const expiresAtEpoch = Math.floor((createdAt.getTime() + config.notion.oauthStateTtlSeconds * 1000) / 1000);
+    const expiresAtEpoch = Math.floor(
+      (createdAt.getTime() + config.notion.oauthStateTtlSeconds * 1000) / 1000,
+    );
     const stateRecord: NotionOAuthStateRecord = {
       state,
       userId: input.userId,
@@ -81,8 +92,11 @@ export class NotionOAuthService {
       expiresAt: expiresAtEpoch,
     };
     if (oauthClient.clientSecret) {
-      const encryptedClientSecret = await encryptToken(oauthClient.clientSecret);
-      stateRecord.oauthClientSecretCiphertext = encryptedClientSecret.ciphertext;
+      const encryptedClientSecret = await encryptToken(
+        oauthClient.clientSecret,
+      );
+      stateRecord.oauthClientSecretCiphertext =
+        encryptedClientSecret.ciphertext;
       stateRecord.oauthClientSecretIv = encryptedClientSecret.iv;
       stateRecord.oauthClientSecretAuthTag = encryptedClientSecret.authTag;
     }
@@ -109,7 +123,10 @@ export class NotionOAuthService {
     return { authorizationUrl: authorizeUrl.toString() };
   }
 
-  async handleCallback(input: { code?: string; state?: string }): Promise<{ redirectTo: string }> {
+  async handleCallback(input: {
+    code?: string;
+    state?: string;
+  }): Promise<{ redirectTo: string }> {
     const config = getConfig();
     validateOauthConfiguration();
     if (!input.code || !input.state) {
@@ -154,9 +171,13 @@ export class NotionOAuthService {
       });
 
       const accessEncrypted = await encryptToken(tokenData.access_token);
-      const refreshEncrypted = tokenData.refresh_token ? await encryptToken(tokenData.refresh_token) : undefined;
+      const refreshEncrypted = tokenData.refresh_token
+        ? await encryptToken(tokenData.refresh_token)
+        : undefined;
       const nowIso = new Date().toISOString();
-      const encryptedConnectionClientSecret = oauthClientSecret ? await encryptToken(oauthClientSecret) : undefined;
+      const encryptedConnectionClientSecret = oauthClientSecret
+        ? await encryptToken(oauthClientSecret)
+        : undefined;
       const connection: NotionConnectionRecord = {
         userId: stateRecord.userId,
         connectionId: getDefaultNotionConnectionId(),
@@ -171,14 +192,17 @@ export class NotionOAuthService {
         refreshTokenIv: refreshEncrypted?.iv,
         refreshTokenAuthTag: refreshEncrypted?.authTag,
         oauthClientId: stateRecord.oauthClientId,
-        oauthClientSecretCiphertext: encryptedConnectionClientSecret?.ciphertext,
+        oauthClientSecretCiphertext:
+          encryptedConnectionClientSecret?.ciphertext,
         oauthClientSecretIv: encryptedConnectionClientSecret?.iv,
         oauthClientSecretAuthTag: encryptedConnectionClientSecret?.authTag,
         oauthTokenEndpoint: stateRecord.oauthTokenEndpoint,
         oauthAuthorizationEndpoint: stateRecord.oauthAuthorizationEndpoint,
         oauthTokenEndpointAuthMethod: stateRecord.oauthTokenEndpointAuthMethod,
         oauthResource: stateRecord.oauthResource,
-        expiresAt: tokenData.expires_in ? Math.floor(Date.now() / 1000) + tokenData.expires_in : undefined,
+        expiresAt: tokenData.expires_in
+          ? Math.floor(Date.now() / 1000) + tokenData.expires_in
+          : undefined,
         scopes: [],
         targetParentPageId: config.notion.defaultTargetParentPageId,
         targetDatabaseId: config.notion.defaultTargetDatabaseId,
@@ -212,7 +236,10 @@ export class NotionOAuthService {
     }
 
     const nowEpoch = Math.floor(Date.now() / 1000);
-    const needsRefresh = Boolean(options?.forceRefresh || (record.expiresAt && record.expiresAt - nowEpoch <= 30));
+    const needsRefresh = Boolean(
+      options?.forceRefresh ||
+      (record.expiresAt && record.expiresAt - nowEpoch <= 30),
+    );
     if (!needsRefresh) {
       return {
         connection: record,
@@ -224,13 +251,19 @@ export class NotionOAuthService {
       };
     }
 
-    if (!record.refreshTokenCiphertext || !record.refreshTokenIv || !record.refreshTokenAuthTag) {
+    if (
+      !record.refreshTokenCiphertext ||
+      !record.refreshTokenIv ||
+      !record.refreshTokenAuthTag
+    ) {
       await this.repository.putConnection({
         ...record,
         status: "refresh_failed",
         updatedAt: new Date().toISOString(),
       });
-      throw new Error("Notion token refresh is required but refresh token is unavailable.");
+      throw new Error(
+        "Notion token refresh is required but refresh token is unavailable.",
+      );
     }
 
     const decryptedRefreshToken = await decryptToken({
@@ -254,17 +287,23 @@ export class NotionOAuthService {
         resource: record.oauthResource,
       });
       const encryptedAccess = await encryptToken(refreshed.access_token);
-      const encryptedRefresh = refreshed.refresh_token ? await encryptToken(refreshed.refresh_token) : undefined;
+      const encryptedRefresh = refreshed.refresh_token
+        ? await encryptToken(refreshed.refresh_token)
+        : undefined;
       const nowIso = new Date().toISOString();
       const updated: NotionConnectionRecord = {
         ...record,
         accessTokenCiphertext: encryptedAccess.ciphertext,
         accessTokenIv: encryptedAccess.iv,
         accessTokenAuthTag: encryptedAccess.authTag,
-        refreshTokenCiphertext: encryptedRefresh?.ciphertext ?? record.refreshTokenCiphertext,
+        refreshTokenCiphertext:
+          encryptedRefresh?.ciphertext ?? record.refreshTokenCiphertext,
         refreshTokenIv: encryptedRefresh?.iv ?? record.refreshTokenIv,
-        refreshTokenAuthTag: encryptedRefresh?.authTag ?? record.refreshTokenAuthTag,
-        expiresAt: refreshed.expires_in ? Math.floor(Date.now() / 1000) + refreshed.expires_in : record.expiresAt,
+        refreshTokenAuthTag:
+          encryptedRefresh?.authTag ?? record.refreshTokenAuthTag,
+        expiresAt: refreshed.expires_in
+          ? Math.floor(Date.now() / 1000) + refreshed.expires_in
+          : record.expiresAt,
         status: "connected",
         updatedAt: nowIso,
         lastUsedAt: nowIso,
@@ -302,7 +341,10 @@ async function exchangeAuthorizationCode(input: {
   clientId?: string;
   clientSecret?: string;
   tokenEndpoint?: string;
-  tokenEndpointAuthMethod?: "none" | "client_secret_basic" | "client_secret_post";
+  tokenEndpointAuthMethod?:
+    | "none"
+    | "client_secret_basic"
+    | "client_secret_post";
   resource?: string;
 }): Promise<NotionTokenResponse> {
   const config = getConfig().notion;
@@ -316,10 +358,14 @@ async function exchangeAuthorizationCode(input: {
     throw new Error("OAuth token exchange prerequisites are missing.");
   }
 
-  const method = input.tokenEndpointAuthMethod ?? inferTokenEndpointAuthMethod({
-    clientSecret: input.clientSecret ?? config.oauthClientSecret,
-  });
-  const headers: Record<string, string> = { "Content-Type": "application/x-www-form-urlencoded" };
+  const method =
+    input.tokenEndpointAuthMethod ??
+    inferTokenEndpointAuthMethod({
+      clientSecret: input.clientSecret ?? config.oauthClientSecret,
+    });
+  const headers: Record<string, string> = {
+    "Content-Type": "application/x-www-form-urlencoded",
+  };
   if (method === "client_secret_basic") {
     headers.Authorization = `Basic ${Buffer.from(`${clientId}:${input.clientSecret ?? config.oauthClientSecret ?? ""}`).toString("base64")}`;
   }
@@ -330,10 +376,19 @@ async function exchangeAuthorizationCode(input: {
     redirect_uri: config.redirectUri,
     code_verifier: input.codeVerifier,
     client_id: clientId,
-    resource: input.resource || oauthMetadata.resource || deriveResourceFromMcpUrl(config.mcpUrl),
+    resource:
+      input.resource ||
+      oauthMetadata.resource ||
+      deriveResourceFromMcpUrl(config.mcpUrl),
   });
-  if (method === "client_secret_post" && (input.clientSecret ?? config.oauthClientSecret)) {
-    body.set("client_secret", input.clientSecret ?? config.oauthClientSecret ?? "");
+  if (
+    method === "client_secret_post" &&
+    (input.clientSecret ?? config.oauthClientSecret)
+  ) {
+    body.set(
+      "client_secret",
+      input.clientSecret ?? config.oauthClientSecret ?? "",
+    );
   }
 
   const response = await fetch(tokenEndpoint, {
@@ -349,7 +404,9 @@ async function exchangeAuthorizationCode(input: {
       responseBodyHash: safeHash(raw),
       responseBodyLength: raw.length,
     });
-    throw new Error(`Notion OAuth token exchange failed with status ${response.status}. ${truncateForError(raw)}`);
+    throw new Error(
+      `Notion OAuth token exchange failed with status ${response.status}. ${truncateForError(raw)}`,
+    );
   }
 
   return (await response.json()) as NotionTokenResponse;
@@ -360,7 +417,10 @@ async function refreshNotionToken(input: {
   clientId?: string;
   clientSecret?: string;
   tokenEndpoint?: string;
-  tokenEndpointAuthMethod?: "none" | "client_secret_basic" | "client_secret_post";
+  tokenEndpointAuthMethod?:
+    | "none"
+    | "client_secret_basic"
+    | "client_secret_post";
   resource?: string;
 }): Promise<NotionTokenResponse> {
   const config = getConfig().notion;
@@ -374,10 +434,14 @@ async function refreshNotionToken(input: {
     throw new Error("OAuth refresh prerequisites are missing.");
   }
 
-  const method = input.tokenEndpointAuthMethod ?? inferTokenEndpointAuthMethod({
-    clientSecret: input.clientSecret ?? config.oauthClientSecret,
-  });
-  const headers: Record<string, string> = { "Content-Type": "application/x-www-form-urlencoded" };
+  const method =
+    input.tokenEndpointAuthMethod ??
+    inferTokenEndpointAuthMethod({
+      clientSecret: input.clientSecret ?? config.oauthClientSecret,
+    });
+  const headers: Record<string, string> = {
+    "Content-Type": "application/x-www-form-urlencoded",
+  };
   if (method === "client_secret_basic") {
     headers.Authorization = `Basic ${Buffer.from(`${clientId}:${input.clientSecret ?? config.oauthClientSecret ?? ""}`).toString("base64")}`;
   }
@@ -386,10 +450,19 @@ async function refreshNotionToken(input: {
     grant_type: "refresh_token",
     refresh_token: input.refreshToken,
     client_id: clientId,
-    resource: input.resource || oauthMetadata.resource || deriveResourceFromMcpUrl(config.mcpUrl),
+    resource:
+      input.resource ||
+      oauthMetadata.resource ||
+      deriveResourceFromMcpUrl(config.mcpUrl),
   });
-  if (method === "client_secret_post" && (input.clientSecret ?? config.oauthClientSecret)) {
-    body.set("client_secret", input.clientSecret ?? config.oauthClientSecret ?? "");
+  if (
+    method === "client_secret_post" &&
+    (input.clientSecret ?? config.oauthClientSecret)
+  ) {
+    body.set(
+      "client_secret",
+      input.clientSecret ?? config.oauthClientSecret ?? "",
+    );
   }
 
   const response = await fetch(tokenEndpoint, {
@@ -405,7 +478,9 @@ async function refreshNotionToken(input: {
       responseBodyHash: safeHash(raw),
       responseBodyLength: raw.length,
     });
-    throw new Error(`Notion OAuth refresh failed with status ${response.status}. ${truncateForError(raw)}`);
+    throw new Error(
+      `Notion OAuth refresh failed with status ${response.status}. ${truncateForError(raw)}`,
+    );
   }
 
   return (await response.json()) as NotionTokenResponse;
@@ -450,18 +525,25 @@ async function resolveOAuthClientContext(input: {
         clientSource: "dynamic_registration",
       };
     } catch (error) {
-      logWarn("notion.oauth.client_registration.failed", safeErrorDetails(error));
+      logWarn(
+        "notion.oauth.client_registration.failed",
+        safeErrorDetails(error),
+      );
     }
   }
 
   if (!input.staticClientId) {
-    throw new Error("Unable to register OAuth client and NOTION_OAUTH_CLIENT_ID is not configured.");
+    throw new Error(
+      "Unable to register OAuth client and NOTION_OAUTH_CLIENT_ID is not configured.",
+    );
   }
 
   return {
     clientId: input.staticClientId,
     clientSecret: input.staticClientSecret,
-    tokenEndpointAuthMethod: inferTokenEndpointAuthMethod({ clientSecret: input.staticClientSecret }),
+    tokenEndpointAuthMethod: inferTokenEndpointAuthMethod({
+      clientSecret: input.staticClientSecret,
+    }),
     authorizationEndpoint: input.metadata.authorization_endpoint!,
     tokenEndpoint: input.metadata.token_endpoint!,
     resource: input.metadata.resource ?? "https://mcp.notion.com",
@@ -475,7 +557,10 @@ async function registerDynamicClient(input: {
 }): Promise<{
   clientId: string;
   clientSecret?: string;
-  tokenEndpointAuthMethod: "none" | "client_secret_basic" | "client_secret_post";
+  tokenEndpointAuthMethod:
+    | "none"
+    | "client_secret_basic"
+    | "client_secret_post";
 }> {
   const response = await fetch(input.registrationEndpoint, {
     method: "POST",
@@ -494,7 +579,9 @@ async function registerDynamicClient(input: {
   });
 
   if (!response.ok) {
-    throw new Error(`OAuth dynamic client registration failed with status ${response.status}.`);
+    throw new Error(
+      `OAuth dynamic client registration failed with status ${response.status}.`,
+    );
   }
 
   const data = (await response.json()) as {
@@ -509,7 +596,9 @@ async function registerDynamicClient(input: {
   return {
     clientId: data.client_id,
     clientSecret: data.client_secret,
-    tokenEndpointAuthMethod: normalizeTokenEndpointAuthMethod(data.token_endpoint_auth_method),
+    tokenEndpointAuthMethod: normalizeTokenEndpointAuthMethod(
+      data.token_endpoint_auth_method,
+    ),
   };
 }
 
@@ -559,17 +648,30 @@ function truncateForError(input: string): string {
 
 async function discoverMcpOAuthMetadata(
   mcpServerUrl: string,
-  fallback: { fallbackAuthorizationEndpoint: string; fallbackTokenEndpoint: string },
+  fallback: {
+    fallbackAuthorizationEndpoint: string;
+    fallbackTokenEndpoint: string;
+  },
 ): Promise<OAuthMetadata> {
-  if (cachedMcpOAuthMetadata?.authorization_endpoint && cachedMcpOAuthMetadata?.token_endpoint) {
+  if (
+    cachedMcpOAuthMetadata?.authorization_endpoint &&
+    cachedMcpOAuthMetadata?.token_endpoint
+  ) {
     return cachedMcpOAuthMetadata;
   }
 
   try {
-    const protectedResourceUrl = new URL("/.well-known/oauth-protected-resource", mcpServerUrl);
-    const protectedResourceResponse = await fetch(protectedResourceUrl.toString());
+    const protectedResourceUrl = new URL(
+      "/.well-known/oauth-protected-resource",
+      mcpServerUrl,
+    );
+    const protectedResourceResponse = await fetch(
+      protectedResourceUrl.toString(),
+    );
     if (!protectedResourceResponse.ok) {
-      throw new Error(`protected-resource-metadata status ${protectedResourceResponse.status}`);
+      throw new Error(
+        `protected-resource-metadata status ${protectedResourceResponse.status}`,
+      );
     }
 
     const protectedResource = (await protectedResourceResponse.json()) as {
@@ -583,22 +685,30 @@ async function discoverMcpOAuthMetadata(
       throw new Error("authorization_servers is missing");
     }
 
-    const oauthMetadataUrl = new URL("/.well-known/oauth-authorization-server", authServer);
+    const oauthMetadataUrl = new URL(
+      "/.well-known/oauth-authorization-server",
+      authServer,
+    );
     const oauthMetadataResponse = await fetch(oauthMetadataUrl.toString());
     if (!oauthMetadataResponse.ok) {
-      throw new Error(`oauth-authorization-server status ${oauthMetadataResponse.status}`);
+      throw new Error(
+        `oauth-authorization-server status ${oauthMetadataResponse.status}`,
+      );
     }
 
     const metadata = (await oauthMetadataResponse.json()) as OAuthMetadata;
     if (!metadata.authorization_endpoint || !metadata.token_endpoint) {
       throw new Error("authorization_endpoint or token_endpoint is missing");
     }
-    metadata.resource = protectedResource.resource || deriveResourceFromMcpUrl(mcpServerUrl);
+    metadata.resource =
+      protectedResource.resource || deriveResourceFromMcpUrl(mcpServerUrl);
 
     cachedMcpOAuthMetadata = metadata;
     logInfo("notion.oauth.discovery.completed", {
       hasIssuer: Boolean(metadata.issuer),
-      authorizationEndpointHostHash: safeHash(new URL(metadata.authorization_endpoint).host),
+      authorizationEndpointHostHash: safeHash(
+        new URL(metadata.authorization_endpoint).host,
+      ),
       tokenEndpointHostHash: safeHash(new URL(metadata.token_endpoint).host),
       mcpUrlHostHash: safeHash(new URL(mcpServerUrl).host),
     });

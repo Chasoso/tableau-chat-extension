@@ -1,14 +1,28 @@
-import { DeleteItemCommand, GetItemCommand, PutItemCommand, UpdateItemCommand } from "@aws-sdk/client-dynamodb";
+import {
+  DeleteItemCommand,
+  GetItemCommand,
+  PutItemCommand,
+  UpdateItemCommand,
+} from "@aws-sdk/client-dynamodb";
 import { marshall, unmarshall } from "@aws-sdk/util-dynamodb";
 import { getConfig } from "../config";
 import { getDynamoDbClient } from "../aws/dynamodb";
-import type { NotionConnectionRecord, NotionOAuthStateRecord } from "../types/notion";
+import type {
+  NotionConnectionRecord,
+  NotionOAuthStateRecord,
+} from "../types/notion";
 
 const DEFAULT_CONNECTION_ID = "NOTION#DEFAULT";
 
 export class NotionRepository {
-  async getConnection(userId: string, connectionId = DEFAULT_CONNECTION_ID): Promise<NotionConnectionRecord | null> {
-    const tableName = requireConfigValue(getConfig().notion.connectionsTableName, "NOTION_CONNECTIONS_TABLE");
+  async getConnection(
+    userId: string,
+    connectionId = DEFAULT_CONNECTION_ID,
+  ): Promise<NotionConnectionRecord | null> {
+    const tableName = requireConfigValue(
+      getConfig().notion.connectionsTableName,
+      "NOTION_CONNECTIONS_TABLE",
+    );
     const response = await getDynamoDbClient().send(
       new GetItemCommand({
         TableName: tableName,
@@ -24,7 +38,10 @@ export class NotionRepository {
   }
 
   async putConnection(record: NotionConnectionRecord): Promise<void> {
-    const tableName = requireConfigValue(getConfig().notion.connectionsTableName, "NOTION_CONNECTIONS_TABLE");
+    const tableName = requireConfigValue(
+      getConfig().notion.connectionsTableName,
+      "NOTION_CONNECTIONS_TABLE",
+    );
     await getDynamoDbClient().send(
       new PutItemCommand({
         TableName: tableName,
@@ -39,7 +56,10 @@ export class NotionRepository {
     targetParentPageId?: string;
     targetDatabaseId?: string;
   }): Promise<void> {
-    const tableName = requireConfigValue(getConfig().notion.connectionsTableName, "NOTION_CONNECTIONS_TABLE");
+    const tableName = requireConfigValue(
+      getConfig().notion.connectionsTableName,
+      "NOTION_CONNECTIONS_TABLE",
+    );
     const connectionId = input.connectionId ?? DEFAULT_CONNECTION_ID;
     await getDynamoDbClient().send(
       new UpdateItemCommand({
@@ -61,8 +81,14 @@ export class NotionRepository {
     );
   }
 
-  async deleteConnection(userId: string, connectionId = DEFAULT_CONNECTION_ID): Promise<void> {
-    const tableName = requireConfigValue(getConfig().notion.connectionsTableName, "NOTION_CONNECTIONS_TABLE");
+  async deleteConnection(
+    userId: string,
+    connectionId = DEFAULT_CONNECTION_ID,
+  ): Promise<void> {
+    const tableName = requireConfigValue(
+      getConfig().notion.connectionsTableName,
+      "NOTION_CONNECTIONS_TABLE",
+    );
     await getDynamoDbClient().send(
       new DeleteItemCommand({
         TableName: tableName,
@@ -72,7 +98,10 @@ export class NotionRepository {
   }
 
   async putOAuthState(record: NotionOAuthStateRecord): Promise<void> {
-    const tableName = requireConfigValue(getConfig().notion.oauthStatesTableName, "NOTION_OAUTH_STATES_TABLE");
+    const tableName = requireConfigValue(
+      getConfig().notion.oauthStatesTableName,
+      "NOTION_OAUTH_STATES_TABLE",
+    );
     await getDynamoDbClient().send(
       new PutItemCommand({
         TableName: tableName,
@@ -82,7 +111,10 @@ export class NotionRepository {
   }
 
   async getOAuthState(state: string): Promise<NotionOAuthStateRecord | null> {
-    const tableName = requireConfigValue(getConfig().notion.oauthStatesTableName, "NOTION_OAUTH_STATES_TABLE");
+    const tableName = requireConfigValue(
+      getConfig().notion.oauthStatesTableName,
+      "NOTION_OAUTH_STATES_TABLE",
+    );
     const response = await getDynamoDbClient().send(
       new GetItemCommand({
         TableName: tableName,
@@ -97,7 +129,10 @@ export class NotionRepository {
   }
 
   async deleteOAuthState(state: string): Promise<void> {
-    const tableName = requireConfigValue(getConfig().notion.oauthStatesTableName, "NOTION_OAUTH_STATES_TABLE");
+    const tableName = requireConfigValue(
+      getConfig().notion.oauthStatesTableName,
+      "NOTION_OAUTH_STATES_TABLE",
+    );
     await getDynamoDbClient().send(
       new DeleteItemCommand({
         TableName: tableName,
@@ -107,7 +142,10 @@ export class NotionRepository {
   }
 }
 
-function requireConfigValue(value: string | undefined, envName: string): string {
+function requireConfigValue(
+  value: string | undefined,
+  envName: string,
+): string {
   if (!value) {
     throw new Error(`${envName} is required for Notion MCP integration.`);
   }

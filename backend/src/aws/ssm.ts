@@ -12,7 +12,10 @@ function getSsmClient(): SSMClient {
   return client;
 }
 
-export async function getSecureStringParameter(name: string, ttlMs = DEFAULT_TTL_MS): Promise<string> {
+export async function getSecureStringParameter(
+  name: string,
+  ttlMs = DEFAULT_TTL_MS,
+): Promise<string> {
   const now = Date.now();
   const cached = parameterCache.get(name);
   if (cached && cached.expiresAt > now) {

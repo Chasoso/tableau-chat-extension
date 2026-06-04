@@ -1,6 +1,10 @@
 import { getConfig } from "../config";
 import { getSecureStringParameter } from "../aws/ssm";
-import { decodeAes256GcmKey, decryptString, encryptString } from "../security/aesGcm";
+import {
+  decodeAes256GcmKey,
+  decryptString,
+  encryptString,
+} from "../security/aesGcm";
 import type { EncryptedValue } from "../types/notion";
 
 let cachedKey: Buffer | null = null;
@@ -20,7 +24,9 @@ async function getEncryptionKey(): Promise<Buffer> {
   return cachedKey;
 }
 
-export async function encryptToken(plainToken: string): Promise<EncryptedValue> {
+export async function encryptToken(
+  plainToken: string,
+): Promise<EncryptedValue> {
   const key = await getEncryptionKey();
   return encryptString(plainToken, key);
 }

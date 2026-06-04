@@ -15,13 +15,19 @@ export async function enrichDashboardContext(
   });
 
   if (!response.ok) {
-    const body = await response.json().catch(() => ({ message: `Request failed with status ${response.status}` }));
-    throw new Error(body.message ?? `Request failed with status ${response.status}`);
+    const body = await response.json().catch(() => ({
+      message: `Request failed with status ${response.status}`,
+    }));
+    throw new Error(
+      body.message ?? `Request failed with status ${response.status}`,
+    );
   }
 
   const contentType = response.headers.get("content-type") ?? "";
   if (!contentType.includes("application/json")) {
-    throw new Error("Context API returned a non-JSON response. Check VITE_API_BASE_URL and /api routing.");
+    throw new Error(
+      "Context API returned a non-JSON response. Check VITE_API_BASE_URL and /api routing.",
+    );
   }
 
   return response.json() as Promise<ContextResponse>;

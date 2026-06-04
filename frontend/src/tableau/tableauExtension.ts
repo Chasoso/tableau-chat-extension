@@ -1,6 +1,9 @@
 import { env } from "../env";
 import type { DashboardContext } from "../types/tableau";
-import { createMockDashboardContext, getDashboardContext } from "./dashboardContext";
+import {
+  createMockDashboardContext,
+  getDashboardContext,
+} from "./dashboardContext";
 
 type TableauExtensionsGlobal = {
   extensions?: {
@@ -20,19 +23,25 @@ declare global {
 
 export async function initializeTableauExtension(): Promise<DashboardContext> {
   if (env.useMockTableau) {
-    return createMockDashboardContext("VITE_USE_MOCK_TABLEAU=true のため、モック情報を使用しています。");
+    return createMockDashboardContext(
+      "VITE_USE_MOCK_TABLEAU=true のため、モック情報を使用しています。",
+    );
   }
 
   const tableau = window.tableau?.extensions;
   if (!tableau?.initializeAsync) {
-    return createMockDashboardContext("ブラウザー内でTableau Extensions APIを利用できなかったため、モック情報を使用しています。");
+    return createMockDashboardContext(
+      "ブラウザー内でTableau Extensions APIを利用できなかったため、モック情報を使用しています。",
+    );
   }
 
   try {
     await tableau.initializeAsync();
     const dashboard = tableau.dashboardContent?.dashboard;
     if (!dashboard) {
-      return createMockDashboardContext("Tableau Extensions APIは初期化されましたが、アクティブなダッシュボードを取得できませんでした。");
+      return createMockDashboardContext(
+        "Tableau Extensions APIは初期化されましたが、アクティブなダッシュボードを取得できませんでした。",
+      );
     }
 
     return getDashboardContext(dashboard, {
@@ -40,7 +49,12 @@ export async function initializeTableauExtension(): Promise<DashboardContext> {
       referrer: document.referrer,
     });
   } catch (error) {
-    console.warn("Falling back to mock Tableau context. Tableau initialization failed.", error);
-    return createMockDashboardContext("Tableau Extensions APIの初期化に失敗したため、モック情報を使用しています。");
+    console.warn(
+      "Falling back to mock Tableau context. Tableau initialization failed.",
+      error,
+    );
+    return createMockDashboardContext(
+      "Tableau Extensions APIの初期化に失敗したため、モック情報を使用しています。",
+    );
   }
 }

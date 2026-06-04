@@ -10,7 +10,9 @@ export function getTableauConnectedAppSecretsFromEnv(): TableauConnectedAppSecre
   const secretValue = process.env.TABLEAU_CONNECTED_APP_SECRET_VALUE;
 
   if (!clientId || !secretId || !secretValue) {
-    throw new Error("Tableau Connected App environment variables are not configured.");
+    throw new Error(
+      "Tableau Connected App environment variables are not configured.",
+    );
   }
 
   return {

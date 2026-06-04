@@ -1,17 +1,37 @@
 ﻿import { randomUUID } from "node:crypto";
 import { getConfig } from "../config";
 import { logDebug, logInfo, safeHash } from "../logging";
-import { createChatHistoryRepository, type ChatHistoryRepository } from "../repositories/chatHistoryRepository";
+import {
+  createChatHistoryRepository,
+  type ChatHistoryRepository,
+} from "../repositories/chatHistoryRepository";
 import { DirectTableauApiContextProvider } from "../tableau/directTableauApiContextProvider";
 import { MockTableauContextProvider } from "../tableau/mockTableauContextProvider";
 import { TableauMcpContextProvider } from "../tableau/tableauMcpContextProvider";
 import { parseQuestionPeriod } from "../utils/questionPeriod";
 import type { TableauContextProvider } from "../tableau/contextProvider";
 import type { AuthenticatedUser } from "../types/auth";
-import type { ChatRequest, ChatResponse, ContextRequest, ContextResponse } from "../types/chat";
-import type { DashboardContext, DatasourceFieldProfile } from "../types/tableau";
-import { BedrockAnswerGenerator, MockAnswerGenerator, type AnswerGenerator } from "./answerGenerator";
-import { BedrockChatAgent, NoopChatAgent, runLightweightAgentLoop, type ChatAgent } from "./chatAgent";
+import type {
+  ChatRequest,
+  ChatResponse,
+  ContextRequest,
+  ContextResponse,
+} from "../types/chat";
+import type {
+  DashboardContext,
+  DatasourceFieldProfile,
+} from "../types/tableau";
+import {
+  BedrockAnswerGenerator,
+  MockAnswerGenerator,
+  type AnswerGenerator,
+} from "./answerGenerator";
+import {
+  BedrockChatAgent,
+  NoopChatAgent,
+  runLightweightAgentLoop,
+  type ChatAgent,
+} from "./chatAgent";
 import { buildPrompt } from "./promptBuilder";
 
 export class ChatService {
@@ -22,7 +42,10 @@ export class ChatService {
     private readonly chatAgent: ChatAgent = new NoopChatAgent(),
   ) {}
 
-  async generateAnswer(request: ChatRequest, authenticatedUser?: AuthenticatedUser): Promise<ChatResponse> {
+  async generateAnswer(
+    request: ChatRequest,
+    authenticatedUser?: AuthenticatedUser,
+  ): Promise<ChatResponse> {
     const config = getConfig();
     const sessionId = request.sessionId || randomUUID();
     const messageId = randomUUID();
@@ -72,20 +95,32 @@ export class ChatService {
       warningCount: additionalContext.warnings?.length ?? 0,
       agentPassCount: agentLoopResult.debug?.passCount ?? 0,
     });
-    const prompt = buildPrompt(request, additionalContext, recentHistory, agentLoopResult.promptContext);
+    const prompt = buildPrompt(
+      request,
+      additionalContext,
+      recentHistory,
+      agentLoopResult.promptContext,
+    );
     const answer = await this.answerGenerator.generate({
       request,
       prompt,
       additionalContext,
     });
-    const sanitizedAnswer = finalizeUserFacingAnswer(answer, request, additionalContext);
+    const sanitizedAnswer = finalizeUserFacingAnswer(
+      answer,
+      request,
+      additionalContext,
+    );
     logDebug("chat.message.output_debug", {
       sessionId,
       messageId,
       answerLength: sanitizedAnswer.length,
       answer: clipForDebugLog(sanitizedAnswer),
     });
-    const dashboardContextPatch = buildDashboardContextPatch(request, additionalContext);
+    const dashboardContextPatch = buildDashboardContextPatch(
+      request,
+      additionalContext,
+    );
     if (dashboardContextPatch?.workbookName) {
       logInfo("chat.service.dashboard_context_patch.created", {
         provider: additionalContext.provider,
@@ -104,7 +139,9 @@ export class ChatService {
       answer: sanitizedAnswer,
       dashboardName: request.dashboardContext.dashboardName,
       workbookName: request.dashboardContext.workbookName ?? null,
-      worksheetNames: request.dashboardContext.worksheets.map((worksheet) => worksheet.name),
+      worksheetNames: request.dashboardContext.worksheets.map(
+        (worksheet) => worksheet.name,
+      ),
       createdAt,
       source: request.clientContext?.source,
     });
@@ -113,7 +150,10 @@ export class ChatService {
       answer: sanitizedAnswer,
       sessionId,
       messageId,
-      notionPostIdeaDraft: buildNotionPostIdeaDraft(request.question, sanitizedAnswer),
+      notionPostIdeaDraft: buildNotionPostIdeaDraft(
+        request.question,
+        sanitizedAnswer,
+      ),
       dashboardContextPatch,
       debug: {
         usedMock: this.answerGenerator.name === "mock",
@@ -151,11 +191,16 @@ export class ChatService {
       authenticatedUser,
       tableauSubject,
     });
-    const dashboardContextPatch = buildDashboardContextPatch(request, additionalContext);
+    const dashboardContextPatch = buildDashboardContextPatch(
+      request,
+      additionalContext,
+    );
 
     logInfo("chat.service.context_patch.completed", {
       provider: additionalContext.provider,
-      patchedFields: dashboardContextPatch?.workbookName ? ["workbookName"] : [],
+      patchedFields: dashboardContextPatch?.workbookName
+        ? ["workbookName"]
+        : [],
       warningCount: additionalContext.warnings?.length ?? 0,
     });
 
@@ -168,16 +213,25 @@ export class ChatService {
   }
 }
 
-function buildNotionPostIdeaDraft(question: string, answer: string): ChatResponse["notionPostIdeaDraft"] | undefined {
-  const shouldBuildDraft = /(notion|保存|投稿|ポスト|idea|アイデア)/i.test(question);
+function buildNotionPostIdeaDraft(
+  question: string,
+  answer: string,
+): ChatResponse["notionPostIdeaDraft"] | undefined {
+  const shouldBuildDraft = /(notion|保存|投稿|ポスト|idea|アイデア)/i.test(
+    question,
+  );
   if (!shouldBuildDraft) {
     return undefined;
   }
 
   const shortAnswer = answer.replace(/\s+/g, " ").trim();
-  const reason = shortAnswer.slice(0, 260) || "Tableau MCP analysis based suggestion.";
+  const reason =
+    shortAnswer.slice(0, 260) || "Tableau MCP analysis based suggestion.";
   const titleSeed = question.replace(/[「」"']/g, "").trim();
-  const title = titleSeed.length > 80 ? `${titleSeed.slice(0, 80)}...` : titleSeed || "Tableau MCP 分析メモ";
+  const title =
+    titleSeed.length > 80
+      ? `${titleSeed.slice(0, 80)}...`
+      : titleSeed || "Tableau MCP 分析メモ";
 
   return {
     title,
@@ -189,7 +243,10 @@ function buildNotionPostIdeaDraft(question: string, answer: string): ChatRespons
 }
 
 function clipForDebugLog(value: string): string {
-  const maxChars = Math.max(200, Number(process.env.CHAT_DEBUG_MAX_CHARS ?? 12000));
+  const maxChars = Math.max(
+    200,
+    Number(process.env.CHAT_DEBUG_MAX_CHARS ?? 12000),
+  );
   if (value.length <= maxChars) {
     return value;
   }
@@ -200,21 +257,34 @@ function clipForDebugLog(value: string): string {
 export function sanitizeUserFacingAnswer(
   answer: string,
   request: ChatRequest,
-  additionalContext: Awaited<ReturnType<TableauContextProvider["getAdditionalContext"]>>,
+  additionalContext: Awaited<
+    ReturnType<TableauContextProvider["getAdditionalContext"]>
+  >,
 ): string {
-  const answerAfterFieldValidation = sanitizeHallucinatedFieldMentions(answer, request, additionalContext);
+  const answerAfterFieldValidation = sanitizeHallucinatedFieldMentions(
+    answer,
+    request,
+    additionalContext,
+  );
   const queryExecutionMissing =
-    additionalContext.mcpExecutionDebug?.intent === "data_analysis" && !hasSuccessfulDatasourceQuery(additionalContext);
+    additionalContext.mcpExecutionDebug?.intent === "data_analysis" &&
+    !hasSuccessfulDatasourceQuery(additionalContext);
   const looksLikeManualQueryInstruction =
     /```sql|select\s+.+\s+from|datasource query|クエリを実行|query\s+to\s+run|以下のクエリ|execute the query/i.test(
       answerAfterFieldValidation,
     );
   if (queryExecutionMissing && looksLikeManualQueryInstruction) {
     const datasourceNames =
-      additionalContext.normalizedContext?.datasources?.map((datasource) => datasource.name).filter(Boolean) ??
-      request.dashboardContext.dataSources?.map((datasource) => datasource.name).filter(Boolean) ??
+      additionalContext.normalizedContext?.datasources
+        ?.map((datasource) => datasource.name)
+        .filter(Boolean) ??
+      request.dashboardContext.dataSources
+        ?.map((datasource) => datasource.name)
+        .filter(Boolean) ??
       [];
-    const datasourceText = datasourceNames.length ? datasourceNames.join("、") : "対象データソース";
+    const datasourceText = datasourceNames.length
+      ? datasourceNames.join("、")
+      : "対象データソース";
     return [
       `このダッシュボードで確認できているデータソースは ${datasourceText} です。`,
       "ただし、今回の処理では安全制約により集計クエリを実行できなかったため、最終的なランキング結果までは確定できませんでした。",
@@ -222,14 +292,16 @@ export function sanitizeUserFacingAnswer(
     ].join("");
   }
 
-  const containsInternalToolInstruction = /(get-datasource-metadata|query-datasource|datasource-id|datasource id)/i.test(
-    answerAfterFieldValidation,
-  );
+  const containsInternalToolInstruction =
+    /(get-datasource-metadata|query-datasource|datasource-id|datasource id)/i.test(
+      answerAfterFieldValidation,
+    );
   if (!containsInternalToolInstruction) {
     return answerAfterFieldValidation;
   }
 
-  const isMetadataLookup = additionalContext.mcpExecutionDebug?.intent === "metadata_lookup";
+  const isMetadataLookup =
+    additionalContext.mcpExecutionDebug?.intent === "metadata_lookup";
   const metadataResolved = hasResolvedMetadata(additionalContext);
   if (!isMetadataLookup || metadataResolved) {
     return answerAfterFieldValidation
@@ -239,10 +311,16 @@ export function sanitizeUserFacingAnswer(
   }
 
   const datasourceNames =
-    additionalContext.normalizedContext?.datasources?.map((datasource) => datasource.name).filter(Boolean) ??
-    request.dashboardContext.dataSources?.map((datasource) => datasource.name).filter(Boolean) ??
+    additionalContext.normalizedContext?.datasources
+      ?.map((datasource) => datasource.name)
+      .filter(Boolean) ??
+    request.dashboardContext.dataSources
+      ?.map((datasource) => datasource.name)
+      .filter(Boolean) ??
     [];
-  const datasourceText = datasourceNames.length ? datasourceNames.join("、") : "対象データソース";
+  const datasourceText = datasourceNames.length
+    ? datasourceNames.join("、")
+    : "対象データソース";
 
   return [
     `このダッシュボードで確認できているデータソースは ${datasourceText} です。`,
@@ -254,9 +332,14 @@ export function sanitizeUserFacingAnswer(
 export function finalizeUserFacingAnswer(
   answer: string,
   request: ChatRequest,
-  additionalContext: Awaited<ReturnType<TableauContextProvider["getAdditionalContext"]>>,
+  additionalContext: Awaited<
+    ReturnType<TableauContextProvider["getAdditionalContext"]>
+  >,
 ): string {
-  const structuredAnswer = buildStructuredDataAnalysisAnswer(request, additionalContext);
+  const structuredAnswer = buildStructuredDataAnalysisAnswer(
+    request,
+    additionalContext,
+  );
   if (structuredAnswer) {
     return structuredAnswer;
   }
@@ -267,7 +350,9 @@ export function finalizeUserFacingAnswer(
 function sanitizeHallucinatedFieldMentions(
   answer: string,
   request: ChatRequest,
-  additionalContext: Awaited<ReturnType<TableauContextProvider["getAdditionalContext"]>>,
+  additionalContext: Awaited<
+    ReturnType<TableauContextProvider["getAdditionalContext"]>
+  >,
 ): string {
   if (additionalContext.provider !== "tableau-mcp") {
     return answer;
@@ -301,8 +386,12 @@ function sanitizeHallucinatedFieldMentions(
   }
 
   const datasourceNames =
-    additionalContext.normalizedContext?.datasources?.map((datasource) => datasource.name).filter(Boolean) ??
-    request.dashboardContext.dataSources?.map((datasource) => datasource.name).filter(Boolean) ??
+    additionalContext.normalizedContext?.datasources
+      ?.map((datasource) => datasource.name)
+      .filter(Boolean) ??
+    request.dashboardContext.dataSources
+      ?.map((datasource) => datasource.name)
+      .filter(Boolean) ??
     [];
 
   return buildStrictFieldAnswerFromProfiles(fieldProfiles, datasourceNames);
@@ -352,55 +441,83 @@ function normalizeFieldToken(value: string): string {
   return value.trim().toLowerCase().replace(/\s+/g, "");
 }
 
-function buildStrictFieldAnswerFromProfiles(profiles: DatasourceFieldProfile[], datasourceNames: string[]): string {
+function buildStrictFieldAnswerFromProfiles(
+  profiles: DatasourceFieldProfile[],
+  datasourceNames: string[],
+): string {
   const lines: string[] = [];
   const uniqueDatasourceNames = [...new Set(datasourceNames)];
   const headerDatasource = uniqueDatasourceNames.length
     ? uniqueDatasourceNames.join("、")
     : profiles.map((profile) => profile.datasourceName).join("、");
-  lines.push(`このダッシュボードで確認できているデータソースは ${headerDatasource} です。`);
-  lines.push("取得できたTableau Cloudのメタデータに基づくフィールド一覧は次のとおりです。");
+  lines.push(
+    `このダッシュボードで確認できているデータソースは ${headerDatasource} です。`,
+  );
+  lines.push(
+    "取得できたTableau Cloudのメタデータに基づくフィールド一覧は次のとおりです。",
+  );
 
   for (const profile of profiles) {
     lines.push(`- ${profile.datasourceName}（${profile.fieldCount}件）`);
     lines.push(`  ${profile.fieldNames.join("、")}`);
   }
 
-  lines.push("上記以外のフィールド名は、今回取得できたメタデータでは確認できませんでした。");
+  lines.push(
+    "上記以外のフィールド名は、今回取得できたメタデータでは確認できませんでした。",
+  );
   return lines.join("\n");
 }
-function hasResolvedMetadata(additionalContext: Awaited<ReturnType<TableauContextProvider["getAdditionalContext"]>>): boolean {
+function hasResolvedMetadata(
+  additionalContext: Awaited<
+    ReturnType<TableauContextProvider["getAdditionalContext"]>
+  >,
+): boolean {
   if (additionalContext.provider === "tableau-mcp") {
-    const metadata = additionalContext.metadata as Record<string, unknown> | undefined;
+    const metadata = additionalContext.metadata as
+      | Record<string, unknown>
+      | undefined;
     if (typeof metadata?.hasMetadata === "boolean") {
       return metadata.hasMetadata;
     }
 
-    return additionalContext.mcpToolResults?.some(
-      (result) => result.toolName === "get-datasource-metadata" && result.status === "success",
-    ) ?? false;
+    return (
+      additionalContext.mcpToolResults?.some(
+        (result) =>
+          result.toolName === "get-datasource-metadata" &&
+          result.status === "success",
+      ) ?? false
+    );
   }
 
   return Boolean(additionalContext.metadata);
 }
 
 function hasSuccessfulDatasourceQuery(
-  additionalContext: Awaited<ReturnType<TableauContextProvider["getAdditionalContext"]>>,
+  additionalContext: Awaited<
+    ReturnType<TableauContextProvider["getAdditionalContext"]>
+  >,
 ): boolean {
   return (
-    additionalContext.mcpToolResults?.some((result) => result.toolName === "query-datasource" && result.status === "success") ?? false
+    additionalContext.mcpToolResults?.some(
+      (result) =>
+        result.toolName === "query-datasource" && result.status === "success",
+    ) ?? false
   );
 }
 
 export function buildStructuredDataAnalysisAnswer(
   request: ChatRequest,
-  additionalContext: Awaited<ReturnType<TableauContextProvider["getAdditionalContext"]>>,
+  additionalContext: Awaited<
+    ReturnType<TableauContextProvider["getAdditionalContext"]>
+  >,
 ): string | undefined {
   if (additionalContext.mcpExecutionDebug?.intent !== "data_analysis") {
     return undefined;
   }
 
-  const insight = additionalContext.queryInsights?.find((candidate) => candidate.rows.length > 0);
+  const insight = additionalContext.queryInsights?.find(
+    (candidate) => candidate.rows.length > 0,
+  );
   if (!insight) {
     return undefined;
   }
@@ -414,15 +531,28 @@ export function buildStructuredDataAnalysisAnswer(
     referenceDate: request.dashboardContext.capturedAt,
   })?.label;
   const metricLabel = describeMetricField(insight.metricField);
-  const isRankingQuestion = /ランキング|rank(?:ing)?|上位|一覧|list/i.test(request.question);
-  const visibleRows = rows.slice(0, isRankingQuestion ? Math.min(10, rows.length) : Math.min(3, rows.length));
+  const isRankingQuestion = /ランキング|rank(?:ing)?|上位|一覧|list/i.test(
+    request.question,
+  );
+  const visibleRows = rows.slice(
+    0,
+    isRankingQuestion ? Math.min(10, rows.length) : Math.min(3, rows.length),
+  );
   const intro = isRankingQuestion
     ? `${periodLabel ? `${periodLabel}の` : ""}${metricLabel}ランキングです。`
     : `${periodLabel ? `${periodLabel}の` : ""}${metricLabel}が高いVizです。`;
   const body = isRankingQuestion
-    ? visibleRows.map((row, index) => `${index + 1}. ${row.label ?? "名称不明"}: ${formatMetricValue(row.value)}`).join("\n")
+    ? visibleRows
+        .map(
+          (row, index) =>
+            `${index + 1}. ${row.label ?? "名称不明"}: ${formatMetricValue(row.value)}`,
+        )
+        .join("\n")
     : visibleRows
-        .map((row) => `- ${row.label ?? "名称不明"}: ${formatMetricValue(row.value)}`)
+        .map(
+          (row) =>
+            `- ${row.label ?? "名称不明"}: ${formatMetricValue(row.value)}`,
+        )
         .join("\n");
 
   return [
@@ -460,21 +590,31 @@ function formatMetricValue(value: number | null): string {
 
 function buildDashboardContextPatch(
   request: { dashboardContext: DashboardContext },
-  additionalContext: Awaited<ReturnType<TableauContextProvider["getAdditionalContext"]>>,
+  additionalContext: Awaited<
+    ReturnType<TableauContextProvider["getAdditionalContext"]>
+  >,
 ): ChatResponse["dashboardContextPatch"] {
   if (request.dashboardContext.workbookName) {
     return undefined;
   }
 
-  const workbookName = extractName(additionalContext.workbook) ?? extractWorkbookNameFromMetadata(additionalContext.metadata);
-  if (!workbookName || isLikelyDashboardOrWorksheetName(workbookName, request.dashboardContext)) {
+  const workbookName =
+    extractName(additionalContext.workbook) ??
+    extractWorkbookNameFromMetadata(additionalContext.metadata);
+  if (
+    !workbookName ||
+    isLikelyDashboardOrWorksheetName(workbookName, request.dashboardContext)
+  ) {
     return undefined;
   }
 
   return { workbookName };
 }
 
-function isLikelyDashboardOrWorksheetName(workbookName: string, dashboardContext: DashboardContext): boolean {
+function isLikelyDashboardOrWorksheetName(
+  workbookName: string,
+  dashboardContext: DashboardContext,
+): boolean {
   const normalizedWorkbookName = workbookName.trim().toLowerCase();
   if (!normalizedWorkbookName) {
     return true;
@@ -495,7 +635,9 @@ function extractWorkbookNameFromMetadata(value: unknown): string | undefined {
       continue;
     }
 
-    const workbookName = extractName((dashboard as Record<string, unknown>).workbook);
+    const workbookName = extractName(
+      (dashboard as Record<string, unknown>).workbook,
+    );
     if (workbookName) {
       return workbookName;
     }
@@ -523,7 +665,10 @@ function findArraysByKey(value: unknown, key: string): unknown[][] {
 
   const record = value as Record<string, unknown>;
   const direct = Array.isArray(record[key]) ? [record[key] as unknown[]] : [];
-  return [...direct, ...Object.values(record).flatMap((item) => findArraysByKey(item, key))];
+  return [
+    ...direct,
+    ...Object.values(record).flatMap((item) => findArraysByKey(item, key)),
+  ];
 }
 
 function extractName(value: unknown): string | undefined {
@@ -541,10 +686,17 @@ export function createChatService(): ChatService {
   const answerGenerator = createAnswerGenerator(config.model.provider);
   const chatAgent = createChatAgent(config.model.provider);
 
-  return new ChatService(provider, answerGenerator, createChatHistoryRepository(), chatAgent);
+  return new ChatService(
+    provider,
+    answerGenerator,
+    createChatHistoryRepository(),
+    chatAgent,
+  );
 }
 
-function createAnswerGenerator(providerName: ReturnType<typeof getConfig>["model"]["provider"]): AnswerGenerator {
+function createAnswerGenerator(
+  providerName: ReturnType<typeof getConfig>["model"]["provider"],
+): AnswerGenerator {
   switch (providerName) {
     case "bedrock":
       return new BedrockAnswerGenerator();
@@ -554,7 +706,9 @@ function createAnswerGenerator(providerName: ReturnType<typeof getConfig>["model
   }
 }
 
-function createChatAgent(providerName: ReturnType<typeof getConfig>["model"]["provider"]): ChatAgent {
+function createChatAgent(
+  providerName: ReturnType<typeof getConfig>["model"]["provider"],
+): ChatAgent {
   switch (providerName) {
     case "bedrock":
       return new BedrockChatAgent();
@@ -564,7 +718,9 @@ function createChatAgent(providerName: ReturnType<typeof getConfig>["model"]["pr
   }
 }
 
-function createContextProvider(providerName: ReturnType<typeof getConfig>["tableau"]["contextProvider"]): TableauContextProvider {
+function createContextProvider(
+  providerName: ReturnType<typeof getConfig>["tableau"]["contextProvider"],
+): TableauContextProvider {
   switch (providerName) {
     case "direct-api":
       return new DirectTableauApiContextProvider();
@@ -576,8 +732,12 @@ function createContextProvider(providerName: ReturnType<typeof getConfig>["table
   }
 }
 
-function resolveTableauSubject(authenticatedUser: AuthenticatedUser | undefined): string | undefined {
+function resolveTableauSubject(
+  authenticatedUser: AuthenticatedUser | undefined,
+): string | undefined {
   const config = getConfig();
-  return authenticatedUser?.tableauSubject ?? (config.tableau.defaultSubject || undefined);
+  return (
+    authenticatedUser?.tableauSubject ??
+    (config.tableau.defaultSubject || undefined)
+  );
 }
-

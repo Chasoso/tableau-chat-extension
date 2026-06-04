@@ -1,27 +1,26 @@
-import { BedrockRuntimeClient, ConverseCommand } from "@aws-sdk/client-bedrock-runtime";
+import {
+  BedrockRuntimeClient,
+  ConverseCommand,
+} from "@aws-sdk/client-bedrock-runtime";
 import { getConfig } from "../config";
 import { logError, logInfo, safeErrorDetails } from "../logging";
-import type { GetAdditionalContextInput, TableauContextProvider } from "../tableau/contextProvider";
+import type { TableauContextProvider } from "../tableau/contextProvider";
 import {
   classifyQuestionIntent,
   QUESTION_INTENT_POLICY,
   type ClassifiedQuestionIntent,
 } from "./tableauMcpToolPlanner";
 import type { AuthenticatedUser } from "../types/auth";
-import type { AgentEvaluation, AgentExecutionDebug, AgentPlan } from "../types/agent";
+import type {
+  AgentEvaluation,
+  AgentExecutionDebug,
+  AgentPlan,
+} from "../types/agent";
 import type { ChatHistoryRecord, ChatRequest } from "../types/chat";
 import type {
-  DatasourceFieldProfile,
   McpExecutionDebug,
-  McpObservation,
-  QueryDatasourceInsight,
   TableauAdditionalContext,
   TableauDatasourceRef,
-  TableauMcpToolResultSummary,
-  TableauMcpToolSummary,
-  TableauProjectRef,
-  TableauViewRef,
-  TableauWorkbookRef,
 } from "../types/tableau";
 
 const MAX_HISTORY_QUESTION_CHARS = 180;
@@ -42,7 +41,10 @@ export type AgentLoopResult = {
 
 export interface ChatAgent {
   readonly name: string;
-  shouldRun(input: { request: ChatRequest; contextProvider: TableauContextProvider }): boolean;
+  shouldRun(input: {
+    request: ChatRequest;
+    contextProvider: TableauContextProvider;
+  }): boolean;
   createPlan(input: {
     request: ChatRequest;
     recentHistory: ChatHistoryRecord[];
@@ -64,7 +66,10 @@ export class NoopChatAgent implements ChatAgent {
     return false;
   }
 
-  async createPlan(): Promise<{ plan: AgentPlan; source: "bedrock" | "heuristic" }> {
+  async createPlan(): Promise<{
+    plan: AgentPlan;
+    source: "bedrock" | "heuristic";
+  }> {
     throw new Error("NoopChatAgent does not create plans.");
   }
 
@@ -77,10 +82,15 @@ export class BedrockChatAgent implements ChatAgent {
   readonly name = "bedrock-chat-agent";
 
   constructor(
-    private readonly client = new BedrockRuntimeClient({ region: getConfig().model.bedrock.region }),
+    private readonly client = new BedrockRuntimeClient({
+      region: getConfig().model.bedrock.region,
+    }),
   ) {}
 
-  shouldRun(input: { request: ChatRequest; contextProvider: TableauContextProvider }): boolean {
+  shouldRun(input: {
+    request: ChatRequest;
+    contextProvider: TableauContextProvider;
+  }): boolean {
     const config = getConfig();
     if (!config.agent.enabled || config.model.provider !== "bedrock") {
       return false;
@@ -100,7 +110,12 @@ export class BedrockChatAgent implements ChatAgent {
   }): Promise<{ plan: AgentPlan; source: "bedrock" | "heuristic" }> {
     const fallback = buildHeuristicPlan(input.request);
     const config = getConfig();
-    const prompt = buildPlanPrompt(input.request, input.recentHistory, input.contextProvider.name, fallback);
+    const prompt = buildPlanPrompt(
+      input.request,
+      input.recentHistory,
+      input.contextProvider.name,
+      fallback,
+    );
     const startedAt = Date.now();
 
     try {
@@ -108,7 +123,11 @@ export class BedrockChatAgent implements ChatAgent {
         provider: input.contextProvider.name,
         promptLength: prompt.length,
       });
-      const text = await this.sendJsonPrompt(prompt, config.agent.planMaxOutputTokens, "chat.agent.plan");
+      const text = await this.sendJsonPrompt(
+        prompt,
+        config.agent.planMaxOutputTokens,
+        "chat.agent.plan",
+      );
       const parsed = parsePlanResponse(text, fallback);
       logInfo("chat.agent.plan.completed", {
         provider: input.contextProvider.name,
@@ -135,18 +154,35 @@ export class BedrockChatAgent implements ChatAgent {
     contextPass: number;
   }): Promise<AgentEvaluation | undefined> {
     const config = getConfig();
-    if (!shouldEvaluateHeuristically(input.plan, input.additionalContext, input.contextPass, config.agent.maxContextPasses)) {
+    if (
+      !shouldEvaluateHeuristically(
+        input.plan,
+        input.additionalContext,
+        input.contextPass,
+        config.agent.maxContextPasses,
+      )
+    ) {
       return undefined;
     }
 
-    const prompt = buildEvaluationPrompt(input.request, input.plan, input.additionalContext, input.recentHistory, input.contextPass);
+    const prompt = buildEvaluationPrompt(
+      input.request,
+      input.plan,
+      input.additionalContext,
+      input.recentHistory,
+      input.contextPass,
+    );
     const startedAt = Date.now();
     try {
       logInfo("chat.agent.evaluate.started", {
         pass: input.contextPass + 1,
         promptLength: prompt.length,
       });
-      const text = await this.sendJsonPrompt(prompt, config.agent.evaluationMaxOutputTokens, "chat.agent.evaluate");
+      const text = await this.sendJsonPrompt(
+        prompt,
+        config.agent.evaluationMaxOutputTokens,
+        "chat.agent.evaluate",
+      );
       const evaluation = parseEvaluationResponse(text);
       logInfo("chat.agent.evaluate.completed", {
         pass: input.contextPass + 1,
@@ -165,10 +201,17 @@ export class BedrockChatAgent implements ChatAgent {
     }
   }
 
-  private async sendJsonPrompt(prompt: string, maxTokens: number, eventPrefix: string): Promise<string> {
+  private async sendJsonPrompt(
+    prompt: string,
+    maxTokens: number,
+    eventPrefix: string,
+  ): Promise<string> {
     const config = getConfig();
     if (config.agent.debugLogPromptExchange) {
-      const promptSnapshot = clipForDebugLog(prompt, config.agent.debugMaxChars);
+      const promptSnapshot = clipForDebugLog(
+        prompt,
+        config.agent.debugMaxChars,
+      );
       logInfo(`${eventPrefix}.prompt_debug`, {
         promptLength: prompt.length,
         promptPreviewLength: promptSnapshot.text.length,
@@ -199,7 +242,10 @@ export class BedrockChatAgent implements ChatAgent {
     }
 
     if (config.agent.debugLogPromptExchange) {
-      const responseSnapshot = clipForDebugLog(text, config.agent.debugMaxChars);
+      const responseSnapshot = clipForDebugLog(
+        text,
+        config.agent.debugMaxChars,
+      );
       logInfo(`${eventPrefix}.response_debug`, {
         responseLength: text.length,
         responsePreviewLength: responseSnapshot.text.length,
@@ -221,7 +267,12 @@ export async function runLightweightAgentLoop(input: {
   tableauSubject?: string;
 }): Promise<AgentLoopResult> {
   const config = getConfig();
-  if (!input.agent.shouldRun({ request: input.request, contextProvider: input.contextProvider })) {
+  if (
+    !input.agent.shouldRun({
+      request: input.request,
+      contextProvider: input.contextProvider,
+    })
+  ) {
     const additionalContext = await input.contextProvider.getAdditionalContext({
       dashboardContext: input.request.dashboardContext,
       question: input.request.question,
@@ -278,11 +329,19 @@ export async function runLightweightAgentLoop(input: {
       provider: additionalContext.provider,
       warningCount: additionalContext.warnings?.length ?? 0,
       hasMetadata: hasResolvedMetadata(additionalContext),
-      hasQueryInsight: Boolean(additionalContext.queryInsights?.some((insight) => insight.rows.length > 0)),
+      hasQueryInsight: Boolean(
+        additionalContext.queryInsights?.some(
+          (insight) => insight.rows.length > 0,
+        ),
+      ),
       ...(latestEvaluation ? { evaluation: latestEvaluation } : {}),
     });
 
-    if (!latestEvaluation || latestEvaluation.isSufficient || !latestEvaluation.followUpQuestion) {
+    if (
+      !latestEvaluation ||
+      latestEvaluation.isSufficient ||
+      !latestEvaluation.followUpQuestion
+    ) {
       break;
     }
 
@@ -297,9 +356,16 @@ export async function runLightweightAgentLoop(input: {
     additionalContext: mergedContext,
     promptContext: {
       agentPlanSummary: summarizePlan(plan),
-      investigationQuestion: plan.normalizedQuestion !== input.request.question ? plan.normalizedQuestion : undefined,
-      evaluationSummary: latestEvaluation ? summarizeEvaluation(latestEvaluation) : undefined,
-      evidenceGaps: latestEvaluation?.missingEvidence.length ? latestEvaluation.missingEvidence : undefined,
+      investigationQuestion:
+        plan.normalizedQuestion !== input.request.question
+          ? plan.normalizedQuestion
+          : undefined,
+      evaluationSummary: latestEvaluation
+        ? summarizeEvaluation(latestEvaluation)
+        : undefined,
+      evidenceGaps: latestEvaluation?.missingEvidence.length
+        ? latestEvaluation.missingEvidence
+        : undefined,
     },
     debug: {
       enabled: true,
@@ -313,19 +379,28 @@ export async function runLightweightAgentLoop(input: {
 }
 
 function buildHeuristicPlan(request: ChatRequest): AgentPlan {
-  const intent = classifyQuestionIntent(request.question, request.dashboardContext, []);
+  const intent = classifyQuestionIntent(
+    request.question,
+    request.dashboardContext,
+    [],
+  );
   return {
     intent: intent.intent,
     confidence: intent.confidence,
     normalizedQuestion: request.question.trim(),
     needsMcp: intent.needsMcp,
-    answerStyle: /ランキング|rank(?:ing)?|top|上位/i.test(request.question) ? "ranking" : "direct",
+    answerStyle: /ランキング|rank(?:ing)?|top|上位/i.test(request.question)
+      ? "ranking"
+      : "direct",
     reasonBrief: intent.reasonBrief,
     requiredEvidence: inferRequiredEvidence(request.question, intent),
   };
 }
 
-function inferRequiredEvidence(question: string, intent: ClassifiedQuestionIntent): string[] {
+function inferRequiredEvidence(
+  question: string,
+  intent: ClassifiedQuestionIntent,
+): string[] {
   if (intent.intent === "metadata_lookup") {
     return ["datasource metadata", "field list"];
   }
@@ -358,10 +433,12 @@ function buildPlanPrompt(
     recentHistory.length
       ? [
           "Recent conversation:",
-          ...recentHistory.slice(0, 3).flatMap((record, index) => [
-            `Turn ${index + 1} user: ${truncateText(record.question, MAX_HISTORY_QUESTION_CHARS)}`,
-            `Turn ${index + 1} assistant: ${truncateText(record.answer, MAX_HISTORY_ANSWER_CHARS)}`,
-          ]),
+          ...recentHistory
+            .slice(0, 3)
+            .flatMap((record, index) => [
+              `Turn ${index + 1} user: ${truncateText(record.question, MAX_HISTORY_QUESTION_CHARS)}`,
+              `Turn ${index + 1} assistant: ${truncateText(record.answer, MAX_HISTORY_ANSWER_CHARS)}`,
+            ]),
         ].join("\n")
       : "",
     `Dashboard name: ${request.dashboardContext.dashboardName}`,
@@ -411,16 +488,21 @@ function parsePlanResponse(text: string, fallback: AgentPlan): AgentPlan {
     intent: readIntent(record.intent) ?? fallback.intent,
     confidence: clampNumber(record.confidence, fallback.confidence),
     normalizedQuestion:
-      typeof record.normalizedQuestion === "string" && record.normalizedQuestion.trim()
+      typeof record.normalizedQuestion === "string" &&
+      record.normalizedQuestion.trim()
         ? record.normalizedQuestion.trim()
         : fallback.normalizedQuestion,
-    needsMcp: typeof record.needsMcp === "boolean" ? record.needsMcp : fallback.needsMcp,
+    needsMcp:
+      typeof record.needsMcp === "boolean"
+        ? record.needsMcp
+        : fallback.needsMcp,
     answerStyle: readAnswerStyle(record.answerStyle) ?? fallback.answerStyle,
     reasonBrief:
       typeof record.reasonBrief === "string" && record.reasonBrief.trim()
         ? record.reasonBrief.trim().slice(0, 220)
         : fallback.reasonBrief,
-    requiredEvidence: readStringArray(record.requiredEvidence) ?? fallback.requiredEvidence,
+    requiredEvidence:
+      readStringArray(record.requiredEvidence) ?? fallback.requiredEvidence,
   };
 }
 
@@ -435,7 +517,8 @@ function parseEvaluationResponse(text: string): AgentEvaluation | undefined {
   }
 
   const followUpQuestion =
-    typeof record.followUpQuestion === "string" && record.followUpQuestion.trim()
+    typeof record.followUpQuestion === "string" &&
+    record.followUpQuestion.trim()
       ? record.followUpQuestion.trim().slice(0, 240)
       : undefined;
 
@@ -457,11 +540,14 @@ function parseJsonRecord(text: string): Record<string, unknown> | undefined {
   const candidate = fenced ?? trimmed;
   const first = candidate.indexOf("{");
   const last = candidate.lastIndexOf("}");
-  const jsonText = first >= 0 && last > first ? candidate.slice(first, last + 1) : candidate;
+  const jsonText =
+    first >= 0 && last > first ? candidate.slice(first, last + 1) : candidate;
 
   try {
     const parsed = JSON.parse(jsonText) as unknown;
-    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : undefined;
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>)
+      : undefined;
   } catch {
     return undefined;
   }
@@ -484,7 +570,9 @@ function readIntent(value: unknown): AgentPlan["intent"] | undefined {
 }
 
 function readAnswerStyle(value: unknown): AgentPlan["answerStyle"] | undefined {
-  return value === "direct" || value === "ranking" || value === "summary" ? value : undefined;
+  return value === "direct" || value === "ranking" || value === "summary"
+    ? value
+    : undefined;
 }
 
 function readStringArray(value: unknown): string[] | undefined {
@@ -502,7 +590,9 @@ function readStringArray(value: unknown): string[] | undefined {
 }
 
 function clampNumber(value: unknown, fallback: number): number {
-  return typeof value === "number" && Number.isFinite(value) ? Math.max(0, Math.min(1, value)) : fallback;
+  return typeof value === "number" && Number.isFinite(value)
+    ? Math.max(0, Math.min(1, value))
+    : fallback;
 }
 
 function summarizePlan(plan: AgentPlan): string {
@@ -521,7 +611,10 @@ function truncateText(value: string, maxChars: number): string {
   return `${value.slice(0, maxChars).trimEnd()}...`;
 }
 
-function clipForDebugLog(value: string, maxChars: number): { text: string; truncated: boolean } {
+function clipForDebugLog(
+  value: string,
+  maxChars: number,
+): { text: string; truncated: boolean } {
   if (value.length <= maxChars) {
     return { text: value, truncated: false };
   }
@@ -554,11 +647,21 @@ function shouldEvaluateHeuristically(
     return false;
   }
 
-  if (plan.intent === "metadata_lookup" && !hasResolvedMetadata(additionalContext)) {
+  if (
+    plan.intent === "metadata_lookup" &&
+    !hasResolvedMetadata(additionalContext)
+  ) {
     return true;
   }
 
-  if (plan.intent === "data_analysis" && !(additionalContext.queryInsights?.some((insight) => insight.rows.length > 0) ?? false)) {
+  if (
+    plan.intent === "data_analysis" &&
+    !(
+      additionalContext.queryInsights?.some(
+        (insight) => insight.rows.length > 0,
+      ) ?? false
+    )
+  ) {
     return true;
   }
 
@@ -566,14 +669,19 @@ function shouldEvaluateHeuristically(
     return true;
   }
 
-  if ((additionalContext.mcpExecutionDebug?.toolCallCount ?? 0) === 0 && plan.needsMcp) {
+  if (
+    (additionalContext.mcpExecutionDebug?.toolCallCount ?? 0) === 0 &&
+    plan.needsMcp
+  ) {
     return true;
   }
 
   return false;
 }
 
-function summarizeContextForEvaluation(additionalContext: TableauAdditionalContext): string {
+function summarizeContextForEvaluation(
+  additionalContext: TableauAdditionalContext,
+): string {
   return JSON.stringify({
     provider: additionalContext.provider,
     datasourceCount: additionalContext.datasources?.length ?? 0,
@@ -587,21 +695,30 @@ function summarizeContextForEvaluation(additionalContext: TableauAdditionalConte
   });
 }
 
-export function mergeAdditionalContexts(contexts: TableauAdditionalContext[]): TableauAdditionalContext {
+export function mergeAdditionalContexts(
+  contexts: TableauAdditionalContext[],
+): TableauAdditionalContext {
   const latest = contexts.at(-1);
   if (!latest) {
     return { provider: "mock" };
   }
 
   const workbook = contexts.map((context) => context.workbook).find(Boolean);
-  const metadata = [...contexts].reverse().map((context) => context.metadata).find(Boolean);
+  const metadata = [...contexts]
+    .reverse()
+    .map((context) => context.metadata)
+    .find(Boolean);
 
   return {
     provider: latest.provider,
     ...(workbook ? { workbook } : {}),
     datasources: dedupeByKey(
-      contexts.flatMap((context) => (context.datasources as TableauDatasourceRef[] | undefined) ?? []),
-      (datasource) => `${datasource.type}:${datasource.luid ?? datasource.id ?? datasource.name}`,
+      contexts.flatMap(
+        (context) =>
+          (context.datasources as TableauDatasourceRef[] | undefined) ?? [],
+      ),
+      (datasource) =>
+        `${datasource.type}:${datasource.luid ?? datasource.id ?? datasource.name}`,
     ),
     datasourceFieldProfiles: dedupeByKey(
       contexts.flatMap((context) => context.datasourceFieldProfiles ?? []),
@@ -609,7 +726,8 @@ export function mergeAdditionalContexts(contexts: TableauAdditionalContext[]): T
     ),
     queryInsights: dedupeByKey(
       contexts.flatMap((context) => context.queryInsights ?? []),
-      (insight) => `${insight.datasourceLuid ?? insight.datasourceName}:${insight.metricField}:${insight.dimensionField ?? ""}`,
+      (insight) =>
+        `${insight.datasourceLuid ?? insight.datasourceName}:${insight.metricField}:${insight.dimensionField ?? ""}`,
     ),
     normalizedContext: mergeNormalizedContexts(contexts),
     ...(metadata ? { metadata } : {}),
@@ -618,14 +736,26 @@ export function mergeAdditionalContexts(contexts: TableauAdditionalContext[]): T
       (tool) => tool.name,
     ),
     mcpToolResults: contexts.flatMap((context) => context.mcpToolResults ?? []),
-    mcpObservations: contexts.flatMap((context) => context.mcpObservations ?? []),
-    mcpExecutionDebug: mergeMcpExecutionDebugs(contexts.map((context) => context.mcpExecutionDebug).filter(Boolean) as McpExecutionDebug[]),
-    warnings: dedupePrimitive(contexts.flatMap((context) => context.warnings ?? [])),
+    mcpObservations: contexts.flatMap(
+      (context) => context.mcpObservations ?? [],
+    ),
+    mcpExecutionDebug: mergeMcpExecutionDebugs(
+      contexts
+        .map((context) => context.mcpExecutionDebug)
+        .filter(Boolean) as McpExecutionDebug[],
+    ),
+    warnings: dedupePrimitive(
+      contexts.flatMap((context) => context.warnings ?? []),
+    ),
   };
 }
 
-function mergeNormalizedContexts(contexts: TableauAdditionalContext[]): TableauAdditionalContext["normalizedContext"] | undefined {
-  const normalizedContexts = contexts.map((context) => context.normalizedContext).filter(Boolean);
+function mergeNormalizedContexts(
+  contexts: TableauAdditionalContext[],
+): TableauAdditionalContext["normalizedContext"] | undefined {
+  const normalizedContexts = contexts
+    .map((context) => context.normalizedContext)
+    .filter(Boolean);
   const latest = normalizedContexts.at(-1);
   if (!latest) {
     return undefined;
@@ -633,11 +763,16 @@ function mergeNormalizedContexts(contexts: TableauAdditionalContext[]): TableauA
 
   return {
     dashboard: latest.dashboard,
-    workbook: latest.workbook ?? normalizedContexts.find((context) => context?.workbook)?.workbook,
-    project: latest.project ?? normalizedContexts.find((context) => context?.project)?.project,
+    workbook:
+      latest.workbook ??
+      normalizedContexts.find((context) => context?.workbook)?.workbook,
+    project:
+      latest.project ??
+      normalizedContexts.find((context) => context?.project)?.project,
     datasources: dedupeByKey(
       normalizedContexts.flatMap((context) => context?.datasources ?? []),
-      (datasource) => `${datasource.type}:${datasource.luid ?? datasource.id ?? datasource.name}`,
+      (datasource) =>
+        `${datasource.type}:${datasource.luid ?? datasource.id ?? datasource.name}`,
     ),
     projects: dedupeByKey(
       normalizedContexts.flatMap((context) => context?.projects ?? []),
@@ -650,7 +785,9 @@ function mergeNormalizedContexts(contexts: TableauAdditionalContext[]): TableauA
   };
 }
 
-function mergeMcpExecutionDebugs(debugs: McpExecutionDebug[]): McpExecutionDebug | undefined {
+function mergeMcpExecutionDebugs(
+  debugs: McpExecutionDebug[],
+): McpExecutionDebug | undefined {
   const latest = debugs.at(-1);
   if (!latest) {
     return undefined;
@@ -658,17 +795,31 @@ function mergeMcpExecutionDebugs(debugs: McpExecutionDebug[]): McpExecutionDebug
 
   return {
     ...latest,
-    plannedTools: dedupePrimitive(debugs.flatMap((debug) => debug.plannedTools)),
-    blockedTools: dedupePrimitive(debugs.flatMap((debug) => debug.blockedTools)),
-    executedTools: dedupePrimitive(debugs.flatMap((debug) => debug.executedTools)),
-    skippedTools: dedupePrimitive(debugs.flatMap((debug) => debug.skippedTools)),
+    plannedTools: dedupePrimitive(
+      debugs.flatMap((debug) => debug.plannedTools),
+    ),
+    blockedTools: dedupePrimitive(
+      debugs.flatMap((debug) => debug.blockedTools),
+    ),
+    executedTools: dedupePrimitive(
+      debugs.flatMap((debug) => debug.executedTools),
+    ),
+    skippedTools: dedupePrimitive(
+      debugs.flatMap((debug) => debug.skippedTools),
+    ),
     toolCallCount: debugs.reduce((sum, debug) => sum + debug.toolCallCount, 0),
     replanUsed: debugs.some((debug) => debug.replanUsed),
     timingMs: {
       planning: debugs.reduce((sum, debug) => sum + debug.timingMs.planning, 0),
-      execution: debugs.reduce((sum, debug) => sum + debug.timingMs.execution, 0),
+      execution: debugs.reduce(
+        (sum, debug) => sum + debug.timingMs.execution,
+        0,
+      ),
     },
-    fallbackReason: dedupePrimitive(debugs.map((debug) => debug.fallbackReason).filter(Boolean) as string[]).join("; ") || undefined,
+    fallbackReason:
+      dedupePrimitive(
+        debugs.map((debug) => debug.fallbackReason).filter(Boolean) as string[],
+      ).join("; ") || undefined,
   };
 }
 
@@ -688,16 +839,24 @@ function dedupePrimitive(items: string[]): string[] {
   return [...new Set(items.filter(Boolean))];
 }
 
-function hasResolvedMetadata(additionalContext: TableauAdditionalContext): boolean {
+function hasResolvedMetadata(
+  additionalContext: TableauAdditionalContext,
+): boolean {
   if (additionalContext.provider === "tableau-mcp") {
-    const metadata = additionalContext.metadata as Record<string, unknown> | undefined;
+    const metadata = additionalContext.metadata as
+      | Record<string, unknown>
+      | undefined;
     if (typeof metadata?.hasMetadata === "boolean") {
       return metadata.hasMetadata;
     }
 
-    return additionalContext.mcpToolResults?.some(
-      (result) => result.toolName === "get-datasource-metadata" && result.status === "success",
-    ) ?? false;
+    return (
+      additionalContext.mcpToolResults?.some(
+        (result) =>
+          result.toolName === "get-datasource-metadata" &&
+          result.status === "success",
+      ) ?? false
+    );
   }
 
   return Boolean(additionalContext.metadata);

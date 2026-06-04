@@ -9,7 +9,9 @@ export type GenerateTableauJwtInput = {
   expirationSeconds?: number;
 };
 
-export function generateTableauConnectedAppJwt(input: GenerateTableauJwtInput): string {
+export function generateTableauConnectedAppJwt(
+  input: GenerateTableauJwtInput,
+): string {
   const expirationSeconds = Math.min(input.expirationSeconds ?? 300, 600);
   const payload = {
     iss: input.connectedApp.clientId,

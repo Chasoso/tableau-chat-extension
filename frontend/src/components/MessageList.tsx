@@ -33,7 +33,9 @@ export default function MessageList({
         >
           {message.role === "assistant" ? (
             <div className="markdown-content">
-              <ReactMarkdown remarkPlugins={[remarkGfm]}>{message.content}</ReactMarkdown>
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                {message.content}
+              </ReactMarkdown>
             </div>
           ) : (
             <p>{message.content}</p>
@@ -50,7 +52,10 @@ export default function MessageList({
             aria-expanded={notionCompletion.expanded}
             aria-label="Notion保存完了メッセージを開閉"
           >
-            <span className={`toggle-icon ${notionCompletion.expanded ? "open" : ""}`} aria-hidden>
+            <span
+              className={`toggle-icon ${notionCompletion.expanded ? "open" : ""}`}
+              aria-hidden
+            >
               ▶
             </span>
             <span>Notionに情報を登録しました。</span>
@@ -65,7 +70,11 @@ export default function MessageList({
               </p>
               {notionCompletion.pageUrl ? (
                 <p>
-                  <a href={notionCompletion.pageUrl} target="_blank" rel="noreferrer">
+                  <a
+                    href={notionCompletion.pageUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
                     Notionページを開く
                   </a>
                 </p>

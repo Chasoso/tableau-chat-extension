@@ -1,0 +1,13 @@
+{
+  "name": "tableau-chat-extension",
+  "private": true,
+  "scripts": {
+    "lint": "npm --prefix backend run lint && npm --prefix frontend run lint",
+    "typecheck": "npm --prefix backend run typecheck && npm --prefix frontend run typecheck",
+    "test": "npm run test:unit",
+    "test:unit": "npm --prefix backend run test:unit && npm --prefix frontend run test:unit",
+    "test:e2e": "npm --prefix frontend run test:e2e",
+    "build": "npm --prefix backend run build && npm --prefix backend run build:lambda && npm --prefix frontend run build",
+    "ci": "npm run lint && npm run typecheck && npm run test:unit && npm run build && npm run test:e2e"
+  }
+}

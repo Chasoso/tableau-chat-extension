@@ -70,6 +70,41 @@ TABLEAU_CONTEXT_PROVIDER=mock
 MODEL_PROVIDER=mock
 ```
 
+### Quality Gates
+
+After installing dependencies in both packages, run the repository-level checks from the root directory:
+
+```bash
+npm run lint
+npm run typecheck
+npm run test:unit
+npm run test:e2e
+npm run build
+npm run ci
+```
+
+Install commands:
+
+```bash
+npm ci --prefix backend
+npm ci --prefix frontend
+cd frontend && npx playwright install --with-deps chromium
+```
+
+`npm run ci` executes:
+
+1. `npm run lint`
+2. `npm run typecheck`
+3. `npm run test:unit`
+4. `npm run build`
+5. `npm run test:e2e`
+
+Notes:
+
+- Frontend E2E tests use Playwright route mocks and do not call Bedrock, Tableau Cloud, Notion, or MCP endpoints.
+- Backend unit tests use mocks/stubs and do not require AWS credentials.
+- Playwright artifacts are uploaded only when CI fails.
+
 ### Tableau Extension
 
 Use `frontend/public/tableau-chat-extension.trex` for local development, or the built `.trex` from `frontend/dist` after deployment.
@@ -300,6 +335,16 @@ PoC note:
 ### AWS Deployment
 
 `.github/workflows/deploy-aws.yml` builds the backend and frontend, deploys `infra/cloudformation.yaml`, uploads frontend assets to S3, and invalidates CloudFront. Sensitive values should be stored in GitHub Secrets or repository Variables, and the workflow masks account-specific IDs and URLs in logs.
+
+CI now runs in `.github/workflows/ci.yml` for `pull_request` and `push` to `main`. The deployment workflow also has its own `ci` job, and the deploy job runs only after those quality gates succeed.
+
+Deployment rules:
+
+- `pull_request`: run CI only, do not deploy
+- `push` to `main`: run CI, then deploy
+- `workflow_dispatch`: run CI, then deploy on explicit manual execution
+
+Required GitHub secrets and variables for deployment remain documented in [docs/github-actions-deployment.md](docs/github-actions-deployment.md).
 
 See [docs/github-actions-deployment.md](docs/github-actions-deployment.md).
 

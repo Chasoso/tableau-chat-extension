@@ -10,11 +10,17 @@ export default function DashboardContextPanel({ dashboardContext }: Props) {
   return (
     <aside className="context-card" aria-label="Dashboard context summary">
       <div className="context-source-row">
-        <span className={isMockContext ? "context-source mock" : "context-source live"}>
+        <span
+          className={
+            isMockContext ? "context-source mock" : "context-source live"
+          }
+        >
           {isMockContext ? "モック" : "Tableau"}
         </span>
       </div>
-      {dashboardContext.contextWarning ? <div className="context-warning">{dashboardContext.contextWarning}</div> : null}
+      {dashboardContext.contextWarning ? (
+        <div className="context-warning">{dashboardContext.contextWarning}</div>
+      ) : null}
       <div className="context-row">
         <span>ダッシュボード</span>
         <strong>{dashboardContext.dashboardName}</strong>

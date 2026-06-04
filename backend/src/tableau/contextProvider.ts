@@ -1,5 +1,8 @@
 import type { ClassifiedQuestionIntent } from "../services/tableauMcpToolPlanner";
-import type { DashboardContext, TableauAdditionalContext } from "../types/tableau";
+import type {
+  DashboardContext,
+  TableauAdditionalContext,
+} from "../types/tableau";
 import type { AuthenticatedUser } from "../types/auth";
 
 export type GetAdditionalContextInput = {
@@ -13,5 +16,7 @@ export type GetAdditionalContextInput = {
 
 export interface TableauContextProvider {
   readonly name: TableauAdditionalContext["provider"];
-  getAdditionalContext(input: GetAdditionalContextInput): Promise<TableauAdditionalContext>;
+  getAdditionalContext(
+    input: GetAdditionalContextInput,
+  ): Promise<TableauAdditionalContext>;
 }

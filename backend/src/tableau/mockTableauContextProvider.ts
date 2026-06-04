@@ -1,10 +1,15 @@
 import type { TableauAdditionalContext } from "../types/tableau";
-import type { GetAdditionalContextInput, TableauContextProvider } from "./contextProvider";
+import type {
+  GetAdditionalContextInput,
+  TableauContextProvider,
+} from "./contextProvider";
 
 export class MockTableauContextProvider implements TableauContextProvider {
   readonly name = "mock" as const;
 
-  async getAdditionalContext(input: GetAdditionalContextInput): Promise<TableauAdditionalContext> {
+  async getAdditionalContext(
+    input: GetAdditionalContextInput,
+  ): Promise<TableauAdditionalContext> {
     return {
       provider: this.name,
       workbook: {
@@ -18,4 +23,3 @@ export class MockTableauContextProvider implements TableauContextProvider {
     };
   }
 }
-

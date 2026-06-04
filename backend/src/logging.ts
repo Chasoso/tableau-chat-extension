@@ -8,19 +8,31 @@ const LOG_LEVEL_PRIORITY: Record<LogLevel, number> = {
   error: 40,
 };
 
-export function logInfo(event: string, details: Record<string, unknown> = {}): void {
+export function logInfo(
+  event: string,
+  details: Record<string, unknown> = {},
+): void {
   writeLog("info", event, details);
 }
 
-export function logDebug(event: string, details: Record<string, unknown> = {}): void {
+export function logDebug(
+  event: string,
+  details: Record<string, unknown> = {},
+): void {
   writeLog("debug", event, details);
 }
 
-export function logWarn(event: string, details: Record<string, unknown> = {}): void {
+export function logWarn(
+  event: string,
+  details: Record<string, unknown> = {},
+): void {
   writeLog("warn", event, details);
 }
 
-export function logError(event: string, details: Record<string, unknown> = {}): void {
+export function logError(
+  event: string,
+  details: Record<string, unknown> = {},
+): void {
   writeLog("error", event, details);
 }
 
@@ -37,7 +49,10 @@ export function safeErrorDetails(error: unknown): Record<string, unknown> {
     return { errorName: "UnknownError" };
   }
 
-  const maybeDetails = "details" in error && typeof error.details === "object" ? error.details : undefined;
+  const maybeDetails =
+    "details" in error && typeof error.details === "object"
+      ? error.details
+      : undefined;
 
   return {
     errorName: error.name,
@@ -46,7 +61,11 @@ export function safeErrorDetails(error: unknown): Record<string, unknown> {
   };
 }
 
-function writeLog(level: LogLevel, event: string, details: Record<string, unknown>): void {
+function writeLog(
+  level: LogLevel,
+  event: string,
+  details: Record<string, unknown>,
+): void {
   if (!shouldLog(level)) {
     return;
   }
@@ -81,7 +100,12 @@ function resolveLogLevel(value: string | undefined): LogLevel {
   }
 
   const normalized = value.trim().toLowerCase();
-  if (normalized === "debug" || normalized === "info" || normalized === "warn" || normalized === "error") {
+  if (
+    normalized === "debug" ||
+    normalized === "info" ||
+    normalized === "warn" ||
+    normalized === "error"
+  ) {
     return normalized;
   }
 

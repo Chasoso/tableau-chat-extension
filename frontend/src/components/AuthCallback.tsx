@@ -14,7 +14,9 @@ export default function AuthCallback() {
         }
 
         if (!session) {
-          setMessage("サインイン結果を確認できませんでした。このウィンドウを閉じて、もう一度お試しください。");
+          setMessage(
+            "サインイン結果を確認できませんでした。このウィンドウを閉じて、もう一度お試しください。",
+          );
           return;
         }
 
@@ -25,7 +27,9 @@ export default function AuthCallback() {
       })
       .catch(() => {
         if (!cancelled) {
-          setMessage("サインインに失敗しました。このウィンドウを閉じて、もう一度お試しください。");
+          setMessage(
+            "サインインに失敗しました。このウィンドウを閉じて、もう一度お試しください。",
+          );
         }
       });
 
