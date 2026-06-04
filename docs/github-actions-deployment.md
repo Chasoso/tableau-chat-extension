@@ -2,23 +2,25 @@
 
 ## English
 
-`.github/workflows/ci.yml` runs the repository quality gates, and `.github/workflows/deploy-aws.yml` deploys the backend, frontend, and AWS resources after those checks pass.
+`.github/workflows/ci.yml` runs the repository quality gates for `pull_request` and `push` to `main` or `develop`, and `.github/workflows/deploy-aws.yml` deploys the backend, frontend, and AWS resources only after a successful `push` to `main`.
 
 The workflow intentionally avoids printing AWS account IDs, ARNs, bucket names, CloudFront/API URLs, Tableau URLs, Connected App secrets, Cognito identifiers, JWTs, or access tokens.
 
 ### Flow
 
 1. `ci.yml` installs dependencies, runs lint, typecheck, unit tests, build checks, and Playwright E2E with mocked APIs.
-2. `deploy-aws.yml` runs the same quality gates in its `ci` job.
-3. The `deploy` job starts only after `needs: ci`.
-4. The backend is bundled with `esbuild`.
-5. A Lambda package is created with production `node_modules` so Lambda can launch `@tableau/mcp-server`.
-6. The frontend is built and `.trex` is rewritten with `EXTENSION_SOURCE_URL`.
-7. GitHub OIDC deploy role is assumed.
-8. The backend artifact is uploaded to the private artifact bucket.
-9. `infra/cloudformation.yaml` is deployed.
-10. `frontend/dist` is synced to the private frontend S3 bucket.
-11. CloudFront is invalidated.
+2. `push` to `develop` runs CI only.
+3. Pull Requests to `main` or `develop` run CI only.
+4. `deploy-aws.yml` runs the same quality gates in its `ci` job on `push` to `main`.
+5. The `deploy` job starts only after `needs: ci`.
+6. The backend is bundled with `esbuild`.
+7. A Lambda package is created with production `node_modules` so Lambda can launch `@tableau/mcp-server`.
+8. The frontend is built and `.trex` is rewritten with `EXTENSION_SOURCE_URL`.
+9. GitHub OIDC deploy role is assumed.
+10. The backend artifact is uploaded to the private artifact bucket.
+11. `infra/cloudformation.yaml` is deployed.
+12. `frontend/dist` is synced to the private frontend S3 bucket.
+13. CloudFront is invalidated.
 
 The frontend upload keeps hashed files under `assets/` as append-only objects with long-lived cache headers, while `index.html` and `.trex` are uploaded with `no-cache`. This avoids a CloudFront/S3 race where an older cached `index.html` points at a hashed JS file that has already been deleted.
 

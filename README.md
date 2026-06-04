@@ -336,13 +336,59 @@ PoC note:
 
 `.github/workflows/deploy-aws.yml` builds the backend and frontend, deploys `infra/cloudformation.yaml`, uploads frontend assets to S3, and invalidates CloudFront. Sensitive values should be stored in GitHub Secrets or repository Variables, and the workflow masks account-specific IDs and URLs in logs.
 
-CI now runs in `.github/workflows/ci.yml` for `pull_request` and `push` to `main`. The deployment workflow also has its own `ci` job, and the deploy job runs only after those quality gates succeed.
+CI now runs in `.github/workflows/ci.yml` for `pull_request` and `push` to `main` or `develop`. The deployment workflow also has its own `ci` job, and the deploy job runs only after those quality gates succeed.
 
 Deployment rules:
 
-- `pull_request`: run CI only, do not deploy
-- `push` to `main`: run CI, then deploy
-- `workflow_dispatch`: run CI, then deploy on explicit manual execution
+- `pull_request` to `main` or `develop`: run CI only, do not deploy
+- `push` to `develop`: run CI only, do not deploy
+- `push` to `main`: run CI, then deploy to AWS
+
+### Branch Strategy And Protection
+
+- `main` is the stable branch and the AWS deployment target.
+- `develop` is the day-to-day development branch.
+- Do not push directly to `main`.
+- Create a Pull Request from `develop` to `main` when you want to release.
+- Merge to `main` only after the required CI status check succeeds.
+- After `main` is updated, GitHub Actions deploys to AWS automatically.
+
+Branch protection is not fully configurable from code. The following protection rule must be set manually in the GitHub UI.
+
+GitHub UI steps:
+
+1. Open the repository on GitHub.
+2. Go to `Settings` -> `Branches`.
+3. In `Branch protection rules`, click `Add rule` or `Add branch protection rule`.
+4. Set `Branch name pattern` to `main`.
+5. Enable `Require a pull request before merging`.
+6. Enable `Require status checks to pass before merging`.
+7. Select the CI status check for this repository. Use the check created by `.github/workflows/ci.yml`, typically `Quality Gates`.
+8. Enable `Require branches to be up to date before merging`.
+9. Disable bypass by enabling `Do not allow bypassing the above settings`.
+10. Block force pushes by leaving force pushes disabled.
+11. Restrict deletions by enabling the deletion protection option.
+12. Save the rule.
+
+Recommended optional settings for a small personal project:
+
+- `Require approvals`: optional
+- `Require review from Code Owners`: optional
+- `Require signed commits`: optional
+- `Require linear history`: optional
+
+If CI fails on a Pull Request:
+
+1. Open the failed workflow run from the PR checks tab.
+2. Read the failing step and fix the branch locally.
+3. Re-run `npm run ci` locally when possible.
+4. Push the fix to the PR branch and wait for CI to pass before merging.
+
+Emergency exception guidance:
+
+- If you temporarily relax branch protection in GitHub UI, record who changed it, why it was needed, and when it must be restored.
+- Restore the protection rule immediately after the emergency change is merged.
+- Avoid using temporary exceptions for routine fixes.
 
 Required GitHub secrets and variables for deployment remain documented in [docs/github-actions-deployment.md](docs/github-actions-deployment.md).
 
