@@ -17,11 +17,15 @@ import {
   type ClassifiedQuestionIntent,
   type PlannedMcpToolCall,
 } from "../services/tableauMcpToolPlanner";
-import { parseQuestionPeriod } from "../utils/questionPeriod";
+import {
+  interpretQuestion,
+  matchesMetricFieldIntent,
+} from "../services/questionInterpretation";
 import type {
   DatasourceFieldProfile,
   McpExecutionDebug,
   McpObservation,
+  QuestionInterpretation,
   QueryDatasourceInsight,
   ResolvedDatasourceRef,
   NormalizedTableauContext,
@@ -57,6 +61,8 @@ export type RawMcpToolResult = {
 const TOOL_RESULT_SUMMARY_LIMIT = 1_800;
 const TOOL_RESULT_PREVIEW_LIMIT = 360;
 const TOOL_CACHE_KEY_MAX_LENGTH = 1200;
+const QUERY_DIMENSION_ALIAS = "rank_label";
+const QUERY_METRIC_ALIAS = "rank_metric";
 
 type CacheEntry = {
   expiresAt: number;
@@ -89,10 +95,20 @@ export class TableauMcpContextProvider implements TableauContextProvider {
     const config = getConfig();
     const mcpConfig = config.tableau.mcp;
     const effectiveQuestion = input.planningQuestion?.trim() || input.question;
+    const questionInterpretation =
+      input.questionInterpretation ??
+      interpretQuestion({
+        question: effectiveQuestion,
+        dashboardContext: input.dashboardContext,
+      });
     const planningInput =
       effectiveQuestion === input.question
-        ? input
-        : { ...input, question: effectiveQuestion };
+        ? { ...input, questionInterpretation }
+        : {
+            ...input,
+            question: effectiveQuestion,
+            questionInterpretation,
+          };
 
     if (mcpConfig.transport === "http") {
       return callHttpMcpStub(planningInput);
@@ -526,7 +542,27 @@ export class TableauMcpContextProvider implements TableauContextProvider {
       const queryInsights = extractQueryDatasourceInsightsFromRawToolResults(
         rawToolResults,
         answerContextDatasources,
+        questionInterpretation,
       );
+      const derivedWarnings = toolResults
+        .filter(
+          (result) => result.status === "failed" || result.status === "skipped",
+        )
+        .map(
+          (result) => `${result.toolName}: ${result.warning ?? result.status}`,
+        );
+      if (
+        toolResults.some(
+          (result) =>
+            result.toolName === "query-datasource" &&
+            result.status === "success",
+        ) &&
+        queryInsights.length === 0
+      ) {
+        derivedWarnings.push(
+          "query-datasource returned results that did not safely match the requested metric or did not include numeric aggregate values.",
+        );
+      }
       const metadataCallSucceeded = toolResults.some(
         (result) =>
           result.toolName === "get-datasource-metadata" &&
@@ -591,6 +627,7 @@ export class TableauMcpContextProvider implements TableauContextProvider {
         datasourceFieldProfiles,
         queryInsights,
         normalizedContext,
+        questionInterpretation,
         metadata: {
           transport: "stdio",
           toolCount: toolSummaries.length,
@@ -606,15 +643,7 @@ export class TableauMcpContextProvider implements TableauContextProvider {
         mcpToolResults: toolResults,
         mcpObservations: observations,
         mcpExecutionDebug: executionDebug,
-        warnings: toolResults
-          .filter(
-            (result) =>
-              result.status === "failed" || result.status === "skipped",
-          )
-          .map(
-            (result) =>
-              `${result.toolName}: ${result.warning ?? result.status}`,
-          ),
+        warnings: derivedWarnings,
       };
     } catch (error) {
       logError("tableau.mcp.lookup.failed", safeErrorDetails(error));
@@ -674,6 +703,7 @@ async function callHttpMcpStub(
       workbook: body.workbook,
       datasources: body.datasources ?? [],
       normalizedContext: body.normalizedContext,
+      questionInterpretation: body.questionInterpretation,
       metadata: body.metadata,
       mcpTools: body.mcpTools ?? [],
       mcpToolResults: body.mcpToolResults ?? [],
@@ -1789,8 +1819,11 @@ export function buildDataAnalysisQueryRecoverySelection(input: {
   const plannedArgs = buildAggregateQueryDatasourceArgs(
     selectedDatasource,
     input.rawToolResults,
-    input.input.question,
-    input.input.dashboardContext.capturedAt,
+    input.input.questionInterpretation ??
+      interpretQuestion({
+        question: input.input.question,
+        dashboardContext: input.input.dashboardContext,
+      }),
   );
   if (!plannedArgs) {
     logInfo("tableau.mcp.query.recovery_skipped", {
@@ -2655,6 +2688,7 @@ export function extractDatasourceFieldProfilesFromRawToolResults(
 export function extractQueryDatasourceInsightsFromRawToolResults(
   rawToolResults: RawMcpToolResult[],
   normalizedDatasources: TableauDatasourceRef[],
+  questionInterpretation?: QuestionInterpretation,
 ): QueryDatasourceInsight[] {
   const insights: QueryDatasourceInsight[] = [];
 
@@ -2698,6 +2732,7 @@ export function extractQueryDatasourceInsightsFromRawToolResults(
     const dimensionKeyCandidates = [
       readString(dimensionFieldRecord?.fieldAlias),
       readString(dimensionFieldRecord?.fieldCaption),
+      QUERY_DIMENSION_ALIAS,
       "Dimension",
     ].filter((value): value is string => Boolean(value));
     const metricField =
@@ -2705,6 +2740,7 @@ export function extractQueryDatasourceInsightsFromRawToolResults(
     const metricKeyCandidates = [
       readString(metricFieldRecord?.fieldAlias),
       readString(metricFieldRecord?.fieldCaption),
+      QUERY_METRIC_ALIAS,
       "Aggregated Value",
     ].filter((value): value is string => Boolean(value));
 
@@ -2722,6 +2758,21 @@ export function extractQueryDatasourceInsightsFromRawToolResults(
       );
 
     if (!rows.length) {
+      continue;
+    }
+
+    if (
+      questionInterpretation?.metricIntent &&
+      questionInterpretation.metricIntent !== "unknown" &&
+      !matchesMetricFieldIntent(
+        metricField,
+        questionInterpretation.metricIntent,
+      )
+    ) {
+      continue;
+    }
+
+    if (rows.every((row) => row.value === null)) {
       continue;
     }
 
@@ -3736,8 +3787,7 @@ function buildDatasourceMetadataArgs(
 function buildAggregateQueryDatasourceArgs(
   datasourceRef: ResolvedDatasourceRef,
   rawToolResults: RawMcpToolResult[],
-  question: string,
-  referenceDate?: string,
+  questionInterpretation: QuestionInterpretation,
 ): Record<string, unknown> | undefined {
   const datasourceLuid =
     readString(datasourceRef.luid) ?? readString(datasourceRef.id);
@@ -3765,26 +3815,29 @@ function buildAggregateQueryDatasourceArgs(
     [datasourceForProfile],
   );
   const fieldNames = fieldProfiles[0]?.fieldNames ?? [];
-  const metricField = chooseAggregateMetricField(fieldNames, question);
+  const metricField = chooseAggregateMetricField(
+    fieldNames,
+    questionInterpretation,
+  );
   if (!metricField) {
     return undefined;
   }
 
   const dimensionField = chooseAggregateDimensionField(fieldNames);
   const dateField = chooseAggregateDateField(fieldNames);
-  const period = parseQuestionPeriod(question, { referenceDate });
-  const topN = inferAggregateTopN(question);
+  const period = questionInterpretation.period;
+  const topN = questionInterpretation.topN;
   const fields: Array<Record<string, unknown>> = [];
   if (dimensionField) {
     fields.push({
       fieldCaption: dimensionField,
-      fieldAlias: "Dimension",
+      fieldAlias: QUERY_DIMENSION_ALIAS,
     });
   }
   fields.push({
     fieldCaption: metricField,
     function: "SUM",
-    fieldAlias: "Aggregated Value",
+    fieldAlias: QUERY_METRIC_ALIAS,
     sortDirection: "DESC",
     sortPriority: 1,
   });
@@ -3842,7 +3895,7 @@ function chooseAggregateDimensionField(
 
 function chooseAggregateMetricField(
   fieldNames: string[],
-  question: string,
+  questionInterpretation: QuestionInterpretation,
 ): string | undefined {
   const trimmed = fieldNames
     .map((fieldName) => fieldName.trim())
@@ -3851,38 +3904,10 @@ function chooseAggregateMetricField(
     return undefined;
   }
 
-  const lowerQuestion = question.toLowerCase();
-  if (/view|閲覧/.test(lowerQuestion)) {
-    const viewHit = trimmed.find((fieldName) => /view.?count/i.test(fieldName));
-    if (viewHit) {
-      return viewHit;
-    }
-  }
-
-  if (/favorite|favourite|お気に入り/.test(lowerQuestion)) {
-    const favoriteWithoutReaction = trimmed.find(
-      (fieldName) =>
-        /favorite|favourite/i.test(fieldName) && !/reaction/i.test(fieldName),
+  if (questionInterpretation.metricIntent !== "unknown") {
+    return trimmed.find((fieldName) =>
+      matchesMetricFieldIntent(fieldName, questionInterpretation.metricIntent),
     );
-    if (favoriteWithoutReaction) {
-      return favoriteWithoutReaction;
-    }
-
-    const favoriteHit = trimmed.find((fieldName) =>
-      /favorite|favourite/i.test(fieldName),
-    );
-    if (favoriteHit) {
-      return favoriteHit;
-    }
-  }
-
-  if (/reaction|リアクション/.test(lowerQuestion)) {
-    const reactionHit = trimmed.find((fieldName) =>
-      /reaction/i.test(fieldName),
-    );
-    if (reactionHit) {
-      return reactionHit;
-    }
   }
 
   const genericHit = trimmed.find((fieldName) =>
@@ -3921,24 +3946,6 @@ function chooseAggregateDateField(fieldNames: string[]): string | undefined {
   }
 
   return undefined;
-}
-
-function inferAggregateTopN(question: string): number {
-  const explicitTop =
-    question.match(/top\s*(\d{1,2})/i) ?? question.match(/上位\s*(\d{1,2})/);
-  if (explicitTop?.[1]) {
-    return Math.max(1, Math.min(50, Number.parseInt(explicitTop[1], 10)));
-  }
-
-  if (/ランキング|rank(?:ing)?|一覧|リスト/.test(question.toLowerCase())) {
-    return 10;
-  }
-
-  if (/top|most|highest|max|最も|最多|最大|一番/.test(question.toLowerCase())) {
-    return 1;
-  }
-
-  return 10;
 }
 
 function selectBestResolvedDatasource(

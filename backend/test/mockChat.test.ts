@@ -8,6 +8,7 @@ import {
   finalizeUserFacingAnswer,
   sanitizeUserFacingAnswer,
 } from "../src/services/chatService";
+import { interpretQuestion } from "../src/services/questionInterpretation";
 import { MockTableauContextProvider } from "../src/tableau/mockTableauContextProvider";
 import type { AuthenticatedUser } from "../src/types/auth";
 
@@ -314,6 +315,18 @@ describe("ChatService with mock provider", () => {
       },
       {
         provider: "tableau-mcp",
+        questionInterpretation: interpretQuestion({
+          question:
+            "このダッシュボードで使われているデータソースから、2026年5月に最もFavoriteを集めたVizを、ランキング形式で出してください。",
+          dashboardContext: {
+            dashboardName: "Statistics",
+            worksheets: [{ name: "Views" }],
+            filters: [],
+            parameters: [],
+            dataSources: [{ name: "Tableau Public Per Day(2025/04-)" }],
+            capturedAt: new Date().toISOString(),
+          },
+        }),
         queryInsights: [
           {
             datasourceName: "Tableau Public Per Day(2025/04-)",
@@ -375,6 +388,18 @@ describe("ChatService with mock provider", () => {
       },
       {
         provider: "tableau-mcp",
+        questionInterpretation: interpretQuestion({
+          question:
+            "2026年に最もFavoriteを集めたVizをランキング形式で教えてください。",
+          dashboardContext: {
+            dashboardName: "Statistics",
+            worksheets: [{ name: "Views" }],
+            filters: [],
+            parameters: [],
+            dataSources: [{ name: "Tableau Public Per Day(2025/04-)" }],
+            capturedAt: "2026-06-03T00:00:00.000Z",
+          },
+        }),
         queryInsights: [
           {
             datasourceName: "Tableau Public Per Day(2025/04-)",
@@ -432,6 +457,18 @@ describe("ChatService with mock provider", () => {
       },
       {
         provider: "tableau-mcp",
+        questionInterpretation: interpretQuestion({
+          question:
+            "直近1週間で最もFavoriteを集めたVizをランキング形式で教えてください。",
+          dashboardContext: {
+            dashboardName: "Statistics",
+            worksheets: [{ name: "Views" }],
+            filters: [],
+            parameters: [],
+            dataSources: [{ name: "Tableau Public Per Day(2025/04-)" }],
+            capturedAt: "2026-06-03T00:00:00.000Z",
+          },
+        }),
         queryInsights: [
           {
             datasourceName: "Tableau Public Per Day(2025/04-)",
@@ -495,6 +532,18 @@ describe("ChatService with mock provider", () => {
       },
       {
         provider: "tableau-mcp",
+        questionInterpretation: interpretQuestion({
+          question:
+            "このダッシュボードで使われているデータソースから、2026年5月に最もFavoriteを集めたVizを、ランキング形式で出してください。",
+          dashboardContext: {
+            dashboardName: "Statistics",
+            worksheets: [{ name: "Views" }],
+            filters: [],
+            parameters: [],
+            dataSources: [{ name: "Tableau Public Per Day(2025/04-)" }],
+            capturedAt: new Date().toISOString(),
+          },
+        }),
         queryInsights: [
           {
             datasourceName: "Tableau Public Per Day(2025/04-)",
@@ -538,6 +587,70 @@ describe("ChatService with mock provider", () => {
 
     expect(finalized).not.toContain("```sql");
     expect(finalized).toContain("1. Viz A: 120");
+  });
+
+  it("returns a safe data-analysis fallback when query results cannot be validated", () => {
+    const finalized = finalizeUserFacingAnswer(
+      "2025年4月のFavorite数ランキングです。\n1. Viz A: 値なし",
+      {
+        question:
+          "Tableau Public Per Day(2025/04-)を使って、2026年4月に最もView数を集めたVizをランキング形式で教えてください。",
+        dashboardContext: {
+          dashboardName: "Statistics",
+          worksheets: [{ name: "Views" }],
+          filters: [],
+          parameters: [],
+          dataSources: [{ name: "Tableau Public Per Day(2025/04-)" }],
+          capturedAt: "2026-06-04T00:00:00.000Z",
+        },
+      },
+      {
+        provider: "tableau-mcp",
+        questionInterpretation: interpretQuestion({
+          question:
+            "Tableau Public Per Day(2025/04-)を使って、2026年4月に最もView数を集めたVizをランキング形式で教えてください。",
+          dashboardContext: {
+            dashboardName: "Statistics",
+            worksheets: [{ name: "Views" }],
+            filters: [],
+            parameters: [],
+            dataSources: [{ name: "Tableau Public Per Day(2025/04-)" }],
+            capturedAt: "2026-06-04T00:00:00.000Z",
+          },
+        }),
+        normalizedContext: {
+          dashboard: { name: "Statistics" },
+          views: [],
+          datasources: [
+            { type: "datasource", name: "Tableau Public Per Day(2025/04-)" },
+          ],
+          projects: [],
+        },
+        mcpExecutionDebug: {
+          intent: "data_analysis",
+          intentConfidence: 0.95,
+          answerableFromDashboardContext: false,
+          needsMcp: true,
+          maxToolCalls: 8,
+          plannedTools: ["query-datasource"],
+          blockedTools: [],
+          executedTools: ["query-datasource"],
+          skippedTools: [],
+          toolCallCount: 1,
+          replanUsed: false,
+          timingMs: { planning: 0, execution: 0 },
+        },
+        mcpToolResults: [
+          { toolName: "query-datasource", status: "success", summary: "ok" },
+        ],
+      },
+    );
+
+    expect(finalized).toContain(
+      "2026年4月のView数を安全に確定できませんでした",
+    );
+    expect(finalized).not.toContain("2025年4月のFavorite数ランキング");
+    expect(finalized).not.toContain("値なし");
   });
 
   it("creates a notion draft preview when the question asks to save into Notion", async () => {

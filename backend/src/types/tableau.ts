@@ -1,3 +1,5 @@
+import type { QuestionPeriod } from "../utils/questionPeriod";
+
 export type WorksheetSummary = {
   name: string;
   sheetType?: string | null;
@@ -141,6 +143,25 @@ export type QueryDatasourceInsightRow = {
   value: number | null;
 };
 
+export type QuestionMetricIntent =
+  | "views"
+  | "favorites"
+  | "love"
+  | "bookmarks"
+  | "reactions"
+  | "unknown";
+
+export type QuestionInterpretation = {
+  originalQuestion: string;
+  investigationQuestion: string;
+  datasourceName?: string;
+  datasourceMentions: string[];
+  metricIntent: QuestionMetricIntent;
+  asksForRanking: boolean;
+  topN: number;
+  period?: QuestionPeriod;
+};
+
 export type QueryDatasourceInsight = {
   datasourceName: string;
   datasourceLuid?: string;
@@ -186,6 +207,7 @@ export type TableauAdditionalContext = {
   datasourceFieldProfiles?: DatasourceFieldProfile[];
   queryInsights?: QueryDatasourceInsight[];
   normalizedContext?: NormalizedTableauContext;
+  questionInterpretation?: QuestionInterpretation;
   metadata?: unknown;
   mcpTools?: TableauMcpToolSummary[];
   mcpToolResults?: TableauMcpToolResultSummary[];

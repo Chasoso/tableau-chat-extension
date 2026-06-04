@@ -88,6 +88,8 @@ describe("runLightweightAgentLoop", () => {
     expect(inputs).toHaveLength(1);
     expect(inputs[0]?.question).toBe(request.question);
     expect(inputs[0]?.planningQuestion).toBe(plan.normalizedQuestion);
+    expect(inputs[0]?.questionInterpretation?.metricIntent).toBe("favorites");
+    expect(inputs[0]?.questionInterpretation?.period?.label).toBe("2026年");
     expect(inputs[0]?.intentHint?.intent).toBe("data_analysis");
     expect(result.promptContext.investigationQuestion).toBe(
       plan.normalizedQuestion,
@@ -202,6 +204,7 @@ describe("runLightweightAgentLoop", () => {
 
     expect(inputs).toHaveLength(2);
     expect(inputs[1]?.planningQuestion).toContain("Favorite数");
+    expect(inputs[1]?.questionInterpretation?.metricIntent).toBe("favorites");
     expect(result.additionalContext.queryInsights?.[0]?.rows[0]?.label).toBe(
       "Viz A",
     );
