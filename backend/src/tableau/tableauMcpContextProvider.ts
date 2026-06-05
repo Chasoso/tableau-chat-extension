@@ -2122,8 +2122,7 @@ function summarizeQueryDatasourceArgs(
 
   return {
     datasourceLuidHash: safeHash(datasourceLuid),
-    limit:
-      typeof args.limit === "number" ? Math.floor(args.limit) : args.limit,
+    limit: typeof args.limit === "number" ? Math.floor(args.limit) : args.limit,
     fieldCount: fields.length,
     fields: fields.slice(0, 6).map((field) => {
       if (!field || typeof field !== "object" || Array.isArray(field)) {
@@ -2143,7 +2142,9 @@ function summarizeQueryDatasourceArgs(
       }
       const record = filter as Record<string, unknown>;
       const field =
-        record.field && typeof record.field === "object" && !Array.isArray(record.field)
+        record.field &&
+        typeof record.field === "object" &&
+        !Array.isArray(record.field)
           ? (record.field as Record<string, unknown>)
           : undefined;
       return {
