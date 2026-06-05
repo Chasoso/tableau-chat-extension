@@ -1,34 +1,84 @@
-import { describe, expect, it } from "vitest";
-import { interpretQuestion } from "../src/services/questionInterpretation";
+﻿import { describe, expect, it } from "vitest";
+import {
+  detectMetricIntent,
+  detectRankingIntent,
+  inferRequestedTopN,
+  interpretQuestion,
+} from "../src/services/questionInterpretation";
+import type { DashboardContext } from "../src/types/tableau";
+
+const datasourceName = "Tableau Public Per Day(2025/04-)";
+const dashboardContext: DashboardContext = {
+  dashboardName: "Statistics",
+  workbookName: "Tableau Public Insights",
+  worksheets: [{ name: "Views" }],
+  filters: [],
+  parameters: [],
+  dataSources: [{ name: datasourceName }],
+  capturedAt: "2026-06-04T00:00:00.000Z",
+};
+
+const mayViewsRankingQuestion =
+  "Tableau Public Per Day(2025/04-)\u3092\u4f7f\u3063\u3066\u30012026\u5e745\u6708\u306b\u6700\u3082View\u6570\u304c\u591a\u304b\u3063\u305fViz\u3092\u30e9\u30f3\u30ad\u30f3\u30b0\u5f62\u5f0f\u3067\u6559\u3048\u3066\u304f\u3060\u3055\u3044\u3002";
+const mayViewsTop10Question =
+  "2026\u5e745\u6708\u306bView\u6570\u304c\u591a\u304b\u3063\u305fViz\u3092\u30e9\u30f3\u30ad\u30f3\u30b0\u5f62\u5f0f\u3067Top10\u307e\u3067\u6559\u3048\u3066\u304f\u3060\u3055\u3044\u3002";
+const mayViewsRankingOnlyQuestion =
+  "2026\u5e745\u6708\u306e\u30d3\u30e5\u30fc\u6570\u30e9\u30f3\u30ad\u30f3\u30b0\u3092\u6559\u3048\u3066";
 
 describe("questionInterpretation", () => {
-  it("prefers the user-requested period over a datasource literal mention", () => {
+  it("prefers the user-requested month over a datasource literal mention", () => {
     const interpretation = interpretQuestion({
-      question:
-        "Tableau Public Per Day(2025/04-)を使って、2026年4月に最もView数を集めたVizをランキング形式で教えてください。",
-      dashboardContext: {
-        dashboardName: "Statistics",
-        workbookName: "Tableau Public Insights",
-        worksheets: [{ name: "Views" }],
-        filters: [],
-        parameters: [],
-        dataSources: [{ name: "Tableau Public Per Day(2025/04-)" }],
-        capturedAt: "2026-06-04T00:00:00.000Z",
-      },
+      question: mayViewsRankingQuestion,
+      dashboardContext,
     });
 
-    expect(interpretation.datasourceName).toBe(
-      "Tableau Public Per Day(2025/04-)",
-    );
+    expect(interpretation.datasourceName).toBe(datasourceName);
     expect(interpretation.metricIntent).toBe("views");
     expect(interpretation.asksForRanking).toBe(true);
+    expect(interpretation.topN).toBe(10);
+    expect(interpretation.groupingIntent).toBe("viz");
     expect(interpretation.period).toEqual({
       kind: "month",
-      label: "2026年4月",
-      startDate: "2026-04-01",
-      endDate: "2026-04-30",
-      raw: "2026年4月",
+      label: "2026\u5e745\u6708",
+      startDate: "2026-05-01",
+      endDate: "2026-05-31",
+      raw: "2026\u5e745\u6708",
       warnings: [],
     });
+  });
+
+  it("detects explicit TopN and keeps ranking intent in Japanese", () => {
+    const interpretation = interpretQuestion({
+      question: mayViewsTop10Question,
+      dashboardContext,
+    });
+
+    expect(interpretation.metricIntent).toBe("views");
+    expect(interpretation.asksForRanking).toBe(true);
+    expect(interpretation.topN).toBe(10);
+    expect(interpretation.topNExplicitlyRequested).toBe(true);
+  });
+
+  it("recognizes ranking keywords without an explicit top count", () => {
+    expect(detectRankingIntent(mayViewsRankingOnlyQuestion)).toBe(true);
+    expect(inferRequestedTopN(mayViewsRankingOnlyQuestion, true)).toBe(10);
+  });
+
+  it("detects metric intent from Japanese synonyms", () => {
+    expect(
+      detectMetricIntent(
+        "2026\u5e745\u6708\u306e\u30d3\u30e5\u30fc\u6570\u304c\u591a\u3044Viz",
+      ),
+    ).toBe("views");
+    expect(
+      detectMetricIntent(
+        "\u304a\u6c17\u306b\u5165\u308a\u6570\u304c\u591a\u3044Viz",
+      ),
+    ).toBe("favorites");
+    expect(
+      detectMetricIntent(
+        "\u30d6\u30c3\u30af\u30de\u30fc\u30af\u6570\u304c\u591a\u3044Viz",
+      ),
+    ).toBe("bookmarks");
   });
 });

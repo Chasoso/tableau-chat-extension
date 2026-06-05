@@ -451,6 +451,92 @@ describe("ChatService with mock provider", () => {
     expect(formatted).toContain("2026年のFavorite数ランキング");
   });
 
+  it("prefers the latest insight that matches the requested metric and ranking shape", () => {
+    const formatted = buildStructuredDataAnalysisAnswer(
+      {
+        question:
+          "2026年5月にView数が多かったVizをランキング形式でTop10まで教えてください。",
+        dashboardContext: {
+          dashboardName: "Statistics",
+          worksheets: [{ name: "Views" }],
+          filters: [],
+          parameters: [],
+          dataSources: [{ name: "Tableau Public Per Day(2025/04-)" }],
+          capturedAt: "2026-06-03T00:00:00.000Z",
+        },
+      },
+      {
+        provider: "tableau-mcp",
+        questionInterpretation: interpretQuestion({
+          question:
+            "2026年5月にView数が多かったVizをランキング形式でTop10まで教えてください。",
+          dashboardContext: {
+            dashboardName: "Statistics",
+            worksheets: [{ name: "Views" }],
+            filters: [],
+            parameters: [],
+            dataSources: [{ name: "Tableau Public Per Day(2025/04-)" }],
+            capturedAt: "2026-06-03T00:00:00.000Z",
+          },
+        }),
+        queryInsights: [
+          {
+            datasourceName: "Tableau Public Per Day(2025/04-)",
+            datasourceLuid: "ds-123",
+            dimensionField: "workbook_title",
+            metricField: "workbook_favoriteCount",
+            rowCount: 10,
+            rows: [{ label: "Favorite Viz", value: 999 }],
+            requestedMetricIntent: "favorites",
+            requestedRanking: true,
+            requestedTopN: 10,
+            requestedPeriodStart: "2026-05-01",
+            requestedPeriodEnd: "2026-05-31",
+          },
+          {
+            datasourceName: "Tableau Public Per Day(2025/04-)",
+            datasourceLuid: "ds-123",
+            dimensionField: "workbook_title",
+            metricField: "workbook_viewCount",
+            rowCount: 10,
+            rows: [{ label: "View Viz", value: 120 }],
+            requestedMetricIntent: "views",
+            requestedRanking: true,
+            requestedTopN: 10,
+            requestedPeriodStart: "2026-05-01",
+            requestedPeriodEnd: "2026-05-31",
+          },
+        ],
+        mcpExecutionDebug: {
+          intent: "data_analysis",
+          intentConfidence: 0.95,
+          answerableFromDashboardContext: false,
+          needsMcp: true,
+          maxToolCalls: 8,
+          plannedTools: [
+            "list-datasources",
+            "get-datasource-metadata",
+            "query-datasource",
+          ],
+          blockedTools: [],
+          executedTools: [
+            "list-datasources",
+            "get-datasource-metadata",
+            "query-datasource",
+          ],
+          skippedTools: [],
+          toolCallCount: 3,
+          replanUsed: true,
+          timingMs: { planning: 0, execution: 0 },
+        },
+      },
+    );
+
+    expect(formatted).toContain("2026年5月のビュー数ランキング");
+    expect(formatted).toContain("1. View Viz: 120");
+    expect(formatted).not.toContain("Favorite Viz");
+  });
+
   it("formats a relative-period ranking answer with a rolling-week label", () => {
     const formatted = buildStructuredDataAnalysisAnswer(
       {
@@ -657,7 +743,7 @@ describe("ChatService with mock provider", () => {
     );
 
     expect(finalized).toContain(
-      "2026年4月のView数を安全に確定できませんでした",
+      "2026年4月のビュー数を安全に確定できませんでした",
     );
     expect(finalized).not.toContain("2025年4月のFavorite数ランキング");
     expect(finalized).not.toContain("値なし");

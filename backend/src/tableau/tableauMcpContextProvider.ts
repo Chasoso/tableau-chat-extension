@@ -2898,6 +2898,12 @@ export function extractQueryDatasourceInsightsFromRawToolResults(
       metricField,
       rowCount: rows.length,
       rows: rows.slice(0, 20),
+      requestedMetricIntent: questionInterpretation?.metricIntent,
+      requestedTopN: questionInterpretation?.topN,
+      requestedRanking: questionInterpretation?.asksForRanking,
+      requestedPeriodStart: questionInterpretation?.period?.startDate,
+      requestedPeriodEnd: questionInterpretation?.period?.endDate,
+      sourceQuestion: questionInterpretation?.originalQuestion,
     });
   }
 
@@ -3984,7 +3990,10 @@ function buildAggregateQueryDatasourceArgs(
     return undefined;
   }
 
-  const dimensionField = chooseAggregateDimensionField(fieldDetails);
+  const dimensionField = chooseAggregateDimensionField(
+    fieldDetails,
+    questionInterpretation,
+  );
   const dateField = chooseAggregateDateField(fieldDetails);
   const period = questionInterpretation.period;
   const topN = questionInterpretation.topN;
@@ -4032,6 +4041,7 @@ function buildAggregateQueryDatasourceArgs(
     datasourceNameHash: safeHash(datasourceRef.name),
     datasourceLuidHash: safeHash(datasourceLuid),
     metricIntent: questionInterpretation.metricIntent,
+    groupingIntent: questionInterpretation.groupingIntent ?? "unknown",
     metricField,
     dimensionField,
     dateField,
@@ -4054,12 +4064,22 @@ function buildAggregateQueryDatasourceArgs(
 
 function chooseAggregateDimensionField(
   fieldDetails: DatasourceFieldDetail[],
+  questionInterpretation: QuestionInterpretation,
 ): string | undefined {
   const trimmed = fieldDetails
     .map((fieldDetail) => fieldDetail.name.trim())
     .filter(Boolean);
   if (!trimmed.length) {
     return undefined;
+  }
+
+  if (questionInterpretation.groupingIntent === "author") {
+    const authorHit = trimmed.find((fieldName) =>
+      /author|creator|user|profile/i.test(fieldName),
+    );
+    if (authorHit) {
+      return authorHit;
+    }
   }
 
   const rankedPatterns = [

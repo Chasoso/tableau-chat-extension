@@ -160,6 +160,13 @@ export type QuestionMetricIntent =
   | "reactions"
   | "unknown";
 
+export type QuestionGroupingIntent =
+  | "viz"
+  | "author"
+  | "datasource"
+  | "dashboard"
+  | "unknown";
+
 export type QuestionInterpretation = {
   originalQuestion: string;
   investigationQuestion: string;
@@ -168,6 +175,8 @@ export type QuestionInterpretation = {
   metricIntent: QuestionMetricIntent;
   asksForRanking: boolean;
   topN: number;
+  groupingIntent?: QuestionGroupingIntent;
+  topNExplicitlyRequested?: boolean;
   period?: QuestionPeriod;
 };
 
@@ -178,6 +187,12 @@ export type QueryDatasourceInsight = {
   metricField: string;
   rowCount: number;
   rows: QueryDatasourceInsightRow[];
+  requestedMetricIntent?: QuestionMetricIntent;
+  requestedTopN?: number;
+  requestedRanking?: boolean;
+  requestedPeriodStart?: string;
+  requestedPeriodEnd?: string;
+  sourceQuestion?: string;
 };
 
 export type ResolvedDatasourceRef = {

@@ -20,8 +20,14 @@ import type { NotionRankingItem } from "../types/notion";
 import type {
   DashboardContext,
   DatasourceFieldProfile,
+  QueryDatasourceInsight,
+  QuestionInterpretation,
 } from "../types/tableau";
-import { metricIntentLabel } from "./questionInterpretation";
+import {
+  detectRankingIntent,
+  matchesMetricFieldIntent,
+  metricIntentLabel,
+} from "./questionInterpretation";
 import {
   BedrockAnswerGenerator,
   MockAnswerGenerator,
@@ -681,8 +687,11 @@ export function buildStructuredDataAnalysisAnswer(
     return undefined;
   }
 
-  const insight = additionalContext.queryInsights?.find(
-    (candidate) => candidate.rows.length > 0,
+  const interpretation = additionalContext.questionInterpretation;
+  const insight = selectBestQueryInsight(
+    additionalContext.queryInsights ?? [],
+    interpretation,
+    request.question,
   );
   if (!insight) {
     return undefined;
@@ -693,15 +702,13 @@ export function buildStructuredDataAnalysisAnswer(
     return undefined;
   }
 
-  const interpretation = additionalContext.questionInterpretation;
   const periodLabel = interpretation?.period?.label;
   const metricLabel =
     interpretation && interpretation.metricIntent !== "unknown"
       ? metricIntentLabel(interpretation.metricIntent)
       : describeMetricField(insight.metricField);
   const isRankingQuestion =
-    interpretation?.asksForRanking ??
-    /ランキング|rank(?:ing)?|上位|一覧|list/i.test(request.question);
+    interpretation?.asksForRanking ?? detectRankingIntent(request.question);
   const visibleRows = rows.slice(
     0,
     isRankingQuestion
@@ -742,7 +749,13 @@ function buildSafeDataAnalysisFallback(
   if (
     additionalContext.mcpExecutionDebug?.intent !== "data_analysis" ||
     !hasSuccessfulDatasourceQuery(additionalContext) ||
-    (additionalContext.queryInsights?.length ?? 0) > 0
+    Boolean(
+      selectBestQueryInsight(
+        additionalContext.queryInsights ?? [],
+        additionalContext.questionInterpretation,
+        request.question,
+      ),
+    )
   ) {
     return undefined;
   }
@@ -797,6 +810,81 @@ function formatMetricValue(value: number | null): string {
   }
 
   return new Intl.NumberFormat("ja-JP").format(value);
+}
+
+function selectBestQueryInsight(
+  insights: QueryDatasourceInsight[],
+  interpretation: QuestionInterpretation | undefined,
+  question: string,
+): QueryDatasourceInsight | undefined {
+  const candidates = insights
+    .map((insight, index) => ({
+      insight,
+      score: scoreQueryInsight(insight, interpretation, question, index),
+      index,
+    }))
+    .filter((candidate) => candidate.insight.rows.length > 0)
+    .sort((left, right) => {
+      if (right.score !== left.score) {
+        return right.score - left.score;
+      }
+      return right.index - left.index;
+    });
+
+  return candidates[0] && candidates[0].score > 0
+    ? candidates[0].insight
+    : undefined;
+}
+
+function scoreQueryInsight(
+  insight: QueryDatasourceInsight,
+  interpretation: QuestionInterpretation | undefined,
+  question: string,
+  index: number,
+): number {
+  let score = index;
+
+  if (insight.rows.length > 0) {
+    score += 10;
+  }
+
+  const rankingRequested =
+    interpretation?.asksForRanking ?? detectRankingIntent(question);
+  if (rankingRequested) {
+    score += 20;
+    if (insight.rows.length > 1) {
+      score += 30;
+    }
+    if ((insight.requestedTopN ?? 0) > 1) {
+      score += 25;
+    }
+    score += Math.min(insight.rows.length, interpretation?.topN ?? 10);
+  }
+
+  if (
+    interpretation?.metricIntent &&
+    interpretation.metricIntent !== "unknown"
+  ) {
+    if (insight.requestedMetricIntent === interpretation.metricIntent) {
+      score += 120;
+    } else if (
+      matchesMetricFieldIntent(insight.metricField, interpretation.metricIntent)
+    ) {
+      score += 80;
+    } else {
+      score -= 180;
+    }
+  }
+
+  if (
+    interpretation?.period &&
+    insight.requestedPeriodStart === interpretation.period.startDate &&
+    insight.requestedPeriodEnd === interpretation.period.endDate
+  ) {
+    score += 40;
+  }
+
+  return score;
 }
 
 function buildDashboardContextPatch(
