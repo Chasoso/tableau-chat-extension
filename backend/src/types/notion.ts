@@ -71,16 +71,31 @@ export type NotionStatusResponse = {
   targetDatabaseIdConfigured: boolean;
 };
 
+export type NotionDraftKind = "analysis_memo" | "post_idea";
+
+export type NotionMetricSummary = {
+  impressions?: number;
+  engagementRate?: number;
+  bookmarkRate?: number;
+  profileVisitRate?: number;
+};
+
+export type NotionRankingItem = {
+  label: string;
+  value?: string | number | null;
+};
+
 export type CreateNotionPostIdeaRequest = {
   title: string;
+  draftKind?: NotionDraftKind;
   reason: string;
   suggestedPostText: string;
-  metricSummary?: {
-    impressions?: number;
-    engagementRate?: number;
-    bookmarkRate?: number;
-    profileVisitRate?: number;
-  };
+  summary?: string;
+  analysisBody?: string;
+  datasourceName?: string;
+  periodLabel?: string;
+  rankingItems?: NotionRankingItem[];
+  metricSummary?: NotionMetricSummary;
   referencePostUrl?: string;
   source?: string;
   tags?: string[];
