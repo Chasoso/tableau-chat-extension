@@ -10,6 +10,7 @@ import {
   QUESTION_INTENT_POLICY,
   type ClassifiedQuestionIntent,
 } from "./tableauMcpToolPlanner";
+import { interpretQuestion } from "./questionInterpretation";
 import type { AuthenticatedUser } from "../types/auth";
 import type {
   AgentEvaluation,
@@ -276,6 +277,10 @@ export async function runLightweightAgentLoop(input: {
     const additionalContext = await input.contextProvider.getAdditionalContext({
       dashboardContext: input.request.dashboardContext,
       question: input.request.question,
+      questionInterpretation: interpretQuestion({
+        question: input.request.question,
+        dashboardContext: input.request.dashboardContext,
+      }),
       authenticatedUser: input.authenticatedUser,
       tableauSubject: input.tableauSubject,
     });
@@ -304,11 +309,16 @@ export async function runLightweightAgentLoop(input: {
       break;
     }
     attemptedQuestions.add(planningQuestion);
+    const questionInterpretation = interpretQuestion({
+      question: planningQuestion,
+      dashboardContext: input.request.dashboardContext,
+    });
 
     const additionalContext = await input.contextProvider.getAdditionalContext({
       dashboardContext: input.request.dashboardContext,
       question: input.request.question,
       planningQuestion,
+      questionInterpretation,
       intentHint: toIntentHint(plan),
       authenticatedUser: input.authenticatedUser,
       tableauSubject: input.tableauSubject,
@@ -708,6 +718,10 @@ export function mergeAdditionalContexts(
     .reverse()
     .map((context) => context.metadata)
     .find(Boolean);
+  const questionInterpretation = [...contexts]
+    .reverse()
+    .map((context) => context.questionInterpretation)
+    .find(Boolean);
 
   return {
     provider: latest.provider,
@@ -730,6 +744,7 @@ export function mergeAdditionalContexts(
         `${insight.datasourceLuid ?? insight.datasourceName}:${insight.metricField}:${insight.dimensionField ?? ""}`,
     ),
     normalizedContext: mergeNormalizedContexts(contexts),
+    ...(questionInterpretation ? { questionInterpretation } : {}),
     ...(metadata ? { metadata } : {}),
     mcpTools: dedupeByKey(
       contexts.flatMap((context) => context.mcpTools ?? []),

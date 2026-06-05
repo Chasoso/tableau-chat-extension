@@ -16,6 +16,7 @@ import {
   normalizeTableauContext,
   resolveDatasourceIdentifier,
 } from "../src/tableau/tableauMcpContextProvider";
+import { interpretQuestion } from "../src/services/questionInterpretation";
 import type { ClassifiedQuestionIntent } from "../src/services/tableauMcpToolPlanner";
 import type { TableauMcpToolResultSummary } from "../src/types/tableau";
 import type { GetAdditionalContextInput } from "../src/tableau/contextProvider";
@@ -887,11 +888,11 @@ describe("TableauMcpContextProvider extraction helpers", () => {
       expect(selection.arguments.limit).toBe(10);
       expect(selection.arguments.query).toEqual({
         fields: [
-          { fieldCaption: "workbook_title", fieldAlias: "Dimension" },
+          { fieldCaption: "workbook_title", fieldAlias: "rank_label" },
           {
             fieldCaption: "workbook_favoriteCount",
             function: "SUM",
-            fieldAlias: "Aggregated Value",
+            fieldAlias: "rank_metric",
             sortDirection: "DESC",
             sortPriority: 1,
           },
@@ -1008,11 +1009,11 @@ describe("TableauMcpContextProvider extraction helpers", () => {
     if (selection?.status === "ready") {
       expect(selection.arguments.query).toEqual({
         fields: [
-          { fieldCaption: "workbook_title", fieldAlias: "Dimension" },
+          { fieldCaption: "workbook_title", fieldAlias: "rank_label" },
           {
             fieldCaption: "workbook_favoriteCount",
             function: "SUM",
-            fieldAlias: "Aggregated Value",
+            fieldAlias: "rank_metric",
             sortDirection: "DESC",
             sortPriority: 1,
           },
@@ -1129,11 +1130,11 @@ describe("TableauMcpContextProvider extraction helpers", () => {
     if (selection?.status === "ready") {
       expect(selection.arguments.query).toEqual({
         fields: [
-          { fieldCaption: "workbook_title", fieldAlias: "Dimension" },
+          { fieldCaption: "workbook_title", fieldAlias: "rank_label" },
           {
             fieldCaption: "workbook_favoriteCount",
             function: "SUM",
-            fieldAlias: "Aggregated Value",
+            fieldAlias: "rank_metric",
             sortDirection: "DESC",
             sortPriority: 1,
           },
@@ -1215,11 +1216,11 @@ describe("TableauMcpContextProvider extraction helpers", () => {
             datasourceLuid: "ds-123",
             query: {
               fields: [
-                { fieldCaption: "workbook_title", fieldAlias: "Dimension" },
+                { fieldCaption: "workbook_title", fieldAlias: "rank_label" },
                 {
                   fieldCaption: "workbook_favoriteCount",
                   function: "SUM",
-                  fieldAlias: "Aggregated Value",
+                  fieldAlias: "rank_metric",
                 },
               ],
             },
@@ -1229,8 +1230,8 @@ describe("TableauMcpContextProvider extraction helpers", () => {
               {
                 text: JSON.stringify({
                   data: [
-                    { Dimension: "Viz A", "Aggregated Value": 120 },
-                    { Dimension: "Viz B", "Aggregated Value": 88 },
+                    { rank_label: "Viz A", rank_metric: 120 },
+                    { rank_label: "Viz B", rank_metric: 88 },
                   ],
                 }),
               },
@@ -1261,5 +1262,180 @@ describe("TableauMcpContextProvider extraction helpers", () => {
         ],
       },
     ]);
+  });
+
+  it("uses the requested period instead of a datasource literal when building a recovery query", () => {
+    const intent: ClassifiedQuestionIntent = {
+      intent: "data_analysis",
+      confidence: 0.9,
+      reasonBrief: "Need an aggregate datasource query.",
+      answerableFromDashboardContext: false,
+      needsMcp: true,
+      maxToolCalls: 5,
+    };
+    const tools = [
+      {
+        name: "query-datasource",
+        inputSchema: {
+          type: "object",
+          required: ["datasourceLuid", "query"],
+          properties: {
+            datasourceLuid: { type: "string" },
+            query: { type: "object" },
+            limit: { type: "number" },
+          },
+        },
+      },
+    ];
+
+    const question =
+      "Tableau Public Per Day(2025/04-)を使って、2026年4月に最もView数を集めたVizをランキング形式で教えてください。";
+    const selection = buildDataAnalysisQueryRecoverySelection({
+      tools,
+      allowedToolNames: ["query-datasource"],
+      input: {
+        ...baseInput,
+        question,
+        questionInterpretation: interpretQuestion({
+          question,
+          dashboardContext: {
+            ...baseInput.dashboardContext,
+            dataSources: [{ name: "Tableau Public Per Day(2025/04-)" }],
+            capturedAt: "2026-06-04T00:00:00.000Z",
+          },
+        }),
+        dashboardContext: {
+          ...baseInput.dashboardContext,
+          dataSources: [{ name: "Tableau Public Per Day(2025/04-)" }],
+          capturedAt: "2026-06-04T00:00:00.000Z",
+        },
+      },
+      intent,
+      calledToolNames: new Set(),
+      rawToolResults: [
+        {
+          toolName: "list-datasources",
+          result: {
+            content: [
+              {
+                text: JSON.stringify([
+                  {
+                    name: "Tableau Public Per Day(2025/04-)",
+                    id: "ds-123",
+                    project: { name: "Sandbox" },
+                  },
+                ]),
+              },
+            ],
+          },
+        },
+        {
+          toolName: "get-datasource-metadata",
+          result: {
+            content: [
+              {
+                text: JSON.stringify({
+                  datasourceModel: {
+                    name: "Tableau Public Per Day(2025/04-)",
+                    fields: [
+                      { name: "Datetime(JST)" },
+                      { name: "workbook_title" },
+                      { name: "workbook_viewCount" },
+                      { name: "workbook_favoriteCount" },
+                    ],
+                  },
+                }),
+              },
+            ],
+          },
+        },
+      ],
+      observations: [],
+      remainingToolBudget: 1,
+    });
+
+    expect(selection?.status).toBe("ready");
+    if (selection?.status === "ready") {
+      expect(selection.arguments.query).toEqual({
+        fields: [
+          { fieldCaption: "workbook_title", fieldAlias: "rank_label" },
+          {
+            fieldCaption: "workbook_viewCount",
+            function: "SUM",
+            fieldAlias: "rank_metric",
+            sortDirection: "DESC",
+            sortPriority: 1,
+          },
+        ],
+        filters: [
+          {
+            field: { fieldCaption: "Datetime(JST)" },
+            filterType: "QUANTITATIVE_DATE",
+            quantitativeFilterType: "RANGE",
+            minDate: "2026-04-01",
+            maxDate: "2026-04-30",
+            includeNulls: false,
+          },
+        ],
+      });
+    }
+  });
+
+  it("drops query insights that do not match the requested metric intent", () => {
+    const insights = extractQueryDatasourceInsightsFromRawToolResults(
+      [
+        {
+          toolName: "query-datasource",
+          args: {
+            datasourceLuid: "ds-123",
+            query: {
+              fields: [
+                { fieldCaption: "workbook_title", fieldAlias: "rank_label" },
+                {
+                  fieldCaption: "workbook_favoriteCount",
+                  function: "SUM",
+                  fieldAlias: "rank_metric",
+                },
+              ],
+            },
+          },
+          result: {
+            content: [
+              {
+                text: JSON.stringify({
+                  data: [{ rank_label: "Viz A", rank_metric: 120 }],
+                }),
+              },
+            ],
+          },
+        },
+      ],
+      [
+        {
+          type: "datasource",
+          name: "Tableau Public Per Day(2025/04-)",
+          id: "ds-123",
+          luid: "ds-123",
+        },
+      ],
+      {
+        originalQuestion: "2026年4月のView数ランキング",
+        investigationQuestion: "2026年4月のView数ランキング",
+        datasourceMentions: [],
+        metricIntent: "views",
+        asksForRanking: true,
+        topN: 10,
+        period: {
+          kind: "month",
+          label: "2026年4月",
+          startDate: "2026-04-01",
+          endDate: "2026-04-30",
+          raw: "2026年4月",
+          warnings: [],
+        },
+      },
+    );
+
+    expect(insights).toEqual([]);
   });
 });

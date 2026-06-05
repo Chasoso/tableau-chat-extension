@@ -77,6 +77,7 @@ After installing dependencies in both packages, run the repository-level checks 
 ```bash
 npm run lint
 npm run typecheck
+npm run test:coverage
 npm run test:unit
 npm run test:e2e
 npm run build
@@ -95,7 +96,7 @@ cd frontend && npx playwright install --with-deps chromium
 
 1. `npm run lint`
 2. `npm run typecheck`
-3. `npm run test:unit`
+3. `npm run test:coverage`
 4. `npm run build`
 5. `npm run test:e2e`
 
@@ -103,6 +104,15 @@ Notes:
 
 - Frontend E2E tests use Playwright route mocks and do not call Bedrock, Tableau Cloud, Notion, or MCP endpoints.
 - Backend unit tests use mocks/stubs and do not require AWS credentials.
+- Coverage is powered by Vitest (`@vitest/coverage-v8`).
+- Current initial thresholds:
+  - Backend: Statements 45%, Branches 60%, Functions 55%, Lines 45%
+  - Frontend: Statements 6%, Branches 50%, Functions 45%, Lines 6%
+- Long-term target thresholds are still 60% / 50% / 60% / 60% for the main unit-test surface.
+- Coverage output is written to `backend/coverage/` and `frontend/coverage/` and uploaded by GitHub Actions as a build artifact.
+- CI runs coverage on pull requests to `main`, pushes to `develop`, and pushes to `main` before build and Playwright E2E.
+- The coverage report is a signal, not a guarantee: passing thresholds does not by itself prove the app is safe or complete.
+- Coverage excludes generated output, package build output, test reports, config files, type-only files, and local entrypoints such as `frontend/src/main.tsx` and `backend/src/localServer.ts`.
 - Playwright artifacts are uploaded only when CI fails.
 
 ### Tableau Extension
@@ -336,11 +346,11 @@ PoC note:
 
 `.github/workflows/deploy-aws.yml` builds the backend and frontend, deploys `infra/cloudformation.yaml`, uploads frontend assets to S3, and invalidates CloudFront. Sensitive values should be stored in GitHub Secrets or repository Variables, and the workflow masks account-specific IDs and URLs in logs.
 
-CI now runs in `.github/workflows/ci.yml` for `pull_request` and `push` to `main` or `develop`. The deployment workflow also has its own `ci` job, and the deploy job runs only after those quality gates succeed.
+CI now runs in `.github/workflows/ci.yml` for pull requests to `main` and pushes to `develop` and `main`. The deployment workflow also has its own `ci` job, and the deploy job runs only after those quality gates succeed.
 
 Deployment rules:
 
-- `pull_request` to `main` or `develop`: run CI only, do not deploy
+- `pull_request` to `main`: run CI only, do not deploy
 - `push` to `develop`: run CI only, do not deploy
 - `push` to `main`: run CI, then deploy to AWS
 

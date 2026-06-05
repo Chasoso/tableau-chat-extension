@@ -8,7 +8,6 @@ import {
 import { DirectTableauApiContextProvider } from "../tableau/directTableauApiContextProvider";
 import { MockTableauContextProvider } from "../tableau/mockTableauContextProvider";
 import { TableauMcpContextProvider } from "../tableau/tableauMcpContextProvider";
-import { parseQuestionPeriod } from "../utils/questionPeriod";
 import type { TableauContextProvider } from "../tableau/contextProvider";
 import type { AuthenticatedUser } from "../types/auth";
 import type {
@@ -21,6 +20,7 @@ import type {
   DashboardContext,
   DatasourceFieldProfile,
 } from "../types/tableau";
+import { metricIntentLabel } from "./questionInterpretation";
 import {
   BedrockAnswerGenerator,
   MockAnswerGenerator,
@@ -344,6 +344,14 @@ export function finalizeUserFacingAnswer(
     return structuredAnswer;
   }
 
+  const safeDataAnalysisFallback = buildSafeDataAnalysisFallback(
+    request,
+    additionalContext,
+  );
+  if (safeDataAnalysisFallback) {
+    return safeDataAnalysisFallback;
+  }
+
   return sanitizeUserFacingAnswer(answer, request, additionalContext);
 }
 
@@ -527,16 +535,20 @@ export function buildStructuredDataAnalysisAnswer(
     return undefined;
   }
 
-  const periodLabel = parseQuestionPeriod(request.question, {
-    referenceDate: request.dashboardContext.capturedAt,
-  })?.label;
-  const metricLabel = describeMetricField(insight.metricField);
-  const isRankingQuestion = /ランキング|rank(?:ing)?|上位|一覧|list/i.test(
-    request.question,
-  );
+  const interpretation = additionalContext.questionInterpretation;
+  const periodLabel = interpretation?.period?.label;
+  const metricLabel =
+    interpretation && interpretation.metricIntent !== "unknown"
+      ? metricIntentLabel(interpretation.metricIntent)
+      : describeMetricField(insight.metricField);
+  const isRankingQuestion =
+    interpretation?.asksForRanking ??
+    /ランキング|rank(?:ing)?|上位|一覧|list/i.test(request.question);
   const visibleRows = rows.slice(
     0,
-    isRankingQuestion ? Math.min(10, rows.length) : Math.min(3, rows.length),
+    isRankingQuestion
+      ? Math.min(interpretation?.topN ?? 10, rows.length)
+      : Math.min(3, rows.length),
   );
   const intro = isRankingQuestion
     ? `${periodLabel ? `${periodLabel}の` : ""}${metricLabel}ランキングです。`
@@ -560,6 +572,47 @@ export function buildStructuredDataAnalysisAnswer(
     `このダッシュボードで参照しているデータソース「${insight.datasourceName}」から集計しています。`,
     "",
     body,
+  ].join("\n");
+}
+
+function buildSafeDataAnalysisFallback(
+  request: ChatRequest,
+  additionalContext: Awaited<
+    ReturnType<TableauContextProvider["getAdditionalContext"]>
+  >,
+): string | undefined {
+  if (
+    additionalContext.mcpExecutionDebug?.intent !== "data_analysis" ||
+    !hasSuccessfulDatasourceQuery(additionalContext) ||
+    (additionalContext.queryInsights?.length ?? 0) > 0
+  ) {
+    return undefined;
+  }
+
+  const interpretation = additionalContext.questionInterpretation;
+  const periodLabel = interpretation?.period?.label;
+  const metricLabel =
+    interpretation && interpretation.metricIntent !== "unknown"
+      ? metricIntentLabel(interpretation.metricIntent)
+      : "集計値";
+  const datasourceNames =
+    additionalContext.normalizedContext?.datasources
+      ?.map((datasource) => datasource.name)
+      .filter(Boolean) ??
+    request.dashboardContext.dataSources
+      ?.map((datasource) => datasource.name)
+      .filter(Boolean) ??
+    [];
+  const datasourceText = datasourceNames.length
+    ? datasourceNames.join("、")
+    : "対象データソース";
+
+  return [
+    `${
+      periodLabel ? `${periodLabel}の` : ""
+    }${metricLabel}を安全に確定できませんでした。`,
+    `データソース「${datasourceText}」に対する集計クエリ自体は実行しましたが、返却結果が要求した期間や指標と一致していることを確認できなかったため、誤ったランキングは返さないようにしています。`,
+    "次は、要求した指標名に対応するフィールドの有無と、query-datasource の返却列名を確認するのがよいです。",
   ].join("\n");
 }
 
