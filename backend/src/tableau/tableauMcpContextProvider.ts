@@ -177,6 +177,14 @@ export class TableauMcpContextProvider implements TableauContextProvider {
         tools,
         mcpConfig.allowedTools,
       );
+      logDebug("tableau.mcp.tools.listed", {
+        toolCount: tools.length,
+        allowedToolCount: allowedToolNames.length,
+        allowlistConfiguredCount: mcpConfig.allowedTools.length,
+        toolNames: tools.map((tool) => tool.name),
+        allowedToolNames,
+        tools: tools.map((tool) => summarizeListedTool(tool)),
+      });
       const intent =
         input.intentHint ??
         classifyQuestionIntent(
@@ -2495,6 +2503,16 @@ function toToolSummary(tool: McpTool): TableauMcpToolSummary {
   return {
     name: tool.name,
     description: tool.description?.slice(0, 240),
+  };
+}
+
+function summarizeListedTool(tool: McpTool): Record<string, unknown> {
+  const properties = tool.inputSchema?.properties ?? {};
+  return {
+    name: tool.name,
+    requiredArgs: tool.inputSchema?.required ?? [],
+    propertyKeys: Object.keys(properties).slice(0, 12),
+    descriptionPreview: tool.description?.slice(0, 160),
   };
 }
 
