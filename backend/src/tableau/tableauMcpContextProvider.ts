@@ -4,6 +4,7 @@ import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
 import { getTableauConnectedAppSecrets } from "../aws/secrets";
 import { getConfig } from "../config";
 import {
+  logDebug,
   logError,
   logInfo,
   logWarn,
@@ -401,6 +402,17 @@ export class TableauMcpContextProvider implements TableauContextProvider {
             calledToolNames.add(selection.tool.name);
             executedToolCallCount += 1;
             const errorText = extractTextFromToolResult(result);
+            if (selection.tool.name === "query-datasource") {
+              logDebug("tableau.mcp.query.execution_failed", {
+                toolName: selection.tool.name,
+                durationMs: Date.now() - toolStartedAt,
+                errorCategory,
+                errorPreview: errorText.slice(0, 220),
+                queryArgsSummary: summarizeQueryDatasourceArgs(
+                  selection.arguments,
+                ),
+              });
+            }
             logWarn("tableau.mcp.tool.error_result", {
               toolName: selection.tool.name,
               durationMs: Date.now() - toolStartedAt,
@@ -1456,6 +1468,10 @@ function validateQueryDatasourceArguments(
     typeof query !== "object" ||
     Array.isArray(query)
   ) {
+    logDebug("tableau.mcp.query.validation_rejected", {
+      reason: "missing_datasource_or_query",
+      queryArgsSummary: summarizeQueryDatasourceArgs(args),
+    });
     return undefined;
   }
 
@@ -1466,6 +1482,12 @@ function validateQueryDatasourceArguments(
       [],
   );
   if (knownDatasourceIds.size > 0 && !knownDatasourceIds.has(datasourceLuid)) {
+    logDebug("tableau.mcp.query.validation_rejected", {
+      reason: "datasource_not_in_dashboard_context",
+      queryArgsSummary: summarizeQueryDatasourceArgs(args),
+      knownDatasourceIdCount: knownDatasourceIds.size,
+      datasourceLuidHash: safeHash(datasourceLuid),
+    });
     return undefined;
   }
 
@@ -1478,10 +1500,19 @@ function validateQueryDatasourceArguments(
     fields.length === 0 ||
     fields.length > Math.max(config.queryDatasourceMaxFields, 1)
   ) {
+    logDebug("tableau.mcp.query.validation_rejected", {
+      reason: "field_count_out_of_bounds",
+      queryArgsSummary: summarizeQueryDatasourceArgs(args),
+      maxFields: Math.max(config.queryDatasourceMaxFields, 1),
+    });
     return undefined;
   }
 
   if (!containsAggregateField(fields)) {
+    logDebug("tableau.mcp.query.validation_rejected", {
+      reason: "missing_aggregate_field",
+      queryArgsSummary: summarizeQueryDatasourceArgs(args),
+    });
     return undefined;
   }
 
@@ -1489,6 +1520,10 @@ function validateQueryDatasourceArguments(
     containsSensitiveFieldName(fields) ||
     containsSensitiveFieldNameFromFilters(queryRecord.filters)
   ) {
+    logDebug("tableau.mcp.query.validation_rejected", {
+      reason: "sensitive_field_detected",
+      queryArgsSummary: summarizeQueryDatasourceArgs(args),
+    });
     return undefined;
   }
 
@@ -1497,6 +1532,11 @@ function validateQueryDatasourceArguments(
       ? Math.floor(args.limit)
       : Math.floor(config.queryDatasourceMaxLimit);
   if (!Number.isFinite(limit) || limit <= 0) {
+    logDebug("tableau.mcp.query.validation_rejected", {
+      reason: "invalid_limit",
+      queryArgsSummary: summarizeQueryDatasourceArgs(args),
+      maxLimit: config.queryDatasourceMaxLimit,
+    });
     return undefined;
   }
 
@@ -2058,6 +2098,57 @@ function summarizeToolArguments(
         return [key, String(value)];
       }),
   );
+}
+
+function summarizeQueryDatasourceArgs(
+  args: Record<string, unknown>,
+): Record<string, unknown> {
+  const datasourceLuid =
+    readString(args.datasourceLuid) ?? readString(args.datasourceId);
+  const query =
+    args.query && typeof args.query === "object" && !Array.isArray(args.query)
+      ? (args.query as Record<string, unknown>)
+      : undefined;
+  const fields = Array.isArray(query?.fields) ? query.fields : [];
+  const filters = Array.isArray(query?.filters) ? query.filters : [];
+
+  return {
+    datasourceLuidHash: safeHash(datasourceLuid),
+    limit:
+      typeof args.limit === "number" ? Math.floor(args.limit) : args.limit,
+    fieldCount: fields.length,
+    fields: fields.slice(0, 6).map((field) => {
+      if (!field || typeof field !== "object" || Array.isArray(field)) {
+        return "invalid";
+      }
+      const record = field as Record<string, unknown>;
+      return {
+        fieldCaption: readString(record.fieldCaption),
+        fieldAlias: readString(record.fieldAlias),
+        function: readString(record.function),
+      };
+    }),
+    filterCount: filters.length,
+    filters: filters.slice(0, 4).map((filter) => {
+      if (!filter || typeof filter !== "object" || Array.isArray(filter)) {
+        return "invalid";
+      }
+      const record = filter as Record<string, unknown>;
+      const field =
+        record.field && typeof record.field === "object" && !Array.isArray(record.field)
+          ? (record.field as Record<string, unknown>)
+          : undefined;
+      return {
+        fieldCaption: readString(field?.fieldCaption),
+        filterType: readString(record.filterType),
+        quantitativeFilterType: readString(record.quantitativeFilterType),
+        periodType: readString(record.periodType),
+        dateRangeType: readString(record.dateRangeType),
+        minDate: readString(record.minDate),
+        maxDate: readString(record.maxDate),
+      };
+    }),
+  };
 }
 
 function summarizeToolResultPreview(result: unknown): string {
@@ -3858,7 +3949,7 @@ function buildAggregateQueryDatasourceArgs(
         ]
       : undefined;
 
-  return {
+  const queryArgs = {
     datasourceLuid,
     query: {
       fields,
@@ -3866,6 +3957,23 @@ function buildAggregateQueryDatasourceArgs(
     },
     limit: topN,
   };
+
+  logDebug("tableau.mcp.query.aggregate_args_built", {
+    datasourceNameHash: safeHash(datasourceRef.name),
+    datasourceLuidHash: safeHash(datasourceLuid),
+    metricIntent: questionInterpretation.metricIntent,
+    metricField,
+    dimensionField,
+    dateField,
+    periodStart: period?.startDate,
+    periodEnd: period?.endDate,
+    topN,
+    fieldNameCount: fieldNames.length,
+    hasFilters: Boolean(filters?.length),
+    queryArgsSummary: summarizeQueryDatasourceArgs(queryArgs),
+  });
+
+  return queryArgs;
 }
 
 function chooseAggregateDimensionField(
