@@ -167,13 +167,13 @@ button {
   display: grid;
   gap: 8px;
   padding: 10px 16px 8px;
-  border-bottom: 1px solid #e4e7ea;
 }
 
 .question-starters p {
   margin: 0;
   color: #7b838c;
   font-size: 12px;
+  text-align: right;
 }
 
 .starter-user-row {
@@ -406,8 +406,6 @@ button {
   align-items: center;
   gap: 8px;
   border: 0;
-  border-top: 1px solid #d9dde2;
-  border-bottom: 1px solid #d9dde2;
   border-radius: 0;
   width: 100%;
   padding: 8px 0;
