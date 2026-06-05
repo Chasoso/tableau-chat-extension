@@ -210,6 +210,16 @@ describe("ChatService with mock provider", () => {
         datasourceFieldProfiles: [
           {
             datasourceName: "Tableau Public Per Day(2025/04-)",
+            fields: [
+              {
+                name: "workbook_title",
+                source: "datasourceModel",
+              },
+              {
+                name: "workbook_viewCount",
+                source: "datasourceModel",
+              },
+            ],
             fieldNames: ["workbook_title", "workbook_viewCount"],
             fieldCount: 2,
             sourceTool: "get-datasource-metadata",

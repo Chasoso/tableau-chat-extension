@@ -15,6 +15,7 @@ import {
   isMcpErrorResult,
   normalizeTableauContext,
   resolveDatasourceIdentifier,
+  selectAggregateMetricField,
 } from "../src/tableau/tableauMcpContextProvider";
 import { interpretQuestion } from "../src/services/questionInterpretation";
 import type { ClassifiedQuestionIntent } from "../src/services/tableauMcpToolPlanner";
@@ -126,6 +127,102 @@ describe("TableauMcpContextProvider extraction helpers", () => {
     ]);
   });
 
+  it("extracts datasource field details including data types from metadata", () => {
+    const profiles = extractDatasourceFieldProfilesFromRawToolResults(
+      [
+        {
+          toolName: "get-datasource-metadata",
+          result: {
+            content: [
+              {
+                text: JSON.stringify({
+                  datasourceName: "Tableau Public Per Day(2025/04-)",
+                  datasourceModel: {
+                    fields: [
+                      {
+                        name: "Default View Path",
+                        dataType: "STRING",
+                        role: "DIMENSION",
+                      },
+                      {
+                        name: "Daily View Count",
+                        dataType: "INTEGER",
+                        role: "MEASURE",
+                      },
+                    ],
+                  },
+                }),
+              },
+            ],
+          },
+        },
+      ],
+      [
+        {
+          type: "datasource",
+          name: "Tableau Public Per Day(2025/04-)",
+        },
+      ],
+    );
+
+    expect(profiles[0]?.fields).toEqual([
+      {
+        name: "Default View Path",
+        dataType: "STRING",
+        role: "DIMENSION",
+        semanticRole: undefined,
+        source: "datasourceModel",
+      },
+      {
+        name: "Daily View Count",
+        dataType: "INTEGER",
+        role: "MEASURE",
+        semanticRole: undefined,
+        source: "datasourceModel",
+      },
+    ]);
+  });
+
+  it("prefers numeric view-count fields over string path fields for view questions", () => {
+    const interpretation = interpretQuestion({
+      question: "2026年5月のビュー数が多かったVizをランキング形式で教えて",
+      dashboardContext: {
+        ...baseInput.dashboardContext,
+        dataSources: [{ name: "Tableau Public Per Day(2025/04-)" }],
+      },
+    });
+
+    const selection = selectAggregateMetricField(
+      [
+        {
+          name: "Default View Path",
+          dataType: "STRING",
+          role: "DIMENSION",
+          source: "datasourceModel",
+        },
+        {
+          name: "Daily View Count",
+          dataType: "INTEGER",
+          role: "MEASURE",
+          source: "datasourceModel",
+        },
+      ],
+      interpretation,
+    );
+
+    expect(selection.fieldName).toBe("Daily View Count");
+    expect(selection.candidates[0]?.fieldName).toBe("Daily View Count");
+    expect(
+      selection.candidates.find(
+        (candidate) => candidate.fieldName === "Default View Path",
+      )?.score,
+    ).toBeLessThan(
+      selection.candidates.find(
+        (candidate) => candidate.fieldName === "Daily View Count",
+      )?.score ?? 0,
+    );
+  });
+
   it("extracts datasource field profiles from get-datasource-metadata results", () => {
     const rawToolResults = [
       {
@@ -169,6 +266,29 @@ describe("TableauMcpContextProvider extraction helpers", () => {
     expect(profiles).toEqual([
       {
         datasourceName: "Tableau Public Per Day(2025/04-)",
+        fields: [
+          {
+            name: "Datetime(JST)",
+            dataType: undefined,
+            role: undefined,
+            semanticRole: undefined,
+            source: "datasourceModel",
+          },
+          {
+            name: "workbook_title",
+            dataType: undefined,
+            role: undefined,
+            semanticRole: undefined,
+            source: "datasourceModel",
+          },
+          {
+            name: "workbook_viewCount",
+            dataType: undefined,
+            role: undefined,
+            semanticRole: undefined,
+            source: "fieldGroups",
+          },
+        ],
         fieldNames: ["Datetime(JST)", "workbook_title", "workbook_viewCount"],
         fieldCount: 3,
         sourceTool: "get-datasource-metadata",
