@@ -23,6 +23,7 @@ import {
   matchesMetricFieldIntent,
 } from "../services/questionInterpretation";
 import type {
+  DatasourceFieldDetail,
   DatasourceFieldProfile,
   McpExecutionDebug,
   McpObservation,
@@ -2763,10 +2764,13 @@ export function extractDatasourceFieldProfilesFromRawToolResults(
           : undefined,
       ].filter((value): value is string => Boolean(value));
 
-      const fieldNames = dedupeFieldNames([
-        ...extractFieldNamesFromDatasourceModel(payloadRecord.datasourceModel),
-        ...extractFieldNamesFromFieldGroups(payloadRecord.fieldGroups),
+      const fieldDetails = dedupeFieldDetails([
+        ...extractFieldDetailsFromDatasourceModel(
+          payloadRecord.datasourceModel,
+        ),
+        ...extractFieldDetailsFromFieldGroups(payloadRecord.fieldGroups),
       ]);
+      const fieldNames = fieldDetails.map((field) => field.name);
 
       if (!fieldNames.length) {
         continue;
@@ -2785,6 +2789,7 @@ export function extractDatasourceFieldProfilesFromRawToolResults(
 
       profiles.push({
         datasourceName: matchedDatasourceName,
+        fields: fieldDetails,
         fieldNames,
         fieldCount: fieldNames.length,
         sourceTool: "get-datasource-metadata",
@@ -2976,7 +2981,9 @@ function normalizeQueryDatasourceInsightRow(
   };
 }
 
-function extractFieldNamesFromDatasourceModel(value: unknown): string[] {
+function extractFieldDetailsFromDatasourceModel(
+  value: unknown,
+): DatasourceFieldDetail[] {
   if (!isPlainObject(value)) {
     return [];
   }
@@ -2987,25 +2994,25 @@ function extractFieldNamesFromDatasourceModel(value: unknown): string[] {
   }
 
   return fields
-    .map((field) => {
-      if (!isPlainObject(field)) {
-        return undefined;
-      }
-
-      return (
-        readString((field as Record<string, unknown>).name) ??
-        readString((field as Record<string, unknown>).fieldName)
-      );
-    })
-    .filter((name): name is string => Boolean(name));
+    .map((field) =>
+      isPlainObject(field)
+        ? toDatasourceFieldDetail(
+            field as Record<string, unknown>,
+            "datasourceModel",
+          )
+        : undefined,
+    )
+    .filter((field): field is DatasourceFieldDetail => Boolean(field));
 }
 
-function extractFieldNamesFromFieldGroups(value: unknown): string[] {
+function extractFieldDetailsFromFieldGroups(
+  value: unknown,
+): DatasourceFieldDetail[] {
   if (!Array.isArray(value)) {
     return [];
   }
 
-  const names: string[] = [];
+  const details: DatasourceFieldDetail[] = [];
   for (const group of value) {
     if (!isPlainObject(group)) {
       continue;
@@ -3018,31 +3025,36 @@ function extractFieldNamesFromFieldGroups(value: unknown): string[] {
       if (!isPlainObject(field)) {
         continue;
       }
-      const name =
-        readString((field as Record<string, unknown>).name) ??
-        readString((field as Record<string, unknown>).fieldName);
-      if (name) {
-        names.push(name);
+      const detail = toDatasourceFieldDetail(
+        field as Record<string, unknown>,
+        "fieldGroups",
+      );
+      if (detail) {
+        details.push(detail);
       }
     }
   }
 
-  return names;
+  return details;
 }
 
-function dedupeFieldNames(fieldNames: string[]): string[] {
-  const seen = new Set<string>();
-  const deduped: string[] = [];
-  for (const fieldName of fieldNames) {
-    const key = normalizeNameForMatch(fieldName);
-    if (!key || seen.has(key)) {
-      continue;
-    }
-    seen.add(key);
-    deduped.push(fieldName);
+function toDatasourceFieldDetail(
+  field: Record<string, unknown>,
+  source: DatasourceFieldDetail["source"],
+): DatasourceFieldDetail | undefined {
+  const name = readString(field.name) ?? readString(field.fieldName);
+  if (!name) {
+    return undefined;
   }
 
-  return deduped;
+  return {
+    name,
+    dataType: readString(field.dataType) ?? readString(field.datatype),
+    role: readString(field.role),
+    semanticRole:
+      readString(field.semanticRole) ?? readString(field.semantic_type),
+    source,
+  };
 }
 
 function dedupeDatasourceFieldProfiles(
@@ -3060,18 +3072,49 @@ function dedupeDatasourceFieldProfiles(
       continue;
     }
 
-    const mergedFieldNames = dedupeFieldNames([
-      ...existing.fieldNames,
-      ...profile.fieldNames,
+    const mergedFields = dedupeFieldDetails([
+      ...existing.fields,
+      ...profile.fields,
     ]);
+    const mergedFieldNames = mergedFields.map((field) => field.name);
     byDatasource.set(key, {
       ...existing,
+      fields: mergedFields,
       fieldNames: mergedFieldNames,
       fieldCount: mergedFieldNames.length,
     });
   }
 
   return [...byDatasource.values()];
+}
+
+function dedupeFieldDetails(
+  fieldDetails: DatasourceFieldDetail[],
+): DatasourceFieldDetail[] {
+  const byName = new Map<string, DatasourceFieldDetail>();
+
+  for (const fieldDetail of fieldDetails) {
+    const key = normalizeNameForMatch(fieldDetail.name);
+    if (!key) {
+      continue;
+    }
+
+    const existing = byName.get(key);
+    if (!existing) {
+      byName.set(key, fieldDetail);
+      continue;
+    }
+
+    byName.set(key, {
+      ...existing,
+      ...fieldDetail,
+      dataType: existing.dataType ?? fieldDetail.dataType,
+      role: existing.role ?? fieldDetail.role,
+      semanticRole: existing.semanticRole ?? fieldDetail.semanticRole,
+    });
+  }
+
+  return [...byName.values()];
 }
 
 type WorkbookCandidateOptions = {
@@ -3924,17 +3967,25 @@ function buildAggregateQueryDatasourceArgs(
     rawToolResults,
     [datasourceForProfile],
   );
+  const fieldDetails = fieldProfiles[0]?.fields ?? [];
   const fieldNames = fieldProfiles[0]?.fieldNames ?? [];
-  const metricField = chooseAggregateMetricField(
-    fieldNames,
+  const metricSelection = selectAggregateMetricField(
+    fieldDetails,
     questionInterpretation,
   );
+  const metricField = metricSelection.fieldName;
   if (!metricField) {
+    logDebug("tableau.mcp.query.metric_candidates_scored", {
+      datasourceNameHash: safeHash(datasourceRef.name),
+      metricIntent: questionInterpretation.metricIntent,
+      selectedMetricField: undefined,
+      candidates: metricSelection.candidates.slice(0, 8),
+    });
     return undefined;
   }
 
-  const dimensionField = chooseAggregateDimensionField(fieldNames);
-  const dateField = chooseAggregateDateField(fieldNames);
+  const dimensionField = chooseAggregateDimensionField(fieldDetails);
+  const dateField = chooseAggregateDateField(fieldDetails);
   const period = questionInterpretation.period;
   const topN = questionInterpretation.topN;
   const fields: Array<Record<string, unknown>> = [];
@@ -3991,15 +4042,21 @@ function buildAggregateQueryDatasourceArgs(
     hasFilters: Boolean(filters?.length),
     queryArgsSummary: summarizeQueryDatasourceArgs(queryArgs),
   });
+  logDebug("tableau.mcp.query.metric_candidates_scored", {
+    datasourceNameHash: safeHash(datasourceRef.name),
+    metricIntent: questionInterpretation.metricIntent,
+    selectedMetricField: metricField,
+    candidates: metricSelection.candidates.slice(0, 8),
+  });
 
   return queryArgs;
 }
 
 function chooseAggregateDimensionField(
-  fieldNames: string[],
+  fieldDetails: DatasourceFieldDetail[],
 ): string | undefined {
-  const trimmed = fieldNames
-    .map((fieldName) => fieldName.trim())
+  const trimmed = fieldDetails
+    .map((fieldDetail) => fieldDetail.name.trim())
     .filter(Boolean);
   if (!trimmed.length) {
     return undefined;
@@ -4020,41 +4077,100 @@ function chooseAggregateDimensionField(
   return trimmed[0];
 }
 
-function chooseAggregateMetricField(
-  fieldNames: string[],
+type AggregateMetricCandidate = {
+  fieldName: string;
+  dataType?: string;
+  role?: string;
+  score: number;
+  reasons: string[];
+};
+
+export function selectAggregateMetricField(
+  fieldDetails: DatasourceFieldDetail[],
   questionInterpretation: QuestionInterpretation,
-): string | undefined {
-  const trimmed = fieldNames
-    .map((fieldName) => fieldName.trim())
-    .filter(Boolean);
-  if (!trimmed.length) {
-    return undefined;
-  }
+): {
+  fieldName?: string;
+  candidates: AggregateMetricCandidate[];
+} {
+  const candidates = fieldDetails
+    .filter((fieldDetail) => fieldDetail.name.trim().length > 0)
+    .map((fieldDetail) => {
+      const reasons: string[] = [];
+      let score = 0;
 
-  if (questionInterpretation.metricIntent !== "unknown") {
-    return trimmed.find((fieldName) =>
-      matchesMetricFieldIntent(fieldName, questionInterpretation.metricIntent),
-    );
-  }
+      if (
+        questionInterpretation.metricIntent !== "unknown" &&
+        matchesMetricFieldIntent(
+          fieldDetail.name,
+          questionInterpretation.metricIntent,
+        )
+      ) {
+        score += 45;
+        reasons.push("metric_intent_match");
+      }
 
-  const genericHit = trimmed.find((fieldName) =>
-    /count|total|number|sum|sales|profit|revenue|amount|score|rate/i.test(
-      fieldName,
-    ),
-  );
-  if (genericHit) {
-    return genericHit;
-  }
+      if (isNumericFieldDetail(fieldDetail)) {
+        score += 80;
+        reasons.push("numeric_type");
+      } else if (isDateFieldDetail(fieldDetail)) {
+        score -= 80;
+        reasons.push("date_type_penalty");
+      } else {
+        score -= 30;
+        reasons.push("non_numeric_penalty");
+      }
 
-  return undefined;
+      if (isMeasureFieldDetail(fieldDetail)) {
+        score += 35;
+        reasons.push("measure_role");
+      }
+
+      if (
+        /count|total|number|sum|sales|profit|revenue|amount|score|rate/i.test(
+          fieldDetail.name,
+        )
+      ) {
+        score += 25;
+        reasons.push("aggregate_name_hint");
+      }
+
+      if (
+        /path|url|repo|title|name|description|profile/i.test(fieldDetail.name)
+      ) {
+        score -= 90;
+        reasons.push("non_metric_name_penalty");
+      }
+
+      return {
+        fieldName: fieldDetail.name,
+        dataType: fieldDetail.dataType,
+        role: fieldDetail.role ?? fieldDetail.semanticRole,
+        score,
+        reasons,
+      };
+    })
+    .sort((left, right) => right.score - left.score);
+
+  const selected = candidates.find((candidate) => candidate.score > 0);
+  return {
+    fieldName: selected?.fieldName,
+    candidates,
+  };
 }
 
-function chooseAggregateDateField(fieldNames: string[]): string | undefined {
-  const trimmed = fieldNames
-    .map((fieldName) => fieldName.trim())
-    .filter(Boolean);
+function chooseAggregateDateField(
+  fieldDetails: DatasourceFieldDetail[],
+): string | undefined {
+  const trimmed = fieldDetails.filter((fieldDetail) => fieldDetail.name.trim());
   if (!trimmed.length) {
     return undefined;
+  }
+
+  const typedDateHit = trimmed.find((fieldDetail) =>
+    isDateFieldDetail(fieldDetail),
+  );
+  if (typedDateHit) {
+    return typedDateHit.name;
   }
 
   const patterns = [
@@ -4066,13 +4182,33 @@ function chooseAggregateDateField(fieldNames: string[]): string | undefined {
     /\(jst\)/i,
   ];
   for (const pattern of patterns) {
-    const hit = trimmed.find((fieldName) => pattern.test(fieldName));
+    const hit = trimmed.find((fieldDetail) => pattern.test(fieldDetail.name));
     if (hit) {
-      return hit;
+      return hit.name;
     }
   }
 
   return undefined;
+}
+
+function isNumericFieldDetail(fieldDetail: DatasourceFieldDetail): boolean {
+  const haystack =
+    `${fieldDetail.dataType ?? ""} ${fieldDetail.role ?? ""} ${fieldDetail.semanticRole ?? ""}`.toLowerCase();
+  return /int|integer|long|short|float|double|decimal|number|numeric|real|measure|quantitative/.test(
+    haystack,
+  );
+}
+
+function isMeasureFieldDetail(fieldDetail: DatasourceFieldDetail): boolean {
+  const haystack =
+    `${fieldDetail.role ?? ""} ${fieldDetail.semanticRole ?? ""}`.toLowerCase();
+  return /measure|quantitative/.test(haystack);
+}
+
+function isDateFieldDetail(fieldDetail: DatasourceFieldDetail): boolean {
+  const haystack =
+    `${fieldDetail.name} ${fieldDetail.dataType ?? ""}`.toLowerCase();
+  return /date|datetime|time|timestamp/.test(haystack);
 }
 
 function selectBestResolvedDatasource(

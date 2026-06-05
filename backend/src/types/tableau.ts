@@ -133,9 +133,18 @@ export type TableauDatasourceRef = {
 
 export type DatasourceFieldProfile = {
   datasourceName: string;
+  fields: DatasourceFieldDetail[];
   fieldNames: string[];
   fieldCount: number;
   sourceTool: "get-datasource-metadata";
+};
+
+export type DatasourceFieldDetail = {
+  name: string;
+  dataType?: string;
+  role?: string;
+  semanticRole?: string;
+  source: "datasourceModel" | "fieldGroups";
 };
 
 export type QueryDatasourceInsightRow = {
