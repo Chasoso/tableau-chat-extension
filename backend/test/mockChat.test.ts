@@ -687,9 +687,13 @@ describe("ChatService with mock provider", () => {
     });
 
     expect(response.notionPostIdeaDraft).toBeDefined();
-    expect(response.notionPostIdeaDraft?.title).toContain("Notion");
+    expect(response.notionPostIdeaDraft?.draftKind).toBe("analysis_memo");
+    expect(response.notionPostIdeaDraft?.title).not.toContain("Notionに保存");
     expect(
-      response.notionPostIdeaDraft?.suggestedPostText.length ?? 0,
+      response.notionPostIdeaDraft?.analysisBody?.length ?? 0,
     ).toBeGreaterThan(0);
+    expect(response.notionPostIdeaDraft?.summary?.length ?? 0).toBeGreaterThan(
+      0,
+    );
   });
 });

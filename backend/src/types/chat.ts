@@ -1,5 +1,10 @@
 import type { DashboardContext, TableauAdditionalContext } from "./tableau";
 import type { AgentExecutionDebug } from "./agent";
+import type {
+  NotionDraftKind,
+  NotionMetricSummary,
+  NotionRankingItem,
+} from "./notion";
 
 export type ClientContext = {
   source?: string;
@@ -28,14 +33,15 @@ export type ChatResponse = {
   messageId: string;
   notionPostIdeaDraft?: {
     title: string;
+    draftKind?: NotionDraftKind;
     reason: string;
     suggestedPostText: string;
-    metricSummary?: {
-      impressions?: number;
-      engagementRate?: number;
-      bookmarkRate?: number;
-      profileVisitRate?: number;
-    };
+    summary?: string;
+    analysisBody?: string;
+    datasourceName?: string;
+    periodLabel?: string;
+    rankingItems?: NotionRankingItem[];
+    metricSummary?: NotionMetricSummary;
     referencePostUrl?: string;
     source?: string;
     tags?: string[];

@@ -559,10 +559,17 @@ export default function ChatPanel({
 }
 
 function buildDraftSummary(draft: NotionPostIdeaDraft): string {
-  const parts = [draft.reason, draft.suggestedPostText]
-    .filter(Boolean)
-    .join(" ");
-  const compact = parts.replace(/\s+/g, " ").trim();
+  const parts =
+    draft.draftKind === "analysis_memo"
+      ? [
+          draft.summary,
+          draft.periodLabel ? `対象期間: ${draft.periodLabel}` : undefined,
+          draft.datasourceName
+            ? `対象データソース: ${draft.datasourceName}`
+            : undefined,
+        ]
+      : [draft.reason, draft.suggestedPostText];
+  const compact = parts.filter(Boolean).join(" ").replace(/\s+/g, " ").trim();
   if (!compact) {
     return "保存内容の要約はありません。";
   }

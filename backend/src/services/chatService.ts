@@ -16,6 +16,7 @@ import type {
   ContextRequest,
   ContextResponse,
 } from "../types/chat";
+import type { NotionRankingItem } from "../types/notion";
 import type {
   DashboardContext,
   DatasourceFieldProfile,
@@ -111,12 +112,28 @@ export class ChatService {
       request,
       additionalContext,
     );
+    const notionPostIdeaDraft = buildNotionDraft(
+      request.question,
+      sanitizedAnswer,
+      request,
+      additionalContext,
+    );
     logDebug("chat.message.output_debug", {
       sessionId,
       messageId,
       answerLength: sanitizedAnswer.length,
       answer: clipForDebugLog(sanitizedAnswer),
     });
+    if (notionPostIdeaDraft) {
+      logDebug("chat.notion_draft.generated", {
+        sessionId,
+        messageId,
+        draftKind: notionPostIdeaDraft.draftKind ?? "post_idea",
+        titleLength: notionPostIdeaDraft.title.length,
+        summaryLength: notionPostIdeaDraft.summary?.length ?? 0,
+        analysisBodyLength: notionPostIdeaDraft.analysisBody?.length ?? 0,
+      });
+    }
     const dashboardContextPatch = buildDashboardContextPatch(
       request,
       additionalContext,
@@ -150,10 +167,7 @@ export class ChatService {
       answer: sanitizedAnswer,
       sessionId,
       messageId,
-      notionPostIdeaDraft: buildNotionPostIdeaDraft(
-        request.question,
-        sanitizedAnswer,
-      ),
+      notionPostIdeaDraft,
       dashboardContextPatch,
       debug: {
         usedMock: this.answerGenerator.name === "mock",
@@ -213,33 +227,177 @@ export class ChatService {
   }
 }
 
-function buildNotionPostIdeaDraft(
+function buildNotionDraft(
   question: string,
   answer: string,
+  request: ChatRequest,
+  additionalContext: Awaited<
+    ReturnType<TableauContextProvider["getAdditionalContext"]>
+  >,
 ): ChatResponse["notionPostIdeaDraft"] | undefined {
-  const shouldBuildDraft = /(notion|保存|投稿|ポスト|idea|アイデア)/i.test(
+  const shouldBuildDraft = /(notion|保存|記録|登録|メモ|残して|残す)/i.test(
     question,
   );
   if (!shouldBuildDraft) {
     return undefined;
   }
 
-  const shortAnswer = answer.replace(/\s+/g, " ").trim();
-  const reason =
-    shortAnswer.slice(0, 260) || "Tableau MCP analysis based suggestion.";
-  const titleSeed = question.replace(/[「」"']/g, "").trim();
-  const title =
-    titleSeed.length > 80
-      ? `${titleSeed.slice(0, 80)}...`
-      : titleSeed || "Tableau MCP 分析メモ";
+  const draftKind = detectNotionDraftKind(question);
+  const compactAnswer = answer.replace(/\s+/g, " ").trim();
+
+  if (draftKind === "post_idea") {
+    const reason =
+      compactAnswer.slice(0, 260) || "Tableau MCP analysis based suggestion.";
+    const titleSeed = question.replace(/[「」"']/g, "").trim();
+    const title =
+      titleSeed.length > 80
+        ? `${titleSeed.slice(0, 80)}...`
+        : titleSeed || "Tableau MCP 分析メモ";
+
+    return {
+      draftKind,
+      title,
+      reason,
+      suggestedPostText: compactAnswer.slice(0, 1000),
+      summary: compactAnswer.slice(0, 220),
+      source: "Tableau MCP",
+      tags: ["Tableau", "MCP", "X Analytics"],
+    };
+  }
+
+  const datasourceName =
+    additionalContext.normalizedContext?.datasources?.[0]?.name ??
+    request.dashboardContext.dataSources?.[0]?.name;
+  const periodLabel = additionalContext.questionInterpretation?.period?.label;
+  const title = buildAnalysisMemoTitle({
+    question,
+    answer,
+    periodLabel,
+    datasourceName,
+    dashboardName: request.dashboardContext.dashboardName,
+  });
+  const summary = buildAnalysisMemoSummary(answer, datasourceName);
 
   return {
+    draftKind,
     title,
-    reason,
-    suggestedPostText: shortAnswer.slice(0, 1000),
+    reason: datasourceName
+      ? `データソース「${datasourceName}」をもとに集計した分析結果を記録します。`
+      : "Tableau MCP で取得した分析結果を記録します。",
+    suggestedPostText: summary,
+    summary,
+    analysisBody: answer,
+    datasourceName,
+    periodLabel,
+    rankingItems: extractRankingItems(answer),
     source: "Tableau MCP",
-    tags: ["Tableau", "MCP", "X Analytics"],
+    tags: ["Tableau", "MCP", "Analysis Memo"],
   };
+}
+
+function detectNotionDraftKind(
+  question: string,
+): "analysis_memo" | "post_idea" {
+  if (
+    /(投稿案|投稿アイデア|ポスト案|推奨投稿文|x投稿|post idea|tweet)/i.test(
+      question,
+    )
+  ) {
+    return "post_idea";
+  }
+
+  return "analysis_memo";
+}
+
+function buildAnalysisMemoTitle(input: {
+  question: string;
+  answer: string;
+  periodLabel?: string;
+  datasourceName?: string;
+  dashboardName?: string;
+}): string {
+  const firstSentence = input.answer
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .find(Boolean);
+  const normalizedFirstSentence = firstSentence
+    ?.replace(/^[-*]\s*/, "")
+    .replace(/です。?$/, "")
+    .replace(/でした。?$/, "")
+    .trim();
+  if (
+    normalizedFirstSentence &&
+    normalizedFirstSentence.length <= 80 &&
+    !/(notion|保存|記録|登録)/i.test(normalizedFirstSentence)
+  ) {
+    return normalizedFirstSentence;
+  }
+
+  const strippedQuestion = input.question
+    .replace(
+      /では、?\s*これらの結果をNotionに(保存|記録|登録)してください。?/gi,
+      "",
+    )
+    .replace(/notionに?(保存|記録|登録)(してください|したい|したいです)?/gi, "")
+    .replace(/[「」"']/g, "")
+    .trim();
+  if (strippedQuestion && strippedQuestion.length <= 80) {
+    return strippedQuestion;
+  }
+
+  if (input.periodLabel && /favorite/i.test(input.answer)) {
+    return `${input.periodLabel} Favorite数ランキング`;
+  }
+  if (input.periodLabel && /view/i.test(input.answer)) {
+    return `${input.periodLabel} View数ランキング`;
+  }
+  if (input.dashboardName) {
+    return `${input.dashboardName} の分析メモ`;
+  }
+
+  return "Tableau MCP 分析メモ";
+}
+
+function buildAnalysisMemoSummary(
+  answer: string,
+  datasourceName?: string,
+): string {
+  const lines = answer
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const rankingLineIndex = lines.findIndex((line) => /^\d+\.\s+/.test(line));
+  const summaryLines =
+    rankingLineIndex >= 0
+      ? lines.slice(0, rankingLineIndex)
+      : lines.slice(0, 2);
+  const summary = summaryLines.join(" ").replace(/\s+/g, " ").trim();
+  if (summary) {
+    return summary.length > 240 ? `${summary.slice(0, 240)}…` : summary;
+  }
+
+  if (datasourceName) {
+    return `データソース「${datasourceName}」の分析結果メモです。`;
+  }
+
+  return "Tableau MCP の分析結果メモです。";
+}
+
+function extractRankingItems(answer: string): NotionRankingItem[] {
+  const items: NotionRankingItem[] = [];
+  for (const line of answer.split(/\r?\n/).map((value) => value.trim())) {
+    const match = line.match(/^\d+\.\s+(.+?):\s+(.+)$/);
+    if (!match) {
+      continue;
+    }
+
+    items.push({
+      label: match[1].trim(),
+      value: match[2].trim(),
+    });
+  }
+
+  return items;
 }
 
 function clipForDebugLog(value: string): string {

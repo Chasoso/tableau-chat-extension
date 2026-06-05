@@ -37,8 +37,17 @@ export type ChatResponse = {
   messageId: string;
   notionPostIdeaDraft?: {
     title: string;
+    draftKind?: "analysis_memo" | "post_idea";
     reason: string;
     suggestedPostText: string;
+    summary?: string;
+    analysisBody?: string;
+    datasourceName?: string;
+    periodLabel?: string;
+    rankingItems?: Array<{
+      label: string;
+      value?: string | number | null;
+    }>;
     metricSummary?: {
       impressions?: number;
       engagementRate?: number;

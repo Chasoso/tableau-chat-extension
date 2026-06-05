@@ -1,5 +1,8 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { resolveNotionUserId } from "../src/notion/notionService";
+import {
+  buildNotionMarkdown,
+  resolveNotionUserId,
+} from "../src/notion/notionService";
 
 describe("resolveNotionUserId", () => {
   const originalAuthRequired = process.env.AUTH_REQUIRED;
@@ -33,5 +36,33 @@ describe("resolveNotionUserId", () => {
     process.env.AUTH_REQUIRED = "false";
     process.env.NOTION_LOCAL_DEV_USER_ID = "local-dev-user";
     expect(resolveNotionUserId(undefined)).toBe("local-dev-user");
+  });
+});
+
+describe("buildNotionMarkdown", () => {
+  it("renders analysis memo markdown without post-idea-only sections", () => {
+    const markdown = buildNotionMarkdown({
+      title: "2026年5月 Favorite数ランキング",
+      draftKind: "analysis_memo",
+      reason: "分析結果を保存します。",
+      suggestedPostText: "短い要約",
+      summary: "2026年5月のFavorite数ランキングです。",
+      analysisBody: "1. Viz A: 120\n2. Viz B: 80",
+      datasourceName: "Tableau Public Per Day(2025/04-)",
+      periodLabel: "2026年5月",
+      rankingItems: [
+        { label: "Viz A", value: 120 },
+        { label: "Viz B", value: 80 },
+      ],
+      source: "Tableau MCP",
+      tags: ["Tableau", "MCP", "Analysis Memo"],
+    });
+
+    expect(markdown).toContain("# 2026年5月 Favorite数ランキング");
+    expect(markdown).toContain("## 分析結果");
+    expect(markdown).toContain("## ランキング");
+    expect(markdown).not.toContain("## 推奨投稿文");
+    expect(markdown).not.toContain("## 参照ポスト");
+    expect(markdown).not.toContain("n/a");
   });
 });

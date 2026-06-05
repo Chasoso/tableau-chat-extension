@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   buildParentCandidates,
+  extractNotionPageRef,
   normalizeNotionIdentifier,
 } from "../src/notion/notionMcpClient";
 
@@ -23,15 +24,15 @@ describe("normalizeNotionIdentifier", () => {
 });
 
 describe("buildParentCandidates", () => {
-  it("prefers page target before datasource target when both are configured", () => {
+  it("prefers datasource target before page target when both are configured", () => {
     const candidates = buildParentCandidates({
       targetParentPageId: "page-1",
       targetDatabaseId: "collection://ds-1",
     });
 
     expect(candidates).toEqual([
-      { type: "page_id", value: "page-1" },
       { type: "data_source_id", value: "ds-1" },
+      { type: "page_id", value: "page-1" },
     ]);
   });
 
@@ -39,5 +40,25 @@ describe("buildParentCandidates", () => {
     expect(() => buildParentCandidates({})).toThrow(
       /Notion target is not configured/i,
     );
+  });
+});
+
+describe("extractNotionPageRef", () => {
+  it("extracts a nested notion page url and page id", () => {
+    const ref = extractNotionPageRef({
+      content: [
+        {
+          page: {
+            id: "12345678-1234-1234-1234-1234567890ab",
+            url: "https://www.notion.so/example-page",
+          },
+        },
+      ],
+    });
+
+    expect(ref).toEqual({
+      pageUrl: "https://www.notion.so/example-page",
+      pageId: "12345678-1234-1234-1234-1234567890ab",
+    });
   });
 });

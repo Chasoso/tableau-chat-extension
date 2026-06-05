@@ -74,7 +74,14 @@ export class NotionMcpClient {
             throw new Error(summarizeToolError(result));
           }
 
-          return extractNotionPageRef(result);
+          const pageRef = extractNotionPageRef(result);
+          logDebug("notion.mcp.create_pages.result_debug", {
+            parentType: parent.type,
+            hasPageUrl: Boolean(pageRef.pageUrl),
+            hasPageId: Boolean(pageRef.pageId),
+            resultShape: summarizeResultShape(result),
+          });
+          return pageRef;
         } catch (error) {
           lastError = error;
           logWarn("notion.mcp.create_pages.attempt_failed", {
@@ -177,13 +184,14 @@ export function buildParentCandidates(input: {
     );
   }
 
-  // Prefer page parent in PoC mode because it is the most broadly compatible target.
+  // Prefer data source target first when configured, because page targets are more
+  // likely to be stale or lack the required integration access in this PoC flow.
   const candidates: ParentCandidate[] = [];
-  if (pageId) {
-    candidates.push({ type: "page_id", value: pageId });
-  }
   if (dataSourceId) {
     candidates.push({ type: "data_source_id", value: dataSourceId });
+  }
+  if (pageId) {
+    candidates.push({ type: "page_id", value: pageId });
   }
   return candidates;
 }
@@ -247,21 +255,74 @@ function summarizeToolError(result: { content?: unknown }): string {
   return text.length > 500 ? `${text.slice(0, 500)}...` : text;
 }
 
-function extractNotionPageRef(result: unknown): {
+export function extractNotionPageRef(result: unknown): {
   pageUrl?: string;
   pageId?: string;
 } {
-  if (!result || typeof result !== "object") {
-    return {};
+  const pageUrl = findStringByPredicate(result, (value) =>
+    /^https:\/\/www\.notion\.so\//i.test(value),
+  );
+  const pageId = findStringByPredicate(result, (value) =>
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+      value,
+    ),
+  );
+  if (pageUrl || pageId) {
+    return { pageUrl, pageId };
   }
 
-  const text = JSON.stringify(result);
+  const text = JSON.stringify(result ?? "");
   const notionUrl = text.match(/https:\/\/www\.notion\.so\/[^\s"']+/)?.[0];
-  const pageId = text.match(
+  const fallbackPageId = text.match(
     /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i,
   )?.[0];
   return {
     pageUrl: notionUrl,
-    pageId,
+    pageId: fallbackPageId,
   };
+}
+
+function findStringByPredicate(
+  value: unknown,
+  predicate: (candidate: string) => boolean,
+): string | undefined {
+  if (typeof value === "string") {
+    return predicate(value) ? value : undefined;
+  }
+
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const found = findStringByPredicate(item, predicate);
+      if (found) {
+        return found;
+      }
+    }
+    return undefined;
+  }
+
+  if (!value || typeof value !== "object") {
+    return undefined;
+  }
+
+  for (const child of Object.values(value as Record<string, unknown>)) {
+    const found = findStringByPredicate(child, predicate);
+    if (found) {
+      return found;
+    }
+  }
+
+  return undefined;
+}
+
+function summarizeResultShape(value: unknown): string {
+  if (Array.isArray(value)) {
+    return `array(${value.length})`;
+  }
+  if (!value || typeof value !== "object") {
+    return typeof value;
+  }
+
+  return Object.keys(value as Record<string, unknown>)
+    .slice(0, 12)
+    .join(",");
 }

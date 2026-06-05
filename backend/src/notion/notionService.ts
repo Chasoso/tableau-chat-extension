@@ -1,4 +1,4 @@
-import { getConfig } from "../config";
+﻿import { getConfig } from "../config";
 import { logDebug } from "../logging";
 import {
   getDefaultNotionConnectionId,
@@ -107,9 +107,17 @@ export class NotionService {
       userIdPresent: Boolean(userId),
       hasTargetParentPageId: Boolean(targetParentPageId),
       hasTargetDatabaseId: Boolean(targetDatabaseId),
+      draftKind: payload.draftKind ?? "post_idea",
     });
 
-    const markdownBody = buildPostIdeaMarkdown(payload);
+    const markdownBody = buildNotionMarkdown(payload);
+    logDebug("notion.create_post_idea.markdown_built", {
+      draftKind: payload.draftKind ?? "post_idea",
+      markdownLength: markdownBody.length,
+      summaryLength: payload.summary?.length ?? 0,
+      analysisBodyLength: payload.analysisBody?.length ?? 0,
+    });
+
     let created;
     try {
       try {
@@ -156,6 +164,7 @@ export class NotionService {
     logDebug("notion.create_post_idea.completed", {
       userIdPresent: Boolean(userId),
       hasPageUrl: Boolean(created.pageUrl),
+      draftKind: payload.draftKind ?? "post_idea",
     });
     return {
       ok: true,
@@ -168,6 +177,16 @@ export class NotionService {
 function isInvalidTokenError(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error);
   return /invalid_token|Invalid access token|401|unauthorized/i.test(message);
+}
+
+export function buildNotionMarkdown(
+  payload: CreateNotionPostIdeaRequest,
+): string {
+  if ((payload.draftKind ?? "post_idea") === "analysis_memo") {
+    return buildAnalysisMemoMarkdown(payload);
+  }
+
+  return buildPostIdeaMarkdown(payload);
 }
 
 function buildPostIdeaMarkdown(payload: CreateNotionPostIdeaRequest): string {
@@ -197,6 +216,84 @@ function buildPostIdeaMarkdown(payload: CreateNotionPostIdeaRequest): string {
     "## Tags",
     tags,
   ].join("\n");
+}
+
+function buildAnalysisMemoMarkdown(
+  payload: CreateNotionPostIdeaRequest,
+): string {
+  const lines: string[] = [`# ${payload.title}`, ""];
+
+  if (payload.reason?.trim()) {
+    lines.push("## 概要", payload.reason.trim(), "");
+  }
+
+  if (payload.summary?.trim()) {
+    lines.push("## 保存内容の要約", payload.summary.trim(), "");
+  }
+
+  if (payload.analysisBody?.trim()) {
+    lines.push("## 分析結果", payload.analysisBody.trim(), "");
+  }
+
+  if (payload.rankingItems?.length) {
+    lines.push("## ランキング");
+    for (const item of payload.rankingItems) {
+      const valueText =
+        item.value === undefined || item.value === null || item.value === ""
+          ? ""
+          : `: ${item.value}`;
+      lines.push(`- ${item.label}${valueText}`);
+    }
+    lines.push("");
+  }
+
+  if (payload.datasourceName?.trim()) {
+    lines.push("## 対象データソース", payload.datasourceName.trim(), "");
+  }
+
+  if (payload.periodLabel?.trim()) {
+    lines.push("## 対象期間", payload.periodLabel.trim(), "");
+  }
+
+  if (hasMetricSummaryValues(payload.metricSummary)) {
+    lines.push("## 補足指標");
+    if (payload.metricSummary?.impressions !== undefined) {
+      lines.push(`- Impressions: ${payload.metricSummary.impressions}`);
+    }
+    if (payload.metricSummary?.engagementRate !== undefined) {
+      lines.push(`- Engagement Rate: ${payload.metricSummary.engagementRate}`);
+    }
+    if (payload.metricSummary?.bookmarkRate !== undefined) {
+      lines.push(`- Bookmark Rate: ${payload.metricSummary.bookmarkRate}`);
+    }
+    if (payload.metricSummary?.profileVisitRate !== undefined) {
+      lines.push(
+        `- Profile Visit Rate: ${payload.metricSummary.profileVisitRate}`,
+      );
+    }
+    lines.push("");
+  }
+
+  if (payload.source?.trim()) {
+    lines.push("## Source", payload.source.trim(), "");
+  }
+
+  const tags =
+    payload.tags?.filter(Boolean).join(", ") || "Tableau, MCP, Analysis Memo";
+  lines.push("## Tags", tags);
+
+  return lines.join("\n");
+}
+
+function hasMetricSummaryValues(
+  value: CreateNotionPostIdeaRequest["metricSummary"],
+): boolean {
+  return Boolean(
+    value &&
+    Object.values(value).some(
+      (metricValue) => metricValue !== undefined && metricValue !== null,
+    ),
+  );
 }
 
 export function resolveNotionUserId(
