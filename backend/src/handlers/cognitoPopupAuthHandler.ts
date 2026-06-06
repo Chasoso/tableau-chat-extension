@@ -1,4 +1,4 @@
-import { CognitoPopupAuthService } from "../auth/cognitoPopupAuthService";
+﻿import { CognitoPopupAuthService } from "../auth/cognitoPopupAuthService";
 import { getConfig } from "../config";
 import { logInfo, logWarn, safeErrorDetails, safeHash } from "../logging";
 import type { ApiGatewayProxyEvent, ApiGatewayProxyResult } from "../types/api";
@@ -26,7 +26,7 @@ export async function handleCognitoPopupAuthRoute(
     if (path === "/auth/cognito/callback" && method === "GET") {
       const code = event.queryStringParameters?.code;
       const state = event.queryStringParameters?.state;
-      const { redirectAfter } = await service.handlePopupCallback({
+      await service.handlePopupCallback({
         code,
         state,
       });
@@ -34,7 +34,6 @@ export async function handleCognitoPopupAuthRoute(
         200,
         renderPopupCallbackHtml({
           success: true,
-          redirectAfter,
         }),
       );
     }
@@ -58,7 +57,7 @@ export async function handleCognitoPopupAuthRoute(
         renderPopupCallbackHtml({
           success: false,
           message:
-            "サインインの完了処理に失敗しました。このウィンドウを閉じて、もう一度お試しください。",
+            "サインインの完了に失敗しました。このウィンドウを閉じて、もう一度お試しください。",
         }),
       );
     }
@@ -128,7 +127,6 @@ function htmlResponse(statusCode: number, html: string): ApiGatewayProxyResult {
 
 function renderPopupCallbackHtml(input: {
   success: boolean;
-  redirectAfter?: string;
   message?: string;
 }): string {
   const message = input.message
@@ -136,9 +134,6 @@ function renderPopupCallbackHtml(input: {
     : input.success
       ? "サインインが完了しました。このウィンドウはまもなく閉じます。"
       : "サインインに失敗しました。このウィンドウを閉じて、もう一度お試しください。";
-  const redirectAfter = input.redirectAfter
-    ? escapeHtml(input.redirectAfter)
-    : "/";
 
   return `<!doctype html>
 <html lang="ja">
@@ -147,10 +142,11 @@ function renderPopupCallbackHtml(input: {
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Tableau Assistant</title>
     <style>
-      body { font-family: sans-serif; background: #f6f7f9; color: #1f2937; display:flex; min-height:100vh; align-items:center; justify-content:center; margin:0; }
-      .card { background:#fff; border:1px solid #d5d9e0; border-radius:16px; padding:24px; width:min(420px, 92vw); box-shadow:0 16px 36px rgba(15, 23, 42, 0.12); text-align:center; }
-      h1 { margin:0 0 12px; font-size:28px; }
-      p { margin:0; line-height:1.7; }
+      body { font-family: "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont, sans-serif; background: #f6f7f9; color: #1f2937; display:flex; min-height:100vh; align-items:center; justify-content:center; margin:0; padding:16px; box-sizing:border-box; }
+      .card { background:#fff; border:1px solid #d5d9e0; border-radius:14px; padding:20px 22px; width:min(380px, 92vw); box-shadow:0 14px 32px rgba(15, 23, 42, 0.12); text-align:center; }
+      h1 { margin:0 0 10px; font-size:18px; font-weight:700; line-height:1.4; color:#0f172a; }
+      p { margin:0; font-size:14px; line-height:1.7; color:#334155; }
+      .helper { margin-top:10px; font-size:12px; color:#6b7280; }
       a { color:#0f172a; }
     </style>
   </head>
@@ -158,8 +154,7 @@ function renderPopupCallbackHtml(input: {
     <section class="card">
       <h1>Tableau Assistant</h1>
       <p>${message}</p>
-      <p style="margin-top:12px;font-size:13px;color:#6b7280;">閉じない場合は、このウィンドウを手動で閉じて元の画面に戻ってください。</p>
-      <p style="margin-top:8px;font-size:12px;color:#94a3b8;">redirectAfter: ${redirectAfter}</p>
+      <p class="helper">閉じない場合は、このウィンドウを手動で閉じて元の画面に戻ってください。</p>
     </section>
     <script>
       window.setTimeout(function () {
