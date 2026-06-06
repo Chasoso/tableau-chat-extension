@@ -186,6 +186,7 @@ export type QueryDatasourceInsight = {
   dimensionField?: string;
   metricField: string;
   rowCount: number;
+  actualRowCount: number;
   rows: QueryDatasourceInsightRow[];
   requestedMetricIntent?: QuestionMetricIntent;
   requestedTopN?: number;
@@ -193,6 +194,9 @@ export type QueryDatasourceInsight = {
   requestedPeriodStart?: string;
   requestedPeriodEnd?: string;
   sourceQuestion?: string;
+  fulfillsMetricRequest?: boolean;
+  fulfillsRankingRequest?: boolean;
+  fulfillsPeriodRequest?: boolean;
 };
 
 export type ResolvedDatasourceRef = {

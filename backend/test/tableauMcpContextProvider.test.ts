@@ -223,6 +223,66 @@ describe("TableauMcpContextProvider extraction helpers", () => {
     );
   });
 
+  it("builds a composite reactions metric when reaction ranking is requested", () => {
+    const interpretation = interpretQuestion({
+      question:
+        "2026年5月のリアクション数が多かったVizをランキング形式でTop10まで教えてください。",
+      dashboardContext: {
+        ...baseInput.dashboardContext,
+        dataSources: [{ name: "Tableau Public Per Day(2025/04-)" }],
+      },
+    });
+
+    const selection = selectAggregateMetricField(
+      [
+        {
+          name: "Daily Favorite Reaction Count",
+          dataType: "INTEGER",
+          role: "MEASURE",
+          source: "datasourceModel",
+        },
+        {
+          name: "Daily Love Reaction Count",
+          dataType: "INTEGER",
+          role: "MEASURE",
+          source: "datasourceModel",
+        },
+        {
+          name: "Daily Insightful Reaction Count",
+          dataType: "INTEGER",
+          role: "MEASURE",
+          source: "datasourceModel",
+        },
+        {
+          name: "Daily View Count",
+          dataType: "INTEGER",
+          role: "MEASURE",
+          source: "datasourceModel",
+        },
+      ],
+      interpretation,
+    );
+
+    expect(selection.fieldName).toBe("Total Reactions");
+    expect(selection.componentFields).toEqual([
+      "Daily Favorite Reaction Count",
+      "Daily Love Reaction Count",
+      "Daily Insightful Reaction Count",
+    ]);
+    expect(selection.fieldSpec).toEqual(
+      expect.objectContaining({
+        fieldCaption: "Total Reactions",
+        fieldAlias: "rank_metric",
+      }),
+    );
+    expect(selection.fieldSpec?.calculation).toContain(
+      "SUM([Daily Favorite Reaction Count])",
+    );
+    expect(selection.fieldSpec?.calculation).toContain(
+      "SUM([Daily Love Reaction Count])",
+    );
+  });
+
   it("attaches stable ranking metadata to extracted query insights", () => {
     const interpretation = interpretQuestion({
       question: "Show the top 10 Viz entries by views for 2026/05.",
@@ -1432,13 +1492,17 @@ describe("TableauMcpContextProvider extraction helpers", () => {
       ],
     );
 
-    expect(insights).toEqual([
+    expect(insights).toMatchObject([
       {
         datasourceName: "Tableau Public Per Day(2025/04-)",
         datasourceLuid: "ds-123",
         dimensionField: "workbook_title",
         metricField: "workbook_favoriteCount",
         rowCount: 2,
+        actualRowCount: 2,
+        fulfillsMetricRequest: true,
+        fulfillsPeriodRequest: true,
+        fulfillsRankingRequest: true,
         rows: [
           { label: "Viz A", value: 120 },
           { label: "Viz B", value: 88 },

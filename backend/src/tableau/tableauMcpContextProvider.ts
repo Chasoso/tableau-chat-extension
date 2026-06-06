@@ -2873,23 +2873,84 @@ export function extractQueryDatasourceInsightsFromRawToolResults(
       );
 
     if (!rows.length) {
+      logDebug("tableau.mcp.query.rows_extracted", {
+        datasourceNameHash: safeHash(datasourceName),
+        datasourceLuidHash: safeHash(datasourceLuid),
+        metricField,
+        dimensionField,
+        requestedTopN: questionInterpretation?.topN,
+        actualRowCount: 0,
+        sampleLabels: [],
+        rejectedReason: "no_rows",
+      });
       continue;
     }
 
+    const fulfillsMetricRequest = Boolean(
+      !questionInterpretation?.metricIntent ||
+      questionInterpretation.metricIntent === "unknown" ||
+      matchesMetricFieldIntent(
+        metricField,
+        questionInterpretation.metricIntent,
+      ),
+    );
     if (
       questionInterpretation?.metricIntent &&
       questionInterpretation.metricIntent !== "unknown" &&
-      !matchesMetricFieldIntent(
-        metricField,
-        questionInterpretation.metricIntent,
-      )
+      !fulfillsMetricRequest
     ) {
+      logDebug("tableau.mcp.query.rows_extracted", {
+        datasourceNameHash: safeHash(datasourceName),
+        datasourceLuidHash: safeHash(datasourceLuid),
+        metricField,
+        dimensionField,
+        requestedTopN: questionInterpretation.topN,
+        actualRowCount: rows.length,
+        sampleLabels: rows.slice(0, 5).map((row) => row.label ?? "(value)"),
+        rejectedReason: "metric_mismatch",
+      });
       continue;
     }
 
     if (rows.every((row) => row.value === null)) {
+      logDebug("tableau.mcp.query.rows_extracted", {
+        datasourceNameHash: safeHash(datasourceName),
+        datasourceLuidHash: safeHash(datasourceLuid),
+        metricField,
+        dimensionField,
+        requestedTopN: questionInterpretation?.topN,
+        actualRowCount: rows.length,
+        sampleLabels: rows.slice(0, 5).map((row) => row.label ?? "(value)"),
+        rejectedReason: "all_values_null",
+      });
       continue;
     }
+
+    const rankingRequested = Boolean(
+      questionInterpretation?.asksForRanking ||
+      (questionInterpretation?.topN ?? 1) > 1,
+    );
+    const fulfillsRankingRequest = rankingRequested
+      ? rows.length >= Math.min(questionInterpretation?.topN ?? 10, 10)
+      : true;
+    const fulfillsPeriodRequest = Boolean(
+      !questionInterpretation?.period ||
+      (questionInterpretation.period.startDate &&
+        questionInterpretation.period.endDate),
+    );
+
+    logDebug("tableau.mcp.query.rows_extracted", {
+      datasourceNameHash: safeHash(datasourceName),
+      datasourceLuidHash: safeHash(datasourceLuid),
+      metricField,
+      dimensionField,
+      requestedTopN: questionInterpretation?.topN,
+      actualRowCount: rows.length,
+      sampleLabels: rows.slice(0, 5).map((row) => row.label ?? "(value)"),
+      fulfillsMetricRequest,
+      fulfillsRankingRequest,
+      fulfillsPeriodRequest,
+    });
 
     insights.push({
       datasourceName,
@@ -2897,6 +2958,7 @@ export function extractQueryDatasourceInsightsFromRawToolResults(
       dimensionField,
       metricField,
       rowCount: rows.length,
+      actualRowCount: rows.length,
       rows: rows.slice(0, 20),
       requestedMetricIntent: questionInterpretation?.metricIntent,
       requestedTopN: questionInterpretation?.topN,
@@ -2904,6 +2966,9 @@ export function extractQueryDatasourceInsightsFromRawToolResults(
       requestedPeriodStart: questionInterpretation?.period?.startDate,
       requestedPeriodEnd: questionInterpretation?.period?.endDate,
       sourceQuestion: questionInterpretation?.originalQuestion,
+      fulfillsMetricRequest,
+      fulfillsRankingRequest,
+      fulfillsPeriodRequest,
     });
   }
 
@@ -4004,13 +4069,10 @@ function buildAggregateQueryDatasourceArgs(
       fieldAlias: QUERY_DIMENSION_ALIAS,
     });
   }
-  fields.push({
-    fieldCaption: metricField,
-    function: "SUM",
-    fieldAlias: QUERY_METRIC_ALIAS,
-    sortDirection: "DESC",
-    sortPriority: 1,
-  });
+  if (!metricSelection.fieldSpec) {
+    return undefined;
+  }
+  fields.push(metricSelection.fieldSpec);
 
   const filters =
     dateField && period
@@ -4049,6 +4111,7 @@ function buildAggregateQueryDatasourceArgs(
     periodEnd: period?.endDate,
     topN,
     fieldNameCount: fieldNames.length,
+    componentFieldCount: metricSelection.componentFields?.length ?? 0,
     hasFilters: Boolean(filters?.length),
     queryArgsSummary: summarizeQueryDatasourceArgs(queryArgs),
   });
@@ -4056,6 +4119,7 @@ function buildAggregateQueryDatasourceArgs(
     datasourceNameHash: safeHash(datasourceRef.name),
     metricIntent: questionInterpretation.metricIntent,
     selectedMetricField: metricField,
+    componentFields: metricSelection.componentFields,
     candidates: metricSelection.candidates.slice(0, 8),
   });
 
@@ -4105,13 +4169,100 @@ type AggregateMetricCandidate = {
   reasons: string[];
 };
 
+type AggregateMetricSelection = {
+  fieldName?: string;
+  fieldSpec?: Record<string, unknown>;
+  candidates: AggregateMetricCandidate[];
+  componentFields?: string[];
+};
+
 export function selectAggregateMetricField(
   fieldDetails: DatasourceFieldDetail[],
   questionInterpretation: QuestionInterpretation,
-): {
-  fieldName?: string;
-  candidates: AggregateMetricCandidate[];
-} {
+): AggregateMetricSelection {
+  if (questionInterpretation.metricIntent === "reactions") {
+    const componentFields = fieldDetails
+      .filter(
+        (fieldDetail) =>
+          fieldDetail.name.trim().length > 0 &&
+          isNumericFieldDetail(fieldDetail) &&
+          isMeasureFieldDetail(fieldDetail) &&
+          /reaction/i.test(fieldDetail.name),
+      )
+      .map((fieldDetail) => fieldDetail.name);
+    const reactionCandidates = fieldDetails
+      .filter((fieldDetail) => fieldDetail.name.trim().length > 0)
+      .map((fieldDetail) => {
+        const reasons: string[] = [];
+        let score = 0;
+
+        if (/reaction/i.test(fieldDetail.name)) {
+          score += 90;
+          reasons.push("reaction_component_match");
+        }
+        if (isNumericFieldDetail(fieldDetail)) {
+          score += 80;
+          reasons.push("numeric_type");
+        } else {
+          score -= 30;
+          reasons.push("non_numeric_penalty");
+        }
+        if (isMeasureFieldDetail(fieldDetail)) {
+          score += 35;
+          reasons.push("measure_role");
+        }
+        if (
+          /path|url|repo|title|name|description|profile|view/i.test(
+            fieldDetail.name,
+          )
+        ) {
+          score -= 90;
+          reasons.push("non_metric_name_penalty");
+        }
+
+        return {
+          fieldName: fieldDetail.name,
+          dataType: fieldDetail.dataType,
+          role: fieldDetail.role ?? fieldDetail.semanticRole,
+          score,
+          reasons,
+        };
+      })
+      .sort((left, right) => right.score - left.score);
+
+    if (componentFields.length >= 2) {
+      return {
+        fieldName: "Total Reactions",
+        fieldSpec: {
+          fieldCaption: "Total Reactions",
+          calculation: componentFields
+            .map((fieldName) => `SUM([${fieldName.replace(/]/g, "\\]")}])`)
+            .join(" + "),
+          fieldAlias: QUERY_METRIC_ALIAS,
+          sortDirection: "DESC",
+          sortPriority: 1,
+        },
+        candidates: [
+          {
+            fieldName: "Total Reactions",
+            dataType: "NUMBER",
+            role: "MEASURE",
+            score: 999,
+            reasons: ["composite_reaction_metric", ...componentFields],
+          },
+          ...reactionCandidates,
+        ],
+        componentFields,
+      };
+    }
+
+    return {
+      fieldName: undefined,
+      candidates: reactionCandidates,
+      componentFields,
+    };
+  }
+
   const candidates = fieldDetails
     .filter((fieldDetail) => fieldDetail.name.trim().length > 0)
     .map((fieldDetail) => {
@@ -4174,6 +4325,15 @@ export function selectAggregateMetricField(
   const selected = candidates.find((candidate) => candidate.score > 0);
   return {
     fieldName: selected?.fieldName,
+    fieldSpec: selected
+      ? {
+          fieldCaption: selected.fieldName,
+          function: "SUM",
+          fieldAlias: QUERY_METRIC_ALIAS,
+          sortDirection: "DESC",
+          sortPriority: 1,
+        }
+      : undefined,
     candidates,
   };
 }

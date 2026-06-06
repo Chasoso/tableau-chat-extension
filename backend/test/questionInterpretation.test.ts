@@ -24,6 +24,8 @@ const mayViewsTop10Question =
   "2026\u5e745\u6708\u306bView\u6570\u304c\u591a\u304b\u3063\u305fViz\u3092\u30e9\u30f3\u30ad\u30f3\u30b0\u5f62\u5f0f\u3067Top10\u307e\u3067\u6559\u3048\u3066\u304f\u3060\u3055\u3044\u3002";
 const mayViewsRankingOnlyQuestion =
   "2026\u5e745\u6708\u306e\u30d3\u30e5\u30fc\u6570\u30e9\u30f3\u30ad\u30f3\u30b0\u3092\u6559\u3048\u3066";
+const mayViewsTop10OnlyQuestion =
+  "2026\u5e745\u6708\u306eView\u6570\u3092Top10\u307e\u3067\u6559\u3048\u3066\u304f\u3060\u3055\u3044\u3002";
 
 describe("questionInterpretation", () => {
   it("prefers the user-requested month over a datasource literal mention", () => {
@@ -50,6 +52,18 @@ describe("questionInterpretation", () => {
   it("detects explicit TopN and keeps ranking intent in Japanese", () => {
     const interpretation = interpretQuestion({
       question: mayViewsTop10Question,
+      dashboardContext,
+    });
+
+    expect(interpretation.metricIntent).toBe("views");
+    expect(interpretation.asksForRanking).toBe(true);
+    expect(interpretation.topN).toBe(10);
+    expect(interpretation.topNExplicitlyRequested).toBe(true);
+  });
+
+  it("treats an explicit TopN request as a ranking question", () => {
+    const interpretation = interpretQuestion({
+      question: mayViewsTop10OnlyQuestion,
       dashboardContext,
     });
 

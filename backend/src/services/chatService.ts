@@ -508,6 +508,14 @@ export function finalizeUserFacingAnswer(
     return structuredAnswer;
   }
 
+  const noValidatedRankingFallback = buildNoValidatedRankingFallback(
+    request,
+    additionalContext,
+  );
+  if (noValidatedRankingFallback) {
+    return noValidatedRankingFallback;
+  }
+
   const safeDataAnalysisFallback = buildSafeDataAnalysisFallback(
     request,
     additionalContext,
@@ -707,12 +715,15 @@ export function buildStructuredDataAnalysisAnswer(
     interpretation && interpretation.metricIntent !== "unknown"
       ? metricIntentLabel(interpretation.metricIntent)
       : describeMetricField(insight.metricField);
-  const isRankingQuestion =
-    interpretation?.asksForRanking ?? detectRankingIntent(request.question);
+  const isRankingQuestion = isRankingLikeRequest(
+    interpretation,
+    request.question,
+  );
+  const requestedTopN = interpretation?.topN ?? 10;
   const visibleRows = rows.slice(
     0,
     isRankingQuestion
-      ? Math.min(interpretation?.topN ?? 10, rows.length)
+      ? Math.min(requestedTopN, rows.length)
       : Math.min(3, rows.length),
   );
   const intro = isRankingQuestion
@@ -735,6 +746,9 @@ export function buildStructuredDataAnalysisAnswer(
   return [
     `${intro}`,
     `このダッシュボードで参照しているデータソース「${insight.datasourceName}」から集計しています。`,
+    ...(isRankingQuestion && rows.length < requestedTopN
+      ? [`取得できたランキング件数は ${rows.length} 件です。`]
+      : []),
     "",
     body,
   ].join("\n");
@@ -787,6 +801,67 @@ function buildSafeDataAnalysisFallback(
   ].join("\n");
 }
 
+function buildNoValidatedRankingFallback(
+  request: ChatRequest,
+  additionalContext: Awaited<
+    ReturnType<TableauContextProvider["getAdditionalContext"]>
+  >,
+): string | undefined {
+  if (additionalContext.mcpExecutionDebug?.intent !== "data_analysis") {
+    return undefined;
+  }
+
+  const interpretation = additionalContext.questionInterpretation;
+  const rankingRequested = isRankingLikeRequest(
+    interpretation,
+    request.question,
+  );
+  if (!rankingRequested) {
+    return undefined;
+  }
+
+  const hasValidatedInsight = Boolean(
+    selectBestQueryInsight(
+      additionalContext.queryInsights ?? [],
+      interpretation,
+      request.question,
+    ),
+  );
+  if (hasValidatedInsight) {
+    return undefined;
+  }
+
+  const queryExecuted = hasSuccessfulDatasourceQuery(additionalContext);
+  const datasourceNames =
+    additionalContext.normalizedContext?.datasources
+      ?.map((datasource) => datasource.name)
+      .filter(Boolean) ??
+    request.dashboardContext.dataSources
+      ?.map((datasource) => datasource.name)
+      .filter(Boolean) ??
+    [];
+  const datasourceText = datasourceNames.length
+    ? datasourceNames.join("、")
+    : "対象データソース";
+  const periodLabel = interpretation?.period?.label;
+  const metricLabel =
+    interpretation && interpretation.metricIntent !== "unknown"
+      ? metricIntentLabel(interpretation.metricIntent)
+      : "指標";
+
+  return queryExecuted
+    ? [
+        `${periodLabel ? `${periodLabel}の` : ""}${metricLabel}ランキングを安全に確定できませんでした。`,
+        `データソース「${datasourceText}」への集計クエリは実行しましたが、返却結果が要求した指標・件数と一致していることを確認できませんでした。`,
+        "誤ったランキングを返さないため、結果の提示は保留しています。次は query-datasource の返却行数と列名を確認するのがよいです。",
+      ].join("\n")
+    : [
+        `${periodLabel ? `${periodLabel}の` : ""}${metricLabel}ランキングをまだ確定できませんでした。`,
+        `データソース「${datasourceText}」に対して、要求した指標に一致する集計クエリまで到達できていません。`,
+        "誤ったランキング表を返さないため、結果の提示は保留しています。次は要求した指標に対応する集計フィールドを確認するのがよいです。",
+      ].join("\n");
+}
+
 function describeMetricField(fieldName: string): string {
   const normalized = fieldName.toLowerCase();
   if (/favorite|favourite/.test(normalized)) {
@@ -820,45 +895,83 @@ function selectBestQueryInsight(
   const candidates = insights
     .map((insight, index) => ({
       insight,
-      score: scoreQueryInsight(insight, interpretation, question, index),
+      evaluation: evaluateQueryInsight(
+        insight,
+        interpretation,
+        question,
+        index,
+      ),
       index,
     }))
     .filter((candidate) => candidate.insight.rows.length > 0)
     .sort((left, right) => {
-      if (right.score !== left.score) {
-        return right.score - left.score;
+      if (right.evaluation.score !== left.evaluation.score) {
+        return right.evaluation.score - left.evaluation.score;
       }
       return right.index - left.index;
     });
 
-  return candidates[0] && candidates[0].score > 0
-    ? candidates[0].insight
-    : undefined;
+  const selected =
+    candidates[0] && candidates[0].evaluation.score > 0
+      ? candidates[0]
+      : undefined;
+  logDebug("chat.query_insight.selected", {
+    selectedMetricField: selected?.insight.metricField,
+    selectedDatasourceName: selected?.insight.datasourceName,
+    selectedRowCount: selected?.insight.rows.length,
+    selectedScore: selected?.evaluation.score,
+    selectedReasons: selected?.evaluation.reasons,
+    candidateCount: candidates.length,
+  });
+  if (candidates.length) {
+    logDebug("chat.query_insight.rejected", {
+      rejected: candidates
+        .filter((candidate) => candidate !== selected)
+        .slice(0, 5)
+        .map((candidate) => ({
+          metricField: candidate.insight.metricField,
+          datasourceName: candidate.insight.datasourceName,
+          rowCount: candidate.insight.rows.length,
+          score: candidate.evaluation.score,
+          reasons: candidate.evaluation.reasons,
+        })),
+    });
+  }
+
+  return selected?.insight;
 }
 
-function scoreQueryInsight(
+function evaluateQueryInsight(
   insight: QueryDatasourceInsight,
   interpretation: QuestionInterpretation | undefined,
   question: string,
   index: number,
-): number {
+): { score: number; reasons: string[] } {
   let score = index;
+  const reasons: string[] = ["later_pass_preference"];
 
   if (insight.rows.length > 0) {
     score += 10;
+    reasons.push("has_rows");
   }
 
-  const rankingRequested =
-    interpretation?.asksForRanking ?? detectRankingIntent(question);
+  const rankingRequested = isRankingLikeRequest(interpretation, question);
   if (rankingRequested) {
     score += 20;
+    reasons.push("ranking_requested");
     if (insight.rows.length > 1) {
       score += 30;
+      reasons.push("multiple_rows");
     }
-    if ((insight.requestedTopN ?? 0) > 1) {
+    if ((insight.requestedTopN ?? 0) > 1 || (interpretation?.topN ?? 1) > 1) {
       score += 25;
+      reasons.push("topn_requested");
     }
     score += Math.min(insight.rows.length, interpretation?.topN ?? 10);
+    if (insight.fulfillsRankingRequest === false) {
+      score -= 90;
+      reasons.push("ranking_request_not_fulfilled");
+    }
   }
 
   if (
@@ -867,12 +980,15 @@ function scoreQueryInsight(
   ) {
     if (insight.requestedMetricIntent === interpretation.metricIntent) {
       score += 120;
+      reasons.push("requested_metric_exact_match");
     } else if (
       matchesMetricFieldIntent(insight.metricField, interpretation.metricIntent)
     ) {
       score += 80;
+      reasons.push("metric_field_name_match");
     } else {
-      score -= 180;
+      score -= 260;
+      reasons.push("metric_mismatch");
     }
   }
 
@@ -882,9 +998,39 @@ function scoreQueryInsight(
     insight.requestedPeriodEnd === interpretation.period.endDate
   ) {
     score += 40;
+    reasons.push("period_exact_match");
+  } else if (interpretation?.period) {
+    score -= 60;
+    reasons.push("period_mismatch");
   }
 
-  return score;
+  if (insight.fulfillsMetricRequest === false) {
+    score -= 200;
+    reasons.push("fulfills_metric_false");
+  }
+
+  if (
+    rankingRequested &&
+    interpretation?.topN &&
+    interpretation.topN > 1 &&
+    insight.rows.length < Math.min(interpretation.topN, 10)
+  ) {
+    score -= 50;
+    reasons.push("insufficient_rows_for_requested_topn");
+  }
+
+  return { score, reasons };
+}
+
+function isRankingLikeRequest(
+  interpretation: QuestionInterpretation | undefined,
+  question: string,
+): boolean {
+  return Boolean(
+    interpretation?.asksForRanking ||
+    (interpretation?.topN ?? 1) > 1 ||
+    detectRankingIntent(question),
+  );
 }
 
 function buildDashboardContextPatch(

@@ -150,6 +150,7 @@ describe("runLightweightAgentLoop", () => {
               datasourceLuid: "ds-123",
               metricField: "workbook_favoriteCount",
               rowCount: 1,
+              actualRowCount: 1,
               rows: [{ label: "Viz A", value: 120 }],
               requestedMetricIntent: "favorites",
               requestedRanking: true,

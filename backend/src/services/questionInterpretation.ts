@@ -136,6 +136,8 @@ export function interpretQuestion(input: {
   );
   const investigationQuestion =
     sanitizedQuestion.trim() || input.question.trim();
+  const explicitTopN =
+    readExplicitTopN(input.question) ?? readExplicitTopN(investigationQuestion);
   const period =
     parseQuestionPeriod(investigationQuestion, {
       referenceDate: input.dashboardContext.capturedAt,
@@ -149,9 +151,8 @@ export function interpretQuestion(input: {
   );
   const asksForRanking =
     detectRankingIntent(input.question) ||
-    detectRankingIntent(investigationQuestion);
-  const explicitTopN =
-    readExplicitTopN(input.question) ?? readExplicitTopN(investigationQuestion);
+    detectRankingIntent(investigationQuestion) ||
+    typeof explicitTopN === "number";
   const topN = inferRequestedTopN(explicitTopN, asksForRanking);
   const groupingIntent = chooseKnownGroupingIntent(
     detectGroupingIntent(input.question),
