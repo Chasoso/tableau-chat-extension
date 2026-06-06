@@ -1669,6 +1669,7 @@ describe("TableauMcpContextProvider extraction helpers", () => {
         originalQuestion: "2026年4月のView数ランキング",
         investigationQuestion: "2026年4月のView数ランキング",
         datasourceMentions: [],
+        requestType: "general",
         metricIntent: "views",
         asksForRanking: true,
         topN: 10,

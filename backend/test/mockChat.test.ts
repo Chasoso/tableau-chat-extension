@@ -857,4 +857,80 @@ describe("ChatService with mock provider", () => {
       0,
     );
   });
+
+  it("answers datasource inventory questions from dashboard context without invoking the answer generator", async () => {
+    const repository = new InMemoryChatHistoryRepository();
+    const answerGenerator: AnswerGenerator = {
+      name: "mock",
+      async generate() {
+        throw new Error("Answer generator should not be called for fast path");
+      },
+    };
+    const service = new ChatService(
+      new MockTableauContextProvider(),
+      answerGenerator,
+      repository,
+    );
+
+    const response = await service.generateAnswer({
+      question: "使われているデータソースを教えてください",
+      dashboardContext: {
+        dashboardName: "Mock Dashboard",
+        workbookName: "Mock Workbook",
+        worksheets: [{ name: "Sheet 1" }],
+        filters: [],
+        parameters: [],
+        dataSources: [{ name: "Mock Datasource" }],
+        capturedAt: new Date().toISOString(),
+      },
+      clientContext: {
+        source: "tableau-extension",
+      },
+    });
+
+    expect(response.answer).toContain("Mock Datasource");
+    expect(repository.getAll()).toHaveLength(1);
+  });
+
+  it("skips bedrock answer generation when remaining execution time is too low", async () => {
+    const repository = new InMemoryChatHistoryRepository();
+    const answerGenerator: AnswerGenerator = {
+      name: "bedrock",
+      async generate() {
+        throw new Error(
+          "Bedrock answer generation should not run near timeout",
+        );
+      },
+    };
+    const service = new ChatService(
+      new MockTableauContextProvider(),
+      answerGenerator,
+      repository,
+    );
+
+    const response = await service.generateAnswer(
+      {
+        question: "このダッシュボードを要約してください",
+        dashboardContext: {
+          dashboardName: "Mock Dashboard",
+          workbookName: "Mock Workbook",
+          worksheets: [{ name: "Sheet 1" }],
+          filters: [],
+          parameters: [],
+          dataSources: [{ name: "Mock Datasource" }],
+          capturedAt: new Date().toISOString(),
+        },
+        clientContext: {
+          source: "tableau-extension",
+        },
+      },
+      undefined,
+      {
+        getRemainingTimeInMillis: () => 7_500,
+      },
+    );
+
+    expect(response.answer).toContain("Mock Dashboard");
+    expect(response.answer).toContain("Mock Datasource");
+  });
 });

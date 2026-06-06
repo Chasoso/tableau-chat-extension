@@ -19,3 +19,7 @@ export type ApiGatewayProxyResult = {
   headers: Record<string, string>;
   body: string;
 };
+
+export type LambdaExecutionContext = {
+  getRemainingTimeInMillis?: () => number;
+};

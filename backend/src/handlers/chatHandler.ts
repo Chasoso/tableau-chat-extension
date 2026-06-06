@@ -8,13 +8,18 @@ import {
   safeHash,
 } from "../logging";
 import { createChatService } from "../services/chatService";
-import type { ApiGatewayProxyEvent, ApiGatewayProxyResult } from "../types/api";
+import type {
+  ApiGatewayProxyEvent,
+  ApiGatewayProxyResult,
+  LambdaExecutionContext,
+} from "../types/api";
 import type { ChatRequest, ContextRequest } from "../types/chat";
 import { handleNotionRoute } from "./notionHandler";
 import { handleCognitoPopupAuthRoute } from "./cognitoPopupAuthHandler";
 
 export async function handler(
   event: ApiGatewayProxyEvent,
+  context?: LambdaExecutionContext,
 ): Promise<ApiGatewayProxyResult> {
   const requestId = event.requestContext?.requestId;
   const method = event.httpMethod ?? event.requestContext?.http?.method;
@@ -90,6 +95,9 @@ export async function handler(
     const response = await createChatService().generateAnswer(
       chatRequest,
       authResult.user,
+      {
+        getRemainingTimeInMillis: context?.getRemainingTimeInMillis,
+      },
     );
     logInfo("chat.request.completed", {
       requestId,

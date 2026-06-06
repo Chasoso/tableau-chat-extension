@@ -375,43 +375,169 @@ export function classifyQuestionIntent(
   dashboardContext: DashboardContext,
   allowedToolNames: string[] = [],
 ): ClassifiedQuestionIntent {
-  const normalizedQuestion = question.toLowerCase();
-  const hasQuestionMark = /[?？]/.test(question);
-  const hasHowToKeywords =
-    /how to|how do i|steps|procedure|使い方|やり方|方法|手順/.test(
-      normalizedQuestion,
-    );
-  const hasFilterKeywords =
-    /filter|filtered|selection|selected mark|parameter|where|slice|drill|フィルタ|絞り込み|パラメータ/.test(
-      normalizedQuestion,
-    );
-  const hasMetadataKeywords =
-    /field|schema|column|metric definition|datasource|data source|metadata|workbook id|view id|フィールド|列|メタデータ|データソース/.test(
-      normalizedQuestion,
-    );
-  const hasAnalysisKeywords =
-    /sum|average|avg|count|countd|rank|ranking|top|bottom|trend|month|week|day|compare|increase|decrease|growth|集計|ランキング|推移|増加|減少|比較/.test(
-      normalizedQuestion,
-    );
-  const hasStrongAnalysisKeywords =
-    /query|aggregate|max|min|highest|lowest|most|least|top|bottom|rank|ranking|compare|sum|average|avg|count|countd|trend|increase|decrease|growth|クエリ|集計|最大|最小|最も|最多|ランキング|比較|推移|増加|減少/.test(
-      normalizedQuestion,
-    );
-  const hasContentSearchKeywords =
-    /search|find|locate|where is|which workbook|which view|content|asset|探す|検索|どこ/.test(
-      normalizedQuestion,
-    );
-  const hasDashboardExplanationKeywords =
-    /what is this dashboard|describe this dashboard|overview|summary|このダッシュボード|概要|要約|説明/.test(
-      normalizedQuestion,
-    );
+  const normalizedQuestion = question
+    .normalize("NFKC")
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .trim();
+  const hasQuestionMark = /[?\uFF1F]/u.test(question);
+  const containsAny = (keywords: string[]): boolean =>
+    keywords.some((keyword) => normalizedQuestion.includes(keyword));
+  const hasHowToKeywords = containsAny([
+    "how to",
+    "how do i",
+    "steps",
+    "procedure",
+    "\u4f7f\u3044\u65b9",
+    "\u3084\u308a\u65b9",
+    "\u65b9\u6cd5",
+    "\u624b\u9806",
+  ]);
+  const hasFilterKeywords = containsAny([
+    "filter",
+    "filtered",
+    "selection",
+    "selected mark",
+    "parameter",
+    "where",
+    "slice",
+    "drill",
+    "\u30d5\u30a3\u30eb\u30bf",
+    "\u7d5e\u308a\u8fbc\u307f",
+    "\u30d1\u30e9\u30e1\u30fc\u30bf",
+  ]);
+  const hasMetadataKeywords = containsAny([
+    "field",
+    "schema",
+    "column",
+    "metric definition",
+    "datasource",
+    "data source",
+    "metadata",
+    "workbook id",
+    "view id",
+    "\u30d5\u30a3\u30fc\u30eb\u30c9",
+    "\u30b9\u30ad\u30fc\u30de",
+    "\u30e1\u30bf\u30c7\u30fc\u30bf",
+    "\u30c7\u30fc\u30bf\u30bd\u30fc\u30b9",
+  ]);
+  const hasAnalysisKeywords = containsAny([
+    "sum",
+    "average",
+    "avg",
+    "count",
+    "countd",
+    "rank",
+    "ranking",
+    "top",
+    "bottom",
+    "trend",
+    "month",
+    "week",
+    "day",
+    "compare",
+    "increase",
+    "decrease",
+    "growth",
+    "\u30e9\u30f3\u30ad\u30f3\u30b0",
+    "\u63a8\u79fb",
+    "\u96c6\u8a08",
+    "\u6bd4\u8f03",
+    "\u5897\u52a0",
+    "\u6e1b\u5c11",
+    "\u6210\u9577",
+  ]);
+  const hasStrongAnalysisKeywords = containsAny([
+    "query",
+    "aggregate",
+    "max",
+    "min",
+    "highest",
+    "lowest",
+    "most",
+    "least",
+    "top",
+    "bottom",
+    "rank",
+    "ranking",
+    "compare",
+    "sum",
+    "average",
+    "avg",
+    "count",
+    "countd",
+    "trend",
+    "increase",
+    "decrease",
+    "growth",
+    "\u30af\u30a8\u30ea",
+    "\u96c6\u8a08",
+    "\u6700\u5927",
+    "\u6700\u5c0f",
+    "\u6700\u591a",
+    "\u6700\u3082",
+    "\u6bd4\u8f03",
+  ]);
+  const hasContentSearchKeywords = containsAny([
+    "search",
+    "find",
+    "locate",
+    "where is",
+    "which workbook",
+    "which view",
+    "content",
+    "asset",
+    "\u691c\u7d22",
+    "\u63a2\u3057\u3066",
+    "\u3069\u3053",
+  ]);
+  const hasDashboardExplanationKeywords = containsAny([
+    "what is this dashboard",
+    "describe this dashboard",
+    "overview",
+    "summary",
+    "\u3053\u306e\u30c0\u30c3\u30b7\u30e5\u30dc\u30fc\u30c9",
+    "\u6982\u8981",
+    "\u8981\u7d04",
+  ]);
+  const asksForDatasourceInventory =
+    containsAny([
+      "\u4f7f\u308f\u308c\u3066\u3044\u308b\u30c7\u30fc\u30bf\u30bd\u30fc\u30b9",
+      "\u4f7f\u7528\u3057\u3066\u3044\u308b\u30c7\u30fc\u30bf\u30bd\u30fc\u30b9",
+      "\u30c7\u30fc\u30bf\u30bd\u30fc\u30b9\u3092\u6559\u3048\u3066",
+      "which datasource",
+      "which data source",
+      "used datasource",
+      "data source used",
+    ]) &&
+    !containsAny([
+      "field",
+      "schema",
+      "column",
+      "metadata",
+      "\u30d5\u30a3\u30fc\u30eb\u30c9",
+      "\u30b9\u30ad\u30fc\u30de",
+      "\u30e1\u30bf\u30c7\u30fc\u30bf",
+    ]);
 
   const knownDatasourceMentioned =
     dashboardContext.dataSources?.some((dataSource) =>
-      normalizedQuestion.includes(dataSource.name.toLowerCase()),
+      normalizedQuestion.includes(
+        dataSource.name.normalize("NFKC").toLowerCase(),
+      ),
     ) ?? false;
-  const hasRelativePeriodKeywords =
-    /直近|過去|今週|先週|今月|先月|今年|昨年|去年/.test(normalizedQuestion);
+  const hasRelativePeriodKeywords = containsAny([
+    "\u5148\u9031",
+    "\u4eca\u9031",
+    "\u5148\u6708",
+    "\u4eca\u6708",
+    "\u6628\u5e74",
+    "\u4eca\u5e74",
+    "\u904e\u53bb",
+    "month",
+    "week",
+    "day",
+  ]);
   const hasSearchTool = allowedToolNames.includes("search-content");
   const hasQueryTool = allowedToolNames.includes("query-datasource");
   const clueCount =
@@ -423,6 +549,19 @@ export function classifyQuestionIntent(
     Number(hasContentSearchKeywords) +
     Number(hasDashboardExplanationKeywords) +
     Number(knownDatasourceMentioned);
+
+  if (asksForDatasourceInventory) {
+    const policy = QUESTION_INTENT_POLICY.dashboard_explanation;
+    return {
+      intent: "dashboard_explanation",
+      confidence: 0.92,
+      reasonBrief:
+        "The question asks for the datasources used by the active dashboard, which can usually be answered from dashboard context without running deep analysis.",
+      answerableFromDashboardContext: policy.answerableFromDashboardContext,
+      needsMcp: false,
+      maxToolCalls: 0,
+    };
+  }
 
   if (hasRelativePeriodKeywords && hasQueryTool) {
     const policy = QUESTION_INTENT_POLICY.data_analysis;
@@ -511,7 +650,6 @@ export function classifyQuestionIntent(
     maxToolCalls: policy.maxToolCalls,
   };
 }
-
 export function parseToolPlanResponse(
   text: string,
   fallbackIntent?: ClassifiedQuestionIntent,

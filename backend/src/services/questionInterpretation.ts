@@ -4,6 +4,7 @@ import type {
   QuestionGroupingIntent,
   QuestionInterpretation,
   QuestionMetricIntent,
+  QuestionRequestType,
 } from "../types/tableau";
 
 const WHITESPACE_PATTERN = /\s+/g;
@@ -19,6 +20,11 @@ const JAPANESE_AUTHOR = "\u8457\u8005";
 const JAPANESE_POSTER = "\u6295\u7a3f\u8005";
 const JAPANESE_USER = "\u30e6\u30fc\u30b6\u30fc";
 const JAPANESE_DATASOURCE = "\u30c7\u30fc\u30bf\u30bd\u30fc\u30b9";
+const JAPANESE_FIELDS = "\u30d5\u30a3\u30fc\u30eb\u30c9";
+const JAPANESE_LIST = "\u4e00\u89a7";
+const JAPANESE_TELL_ME = "\u6559\u3048\u3066";
+const JAPANESE_WHAT = "\u4f55";
+const JAPANESE_WHICH = "\u3069\u306e";
 const JAPANESE_VIEW = "\u30d3\u30e5\u30fc";
 const JAPANESE_VIEW_COUNT = "\u30d3\u30e5\u30fc\u6570";
 const JAPANESE_BROWSE = "\u95b2\u89a7";
@@ -158,12 +164,19 @@ export function interpretQuestion(input: {
     detectGroupingIntent(input.question),
     detectGroupingIntent(investigationQuestion),
   );
+  const requestType = detectQuestionRequestType({
+    originalQuestion: input.question,
+    sanitizedQuestion: investigationQuestion,
+    metricIntent,
+    asksForRanking,
+  });
 
   return {
     originalQuestion: input.question,
     investigationQuestion,
     ...(datasourceName ? { datasourceName } : {}),
     datasourceMentions,
+    requestType,
     metricIntent,
     asksForRanking,
     topN,
@@ -354,4 +367,65 @@ function chooseKnownGroupingIntent(
   ...candidates: QuestionGroupingIntent[]
 ): QuestionGroupingIntent {
   return candidates.find((candidate) => candidate !== "unknown") ?? "unknown";
+}
+
+function detectQuestionRequestType(input: {
+  originalQuestion: string;
+  sanitizedQuestion: string;
+  metricIntent: QuestionMetricIntent;
+  asksForRanking: boolean;
+}): QuestionRequestType {
+  if (input.metricIntent !== "unknown" || input.asksForRanking) {
+    return "general";
+  }
+
+  const normalized = normalizeQuestionForIntent(input.originalQuestion);
+  const sanitized = normalizeQuestionForIntent(input.sanitizedQuestion);
+  const combined = `${normalized} ${sanitized}`;
+
+  const datasourceInventoryKeywords = [
+    JAPANESE_DATASOURCE,
+    JAPANESE_LIST,
+    JAPANESE_TELL_ME,
+    JAPANESE_WHAT,
+    JAPANESE_WHICH,
+    "datasource",
+    "data source",
+    "what datasource",
+    "which datasource",
+    "show datasource",
+    "list datasource",
+  ];
+  const fieldInventoryKeywords = [
+    JAPANESE_FIELDS,
+    "field",
+    "fields",
+    "column",
+    "columns",
+    "schema",
+    "metadata",
+  ];
+
+  const mentionsDatasourceInventory =
+    datasourceInventoryKeywords.some((keyword) =>
+      combined.includes(normalizeQuestionForIntent(keyword)),
+    ) &&
+    !fieldInventoryKeywords.some((keyword) =>
+      combined.includes(normalizeQuestionForIntent(keyword)),
+    );
+
+  if (mentionsDatasourceInventory) {
+    return "datasource_inventory";
+  }
+
+  const mentionsFieldInventory =
+    combined.includes(normalizeQuestionForIntent(JAPANESE_FIELDS)) ||
+    fieldInventoryKeywords.some((keyword) =>
+      combined.includes(normalizeQuestionForIntent(keyword)),
+    );
+  if (mentionsFieldInventory) {
+    return "field_inventory";
+  }
+
+  return "general";
 }

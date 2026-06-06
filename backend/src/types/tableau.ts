@@ -167,11 +167,17 @@ export type QuestionGroupingIntent =
   | "dashboard"
   | "unknown";
 
+export type QuestionRequestType =
+  | "general"
+  | "datasource_inventory"
+  | "field_inventory";
+
 export type QuestionInterpretation = {
   originalQuestion: string;
   investigationQuestion: string;
   datasourceName?: string;
   datasourceMentions: string[];
+  requestType: QuestionRequestType;
   metricIntent: QuestionMetricIntent;
   asksForRanking: boolean;
   topN: number;

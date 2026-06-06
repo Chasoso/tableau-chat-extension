@@ -229,4 +229,71 @@ describe("runLightweightAgentLoop", () => {
     expect(result.debug?.passCount).toBe(2);
     expect(result.promptContext.evaluationSummary).toContain("sufficient=true");
   });
+
+  it("stops replanning when the second pass adds no meaningful progress", async () => {
+    const inputs: GetAdditionalContextInput[] = [];
+    const contextProvider: TableauContextProvider = {
+      name: "tableau-mcp",
+      async getAdditionalContext(input) {
+        inputs.push(input);
+        return {
+          provider: "tableau-mcp",
+          warnings: ["metadata missing"],
+          mcpExecutionDebug: {
+            intent: "metadata_lookup",
+            intentConfidence: 0.81,
+            answerableFromDashboardContext: false,
+            needsMcp: true,
+            maxToolCalls: 5,
+            plannedTools: ["list-datasources"],
+            blockedTools: ["get-datasource-metadata"],
+            executedTools: ["list-datasources"],
+            skippedTools: [],
+            toolCallCount: 1,
+            replanUsed: true,
+            timingMs: { planning: 1, execution: 2 },
+          },
+        };
+      },
+    };
+    const plan: AgentPlan = {
+      intent: "metadata_lookup",
+      confidence: 0.9,
+      normalizedQuestion: explicitTop10FavoritesQuestion,
+      needsMcp: true,
+      answerStyle: "summary",
+      reasonBrief: "Need metadata before answering safely.",
+      requiredEvidence: ["datasource metadata", "field list"],
+    };
+    const agent: ChatAgent = {
+      name: "stub-agent",
+      shouldRun() {
+        return true;
+      },
+      async createPlan() {
+        return { plan, source: "heuristic" };
+      },
+      async evaluateContext() {
+        return {
+          isSufficient: false,
+          confidence: 0.61,
+          reasonBrief: "Still missing metadata.",
+          missingEvidence: ["datasource metadata"],
+          followUpQuestion: refinedFavoritesFollowUpQuestion,
+        };
+      },
+    };
+
+    const result = await runLightweightAgentLoop({
+      agent,
+      contextProvider,
+      request,
+      recentHistory: [],
+    });
+
+    expect(inputs).toHaveLength(2);
+    expect(result.debug?.fallbackReason).toBe(
+      "agent_no_progress_replan_stopped",
+    );
+  });
 });
