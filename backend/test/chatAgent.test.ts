@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+﻿import { describe, expect, it } from "vitest";
 import {
   runLightweightAgentLoop,
   type ChatAgent,
@@ -10,15 +10,23 @@ import type {
 import type { AgentEvaluation, AgentPlan } from "../src/types/agent";
 import type { ChatRequest } from "../src/types/chat";
 
+const datasourceName = "Tableau Public Per Day(2025/04-)";
+const favoritesRankingQuestion =
+  "2026\u5e745\u6708\u306b\u6700\u3082Favorite\u3092\u96c6\u3081\u305fViz\u3092\u30e9\u30f3\u30ad\u30f3\u30b0\u5f62\u5f0f\u3067\u898b\u305b\u3066\u304f\u3060\u3055\u3044\u3002";
+const explicitTop10FavoritesQuestion =
+  "\u95a2\u9023\u30c7\u30fc\u30bf\u30bd\u30fc\u30b9\u306e\u30e1\u30bf\u30c7\u30fc\u30bf\u3092\u78ba\u8a8d\u3057\u305f\u3046\u3048\u3067Favorite\u6570\u3092\u96c6\u8a08\u3057\u3066\u304f\u3060\u3055\u3044\u3002";
+const refinedFavoritesFollowUpQuestion =
+  "\u95a2\u9023\u30c7\u30fc\u30bf\u30bd\u30fc\u30b9\u306e\u30e1\u30bf\u30c7\u30fc\u30bf\u3068Favorite\u6570\u3092\u78ba\u8a8d\u3057\u30012026\u5e745\u6708\u306eTop10\u3092\u96c6\u8a08\u3057\u3066\u304f\u3060\u3055\u3044\u3002";
+
 const request: ChatRequest = {
-  question: "曖昧な依頼です。人気のVizをいい感じに見せて",
+  question: favoritesRankingQuestion,
   dashboardContext: {
     dashboardName: "Statistics",
     workbookName: "Tableau Public Insights",
     worksheets: [{ name: "Views" }],
     filters: [],
     parameters: [],
-    dataSources: [{ name: "Tableau Public Per Day(2025/04-)" }],
+    dataSources: [{ name: datasourceName }],
     capturedAt: "2026-06-04T00:00:00.000Z",
   },
   clientContext: {
@@ -28,7 +36,7 @@ const request: ChatRequest = {
 };
 
 describe("runLightweightAgentLoop", () => {
-  it("passes the normalized planning question and intent hint to the context provider", async () => {
+  it("passes the original semantic interpretation while keeping the rewritten planning question", async () => {
     const inputs: GetAdditionalContextInput[] = [];
     const contextProvider: TableauContextProvider = {
       name: "tableau-mcp",
@@ -58,7 +66,7 @@ describe("runLightweightAgentLoop", () => {
       intent: "data_analysis",
       confidence: 0.92,
       normalizedQuestion:
-        "2026年のFavorite数をデータソース集計でランキングしてください。",
+        "2026\u5e745\u6708\u306eFavorite\u6570\u304c\u9ad8\u3044Viz\u3092Top10\u307e\u3067\u96c6\u8a08\u3057\u3066\u304f\u3060\u3055\u3044\u3002",
       needsMcp: true,
       answerStyle: "ranking",
       reasonBrief:
@@ -89,7 +97,13 @@ describe("runLightweightAgentLoop", () => {
     expect(inputs[0]?.question).toBe(request.question);
     expect(inputs[0]?.planningQuestion).toBe(plan.normalizedQuestion);
     expect(inputs[0]?.questionInterpretation?.metricIntent).toBe("favorites");
-    expect(inputs[0]?.questionInterpretation?.period?.label).toBe("2026年");
+    expect(inputs[0]?.questionInterpretation?.topN).toBe(10);
+    expect(inputs[0]?.questionInterpretation?.period?.label).toBe(
+      "2026\u5e745\u6708",
+    );
+    expect(inputs[0]?.questionInterpretation?.investigationQuestion).toBe(
+      plan.normalizedQuestion,
+    );
     expect(inputs[0]?.intentHint?.intent).toBe("data_analysis");
     expect(result.promptContext.investigationQuestion).toBe(
       plan.normalizedQuestion,
@@ -97,7 +111,7 @@ describe("runLightweightAgentLoop", () => {
     expect(result.debug?.planSource).toBe("heuristic");
   });
 
-  it("runs a second context pass when evaluation requests a follow-up question and merges results", async () => {
+  it("keeps the original metric intent across follow-up passes and merges results", async () => {
     const inputs: GetAdditionalContextInput[] = [];
     let callCount = 0;
     const contextProvider: TableauContextProvider = {
@@ -132,11 +146,15 @@ describe("runLightweightAgentLoop", () => {
           warnings: [],
           queryInsights: [
             {
-              datasourceName: "Tableau Public Per Day(2025/04-)",
+              datasourceName,
               datasourceLuid: "ds-123",
               metricField: "workbook_favoriteCount",
               rowCount: 1,
+              actualRowCount: 1,
               rows: [{ label: "Viz A", value: 120 }],
+              requestedMetricIntent: "favorites",
+              requestedRanking: true,
+              requestedTopN: 10,
             },
           ],
           mcpExecutionDebug: {
@@ -159,8 +177,7 @@ describe("runLightweightAgentLoop", () => {
     const plan: AgentPlan = {
       intent: "metadata_lookup",
       confidence: 0.9,
-      normalizedQuestion:
-        "まず関連データソースを特定して必要なメタデータを取得してください。",
+      normalizedQuestion: explicitTop10FavoritesQuestion,
       needsMcp: true,
       answerStyle: "summary",
       reasonBrief: "Need metadata before answering safely.",
@@ -172,8 +189,7 @@ describe("runLightweightAgentLoop", () => {
         confidence: 0.72,
         reasonBrief: "Metadata is still missing.",
         missingEvidence: ["datasource metadata"],
-        followUpQuestion:
-          "関連データソースのメタデータを特定したうえでFavorite数を集計してください。",
+        followUpQuestion: refinedFavoritesFollowUpQuestion,
       },
       {
         isSufficient: true,
@@ -203,8 +219,9 @@ describe("runLightweightAgentLoop", () => {
     });
 
     expect(inputs).toHaveLength(2);
-    expect(inputs[1]?.planningQuestion).toContain("Favorite数");
+    expect(inputs[1]?.planningQuestion).toContain("Favorite");
     expect(inputs[1]?.questionInterpretation?.metricIntent).toBe("favorites");
+    expect(inputs[1]?.questionInterpretation?.topN).toBe(10);
     expect(result.additionalContext.queryInsights?.[0]?.rows[0]?.label).toBe(
       "Viz A",
     );

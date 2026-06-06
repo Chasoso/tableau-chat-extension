@@ -3,14 +3,23 @@ import {
   ConverseCommand,
 } from "@aws-sdk/client-bedrock-runtime";
 import { getConfig } from "../config";
-import { logError, logInfo, safeErrorDetails } from "../logging";
+import {
+  logDebug,
+  logError,
+  logInfo,
+  safeErrorDetails,
+  safeHash,
+} from "../logging";
 import type { TableauContextProvider } from "../tableau/contextProvider";
 import {
   classifyQuestionIntent,
   QUESTION_INTENT_POLICY,
   type ClassifiedQuestionIntent,
 } from "./tableauMcpToolPlanner";
-import { interpretQuestion } from "./questionInterpretation";
+import {
+  detectRankingIntent,
+  interpretQuestion,
+} from "./questionInterpretation";
 import type { AuthenticatedUser } from "../types/auth";
 import type {
   AgentEvaluation,
@@ -268,6 +277,20 @@ export async function runLightweightAgentLoop(input: {
   tableauSubject?: string;
 }): Promise<AgentLoopResult> {
   const config = getConfig();
+  const baseQuestionInterpretation = interpretQuestion({
+    question: input.request.question,
+    dashboardContext: input.request.dashboardContext,
+  });
+  logDebug("chat.analysis_request.parsed", {
+    metricIntent: baseQuestionInterpretation.metricIntent,
+    asksForRanking: baseQuestionInterpretation.asksForRanking,
+    topN: baseQuestionInterpretation.topN,
+    groupingIntent: baseQuestionInterpretation.groupingIntent ?? "unknown",
+    periodStart: baseQuestionInterpretation.period?.startDate,
+    periodEnd: baseQuestionInterpretation.period?.endDate,
+    datasourceNameHash: safeHash(baseQuestionInterpretation.datasourceName),
+  });
+
   if (
     !input.agent.shouldRun({
       request: input.request,
@@ -277,10 +300,7 @@ export async function runLightweightAgentLoop(input: {
     const additionalContext = await input.contextProvider.getAdditionalContext({
       dashboardContext: input.request.dashboardContext,
       question: input.request.question,
-      questionInterpretation: interpretQuestion({
-        question: input.request.question,
-        dashboardContext: input.request.dashboardContext,
-      }),
+      questionInterpretation: baseQuestionInterpretation,
       authenticatedUser: input.authenticatedUser,
       tableauSubject: input.tableauSubject,
     });
@@ -309,10 +329,32 @@ export async function runLightweightAgentLoop(input: {
       break;
     }
     attemptedQuestions.add(planningQuestion);
-    const questionInterpretation = interpretQuestion({
+    const planningQuestionInterpretation = interpretQuestion({
       question: planningQuestion,
       dashboardContext: input.request.dashboardContext,
     });
+    const questionInterpretation = {
+      ...baseQuestionInterpretation,
+      datasourceName:
+        baseQuestionInterpretation.datasourceName ??
+        planningQuestionInterpretation.datasourceName,
+      datasourceMentions: baseQuestionInterpretation.datasourceMentions.length
+        ? baseQuestionInterpretation.datasourceMentions
+        : planningQuestionInterpretation.datasourceMentions,
+      investigationQuestion:
+        planningQuestion.trim() ||
+        baseQuestionInterpretation.investigationQuestion,
+    };
+    const driftSummary = summarizeInterpretationDrift(
+      baseQuestionInterpretation,
+      planningQuestionInterpretation,
+    );
+    if (driftSummary) {
+      logDebug("chat.analysis_request.drift_detected", {
+        pass: pass + 1,
+        ...driftSummary,
+      });
+    }
 
     const additionalContext = await input.contextProvider.getAdditionalContext({
       dashboardContext: input.request.dashboardContext,
@@ -394,14 +436,17 @@ function buildHeuristicPlan(request: ChatRequest): AgentPlan {
     request.dashboardContext,
     [],
   );
+  const interpretation = interpretQuestion({
+    question: request.question,
+    dashboardContext: request.dashboardContext,
+  });
+
   return {
     intent: intent.intent,
     confidence: intent.confidence,
     normalizedQuestion: request.question.trim(),
     needsMcp: intent.needsMcp,
-    answerStyle: /ランキング|rank(?:ing)?|top|上位/i.test(request.question)
-      ? "ranking"
-      : "direct",
+    answerStyle: interpretation.asksForRanking ? "ranking" : "direct",
     reasonBrief: intent.reasonBrief,
     requiredEvidence: inferRequiredEvidence(request.question, intent),
   };
@@ -411,11 +456,12 @@ function inferRequiredEvidence(
   question: string,
   intent: ClassifiedQuestionIntent,
 ): string[] {
+  const rankingRequested = detectRankingIntent(question);
   if (intent.intent === "metadata_lookup") {
     return ["datasource metadata", "field list"];
   }
   if (intent.intent === "data_analysis") {
-    return /ランキング|rank(?:ing)?|top|上位/i.test(question)
+    return rankingRequested
       ? ["datasource-backed aggregate ranking", "time filter if specified"]
       : ["datasource-backed aggregate result"];
   }
@@ -738,10 +784,17 @@ export function mergeAdditionalContexts(
       contexts.flatMap((context) => context.datasourceFieldProfiles ?? []),
       (profile) => `${profile.datasourceName}:${profile.fieldNames.join("|")}`,
     ),
-    queryInsights: dedupeByKey(
+    queryInsights: dedupeByKeyPreferLatest(
       contexts.flatMap((context) => context.queryInsights ?? []),
       (insight) =>
-        `${insight.datasourceLuid ?? insight.datasourceName}:${insight.metricField}:${insight.dimensionField ?? ""}`,
+        [
+          insight.datasourceLuid ?? insight.datasourceName,
+          insight.metricField,
+          insight.dimensionField ?? "",
+          insight.requestedPeriodStart ?? "",
+          insight.requestedPeriodEnd ?? "",
+          String(insight.requestedTopN ?? ""),
+        ].join(":"),
     ),
     normalizedContext: mergeNormalizedContexts(contexts),
     ...(questionInterpretation ? { questionInterpretation } : {}),
@@ -852,6 +905,55 @@ function dedupeByKey<T>(items: T[], getKey: (item: T) => string): T[] {
 
 function dedupePrimitive(items: string[]): string[] {
   return [...new Set(items.filter(Boolean))];
+}
+
+function dedupeByKeyPreferLatest<T>(
+  items: T[],
+  getKey: (item: T) => string,
+): T[] {
+  const seen = new Set<string>();
+  const result: T[] = [];
+  for (let index = items.length - 1; index >= 0; index -= 1) {
+    const item = items[index];
+    const key = getKey(item);
+    if (!key || seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    result.push(item);
+  }
+
+  return result.reverse();
+}
+
+function summarizeInterpretationDrift(
+  base: ReturnType<typeof interpretQuestion>,
+  candidate: ReturnType<typeof interpretQuestion>,
+): Record<string, unknown> | undefined {
+  const drift: Record<string, unknown> = {};
+
+  if (base.metricIntent !== candidate.metricIntent) {
+    drift.baseMetricIntent = base.metricIntent;
+    drift.candidateMetricIntent = candidate.metricIntent;
+  }
+  if (base.asksForRanking !== candidate.asksForRanking) {
+    drift.baseAsksForRanking = base.asksForRanking;
+    drift.candidateAsksForRanking = candidate.asksForRanking;
+  }
+  if (base.topN !== candidate.topN) {
+    drift.baseTopN = base.topN;
+    drift.candidateTopN = candidate.topN;
+  }
+  if (base.period?.startDate !== candidate.period?.startDate) {
+    drift.basePeriodStart = base.period?.startDate;
+    drift.candidatePeriodStart = candidate.period?.startDate;
+  }
+  if (base.period?.endDate !== candidate.period?.endDate) {
+    drift.basePeriodEnd = base.period?.endDate;
+    drift.candidatePeriodEnd = candidate.period?.endDate;
+  }
+
+  return Object.keys(drift).length ? drift : undefined;
 }
 
 function hasResolvedMetadata(
