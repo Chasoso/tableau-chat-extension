@@ -330,129 +330,97 @@ button {
   background: #eef1f3;
 }
 
-.job-progress-card {
+.job-progress-inline {
   display: grid;
-  gap: 10px;
+  gap: 8px;
   max-width: 88%;
-  border: 1px solid #d8dde3;
-  border-radius: 14px;
-  padding: 12px 13px;
-  background: linear-gradient(180deg, #f8f9fb 0%, #eef2f5 100%);
+  padding: 0;
+  margin-top: 2px;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
   color: #3c434a;
-  box-shadow: 0 10px 22px rgba(17, 28, 40, 0.05);
 }
 
-.job-progress-card.queued,
-.job-progress-card.running {
-  border-color: #d8dde3;
-}
-
-.job-progress-card.finalizing {
-  border-color: #d7d2ea;
-  background: linear-gradient(180deg, #faf8ff 0%, #f2effa 100%);
-}
-
-.job-progress-card.failed {
-  border-color: #f0c1b8;
-  background: linear-gradient(180deg, #fff7f5 0%, #fff0ec 100%);
-}
-
-.job-progress-header {
+.job-progress-inline-top {
   display: flex;
-  align-items: start;
-  justify-content: space-between;
+  align-items: flex-start;
   gap: 10px;
 }
 
-.job-progress-header h2 {
-  margin: 2px 0 0;
-  color: #222a31;
-  font-size: 15px;
-  line-height: 1.3;
-}
-
-.job-progress-status {
-  margin: 0;
-  color: #68717a;
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.02em;
-  text-transform: uppercase;
-}
-
-.job-progress-pill {
+.job-progress-spinner {
   flex: none;
-  align-self: start;
-  border-radius: 999px;
-  padding: 4px 9px;
-  background: rgba(83, 89, 96, 0.1);
-  color: #465058;
-  font-size: 11px;
-  font-weight: 700;
+  margin-top: 3px;
 }
 
-.job-progress-current {
+.job-progress-inline-copy {
+  display: grid;
+  gap: 4px;
+}
+
+.job-progress-inline-title {
   margin: 0;
   color: #394148;
-  font-size: 13px;
+  font-size: 14px;
+  line-height: 1.35;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.job-progress-inline-current {
+  margin: 0;
+  color: #7a8188;
+  font-size: 12px;
   line-height: 1.45;
 }
 
-.job-progress-error {
+.job-progress-inline-error {
   margin: 0;
   color: #a23526;
   font-size: 12px;
   line-height: 1.5;
 }
 
-.job-progress-list {
+.job-progress-inline-list {
   display: grid;
-  gap: 8px;
-  margin: 0;
+  gap: 3px;
+  margin: 0 0 0 18px;
   padding: 0;
   list-style: none;
+  color: #8b9198;
+  font-size: 12px;
+  line-height: 1.4;
 }
 
-.job-progress-list li {
+.job-progress-inline-list li {
   display: grid;
-  gap: 5px;
-  padding: 8px 10px;
-  border-radius: 10px;
-  background: rgba(255, 255, 255, 0.72);
+  gap: 2px;
+  position: relative;
+  padding-left: 10px;
 }
 
-.job-progress-list-row {
+.job-progress-inline-list li::before {
+  content: "-";
+  position: absolute;
+  left: 0;
+  top: 0;
+  color: #b0b6bb;
+}
+
+.job-progress-inline-list li p {
+  margin: 0;
+}
+
+.job-progress-inline-meta {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.job-progress-stage,
-.job-progress-tool {
-  font-size: 11px;
-  font-weight: 700;
-  color: #66707a;
-}
-
-.job-progress-tool {
-  color: #4d5760;
-}
-
-.job-progress-meta {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.job-progress-meta-item {
-  border-radius: 999px;
-  padding: 3px 7px;
-  background: #eef2f5;
-  color: #5f6871;
+  color: #a1a7ae;
   font-size: 10px;
-  font-weight: 700;
+}
+
+.job-progress-inline-meta span {
+  white-space: nowrap;
 }
 
 .spinner {

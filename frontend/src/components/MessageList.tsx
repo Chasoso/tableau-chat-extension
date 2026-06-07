@@ -31,10 +31,7 @@ export default function MessageList({
   onToggleNotionCompletion,
 }: Props) {
   const progressMessages = job?.progressMessages ?? [];
-  const recentProgressMessages = progressMessages.slice(-5);
-  const latestProgressMessage =
-    recentProgressMessages[recentProgressMessages.length - 1] ??
-    getLastProgressMessage(progressMessages);
+  const recentProgressMessages = progressMessages.slice(-4);
 
   return (
     <div className="message-list" aria-live="polite">
@@ -56,53 +53,30 @@ export default function MessageList({
       ))}
 
       {job ? (
-        <section
-          className={`job-progress-card ${job.status}`}
-          aria-label="分析の進捗"
+        <article
+          className={`message-bubble assistant job-progress-inline ${job.status}`}
+          aria-label="回答を生成中"
         >
-          <div className="job-progress-header">
-            <div>
-              <p className="job-progress-status">
-                {formatStatusLabel(job.status)}
-              </p>
-              <h2>{formatStageLabel(job.stage)}</h2>
+          <div className="job-progress-inline-top">
+            <span className="spinner job-progress-spinner" aria-hidden />
+            <div className="job-progress-inline-copy">
+              <h2 className="job-progress-inline-title">回答を生成中</h2>
             </div>
-            <span className="job-progress-pill">
-              {job.progressMessages.length}件
-            </span>
           </div>
 
-          {latestProgressMessage ? (
-            <p className="job-progress-current">
-              {latestProgressMessage.message}
-            </p>
-          ) : null}
-
           {job.status === "failed" && job.error ? (
-            <p className="job-progress-error">{job.error.message}</p>
+            <p className="job-progress-inline-error">{job.error.message}</p>
           ) : null}
 
           {recentProgressMessages.length ? (
-            <ul className="job-progress-list">
+            <ul className="job-progress-inline-list">
               {recentProgressMessages.map((progressMessage) => (
                 <li key={`${progressMessage.at}-${progressMessage.stage}`}>
-                  <div className="job-progress-list-row">
-                    <span className="job-progress-stage">
-                      {formatStageLabel(progressMessage.stage)}
-                    </span>
-                    {progressMessage.toolName ? (
-                      <span className="job-progress-tool">
-                        ツール: {progressMessage.toolName}
-                      </span>
-                    ) : null}
-                  </div>
                   <p>{progressMessage.message}</p>
                   {formatDebugEntries(progressMessage).length ? (
-                    <div className="job-progress-meta">
+                    <div className="job-progress-inline-meta">
                       {formatDebugEntries(progressMessage).map((entry) => (
-                        <span key={entry} className="job-progress-meta-item">
-                          {entry}
-                        </span>
+                        <span key={entry}>{entry}</span>
                       ))}
                     </div>
                   ) : null}
@@ -110,23 +84,23 @@ export default function MessageList({
               ))}
             </ul>
           ) : null}
-        </section>
+        </article>
       ) : null}
 
       {notionCompletion ? (
-        <section className="notion-completion-row" aria-label="Notion完了">
+        <section className="notion-completion-row" aria-label="Notion保存結果">
           <button
             type="button"
             className="notion-completion-toggle"
             onClick={onToggleNotionCompletion}
             aria-expanded={notionCompletion.expanded}
-            aria-label="Notion完了メッセージを切り替え"
+            aria-label="Notionメッセージを開閉"
           >
             <span
               className={`toggle-icon ${notionCompletion.expanded ? "open" : ""}`}
               aria-hidden
             >
-              ▶
+              ▸
             </span>
             <span>Notionに保存しました</span>
           </button>
@@ -166,50 +140,6 @@ export default function MessageList({
   );
 }
 
-function formatStatusLabel(status: ChatJobDisplayState["status"]): string {
-  switch (status) {
-    case "queued":
-      return "キュー待ち";
-    case "running":
-      return "実行中";
-    case "finalizing":
-      return "最終化中";
-    case "completed":
-      return "完了";
-    case "failed":
-      return "失敗";
-    case "cancel_requested":
-      return "キャンセル要求済み";
-    default:
-      return status;
-  }
-}
-
-function formatStageLabel(stage: ChatJobDisplayState["stage"]): string {
-  switch (stage) {
-    case "queued":
-      return "待機中";
-    case "loading_history":
-      return "履歴を読み込み中";
-    case "loading_dashboard_context":
-      return "ダッシュボード情報を確認中";
-    case "planning":
-      return "計画中";
-    case "running_mcp_tools":
-      return "MCPツールを実行中";
-    case "generating_answer":
-      return "回答を生成中";
-    case "finalizing":
-      return "最終調整中";
-    case "completed":
-      return "完了";
-    case "failed":
-      return "失敗";
-    default:
-      return stage;
-  }
-}
-
 function formatDebugEntries(message: ChatJobProgressMessage): string[] {
   const entries: string[] = [];
   const debug = message.debug ?? {};
@@ -234,14 +164,4 @@ function formatDebugEntries(message: ChatJobProgressMessage): string[] {
   }
 
   return entries.slice(0, 5);
-}
-
-function getLastProgressMessage(
-  progressMessages?: ChatJobProgressMessage[],
-): ChatJobProgressMessage | undefined {
-  if (!progressMessages || progressMessages.length === 0) {
-    return undefined;
-  }
-
-  return progressMessages[progressMessages.length - 1];
 }

@@ -719,7 +719,7 @@ function buildPendingProgressMessages(
     {
       at: createdAt,
       stage: "queued",
-      message: "分析を開始しました。バックグラウンドで処理しています。",
+      message: "分析を開始しました",
       debug: {
         provider: "chat-job",
       },

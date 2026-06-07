@@ -16,3 +16,4 @@ frontend/test-results/
 frontend/e2e/*.spec.ts-snapshots/
 backend/.serverless/
 backend/cdk.out/
+frontend-vite.err
