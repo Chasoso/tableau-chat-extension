@@ -289,6 +289,8 @@ export async function runLightweightAgentLoop(input: {
     });
   logDebug("chat.analysis_request.parsed", {
     requestType: baseQuestionInterpretation.requestType,
+    requestTypeConfidence: baseQuestionInterpretation.requestTypeConfidence,
+    requestTypeSignals: baseQuestionInterpretation.requestTypeSignals,
     metricIntent: baseQuestionInterpretation.metricIntent,
     asksForRanking: baseQuestionInterpretation.asksForRanking,
     topN: baseQuestionInterpretation.topN,

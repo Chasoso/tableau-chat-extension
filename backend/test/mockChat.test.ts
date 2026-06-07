@@ -981,6 +981,78 @@ describe("ChatService with mock provider", () => {
     expect(repository.getAll()).toHaveLength(1);
   });
 
+  it("does not take the datasource inventory fast path for analysis-like unknown metrics", async () => {
+    const repository = new InMemoryChatHistoryRepository();
+    let generatorCalled = false;
+    const answerGenerator: AnswerGenerator = {
+      name: "mock",
+      async generate() {
+        generatorCalled = true;
+        return "分析結果を確認しています。";
+      },
+    };
+    const service = new ChatService(
+      new MockTableauContextProvider(),
+      answerGenerator,
+      repository,
+    );
+
+    const response = await service.generateAnswer({
+      question: "2026年5月のポスト数がありますか？",
+      dashboardContext: {
+        dashboardName: "Mock Dashboard",
+        workbookName: "Mock Workbook",
+        worksheets: [{ name: "Sheet 1" }],
+        filters: [],
+        parameters: [],
+        dataSources: [{ name: "X Account Overview Analytics" }],
+        capturedAt: new Date().toISOString(),
+      },
+      clientContext: {
+        source: "tableau-extension",
+      },
+    });
+
+    expect(generatorCalled).toBe(true);
+    expect(response.answer).toContain("分析結果を確認しています");
+  });
+
+  it("does not take the datasource inventory fast path for generic datasource explain questions", async () => {
+    const repository = new InMemoryChatHistoryRepository();
+    let generatorCalled = false;
+    const answerGenerator: AnswerGenerator = {
+      name: "mock",
+      async generate() {
+        generatorCalled = true;
+        return "概要を確認しています。";
+      },
+    };
+    const service = new ChatService(
+      new MockTableauContextProvider(),
+      answerGenerator,
+      repository,
+    );
+
+    const response = await service.generateAnswer({
+      question: "X Account Overview Analyticsについて、詳しく教えてください。",
+      dashboardContext: {
+        dashboardName: "Mock Dashboard",
+        workbookName: "Mock Workbook",
+        worksheets: [{ name: "Sheet 1" }],
+        filters: [],
+        parameters: [],
+        dataSources: [{ name: "X Account Overview Analytics" }],
+        capturedAt: new Date().toISOString(),
+      },
+      clientContext: {
+        source: "tableau-extension",
+      },
+    });
+
+    expect(generatorCalled).toBe(true);
+    expect(response.answer).toContain("概要を確認しています");
+  });
+
   it("skips bedrock answer generation when remaining execution time is too low", async () => {
     const repository = new InMemoryChatHistoryRepository();
     const answerGenerator: AnswerGenerator = {

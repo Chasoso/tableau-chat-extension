@@ -30,6 +30,10 @@ const datasourceInventoryQuestion =
   "\u4f7f\u308f\u308c\u3066\u3044\u308b\u30c7\u30fc\u30bf\u30bd\u30fc\u30b9\u3092\u6559\u3048\u3066\u304f\u3060\u3055\u3044";
 const fieldInventoryQuestion =
   "X Account Analytics Contents\u306e\u30d5\u30a3\u30fc\u30eb\u30c9\u306b\u3064\u3044\u3066\u6559\u3048\u3066\u304f\u3060\u3055\u3044\u3002";
+const postsCountQuestion =
+  "2026\u5e745\u6708\u306e\u30dd\u30b9\u30c8\u6570\u304c\u3042\u308a\u307e\u3059\u304b\uff1f";
+const datasourceExplainQuestion =
+  "X Account Overview Analytics\u306b\u3064\u3044\u3066\u3001\u8a73\u3057\u304f\u6559\u3048\u3066\u304f\u3060\u3055\u3044\u3002";
 
 describe("questionInterpretation", () => {
   it("prefers the user-requested month over a datasource literal mention", () => {
@@ -107,6 +111,10 @@ describe("questionInterpretation", () => {
     });
 
     expect(interpretation.requestType).toBe("datasource_inventory");
+    expect(interpretation.requestTypeConfidence).toBeGreaterThanOrEqual(0.9);
+    expect(interpretation.requestTypeSignals).toContain(
+      "explicit_datasource_inventory_phrase",
+    );
     expect(interpretation.metricIntent).toBe("unknown");
     expect(interpretation.asksForRanking).toBe(false);
   });
@@ -121,7 +129,34 @@ describe("questionInterpretation", () => {
     });
 
     expect(interpretation.requestType).toBe("field_inventory");
+    expect(interpretation.requestTypeConfidence).toBeGreaterThanOrEqual(0.9);
     expect(interpretation.metricIntent).toBe("unknown");
     expect(interpretation.asksForRanking).toBe(false);
+  });
+
+  it("keeps unknown analysis-like questions out of datasource inventory", () => {
+    const interpretation = interpretQuestion({
+      question: postsCountQuestion,
+      dashboardContext: {
+        ...dashboardContext,
+        dataSources: [{ name: "X Account Overview Analytics" }],
+      },
+    });
+
+    expect(interpretation.requestType).toBe("general");
+    expect(interpretation.requestTypeSignals).toContain("period_detected");
+    expect(interpretation.requestTypeSignals).toContain("analysis_like_signal");
+  });
+
+  it("does not classify generic explain questions with datasource mentions as datasource inventory", () => {
+    const interpretation = interpretQuestion({
+      question: datasourceExplainQuestion,
+      dashboardContext: {
+        ...dashboardContext,
+        dataSources: [{ name: "X Account Overview Analytics" }],
+      },
+    });
+
+    expect(interpretation.requestType).toBe("general");
   });
 });
