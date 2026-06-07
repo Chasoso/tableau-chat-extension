@@ -1,6 +1,6 @@
 ﻿import { randomUUID } from "node:crypto";
 import { getConfig } from "../config";
-import { logDebug, logInfo, safeHash } from "../logging";
+import { logDebug, logInfo, logWarn, safeHash } from "../logging";
 import {
   createChatHistoryRepository,
   type ChatHistoryRepository,
@@ -25,6 +25,7 @@ import type {
 } from "../types/tableau";
 import {
   detectRankingIntent,
+  interpretQuestion,
   matchesMetricFieldIntent,
   metricIntentLabel,
 } from "./questionInterpretation";
@@ -52,10 +53,17 @@ export class ChatService {
   async generateAnswer(
     request: ChatRequest,
     authenticatedUser?: AuthenticatedUser,
+    options: {
+      getRemainingTimeInMillis?: () => number;
+    } = {},
   ): Promise<ChatResponse> {
     const config = getConfig();
     const sessionId = request.sessionId || randomUUID();
     const messageId = randomUUID();
+    const requestInterpretation = interpretQuestion({
+      question: request.question,
+      dashboardContext: request.dashboardContext,
+    });
     const tableauSubject = resolveTableauSubject(authenticatedUser);
     const ownerUserId = authenticatedUser?.userId;
     const recentHistory = await this.repository.listRecentBySession({
@@ -83,6 +91,33 @@ export class ChatService {
       questionLength: request.question.length,
       question: clipForDebugLog(request.question),
     });
+    const fastPathAnswer = buildDatasourceInventoryFastPathAnswer(
+      request,
+      requestInterpretation,
+    );
+    if (fastPathAnswer) {
+      logInfo("chat.service.fast_path_answer.used", {
+        sessionId,
+        messageId,
+        requestType: requestInterpretation.requestType,
+      });
+      return this.persistAndBuildResponse({
+        sessionId,
+        messageId,
+        ownerUserId,
+        request,
+        answer: fastPathAnswer,
+        notionPostIdeaDraft: buildNotionDraft(
+          request.question,
+          fastPathAnswer,
+          request,
+          {
+            provider: "mock",
+            questionInterpretation: requestInterpretation,
+          },
+        ),
+      });
+    }
     const agentLoopResult = await runLightweightAgentLoop({
       agent: this.chatAgent,
       contextProvider: this.contextProvider,
@@ -90,6 +125,8 @@ export class ChatService {
       recentHistory,
       authenticatedUser,
       tableauSubject,
+      baseQuestionInterpretation: requestInterpretation,
+      getRemainingTimeInMillis: options.getRemainingTimeInMillis,
     });
     const additionalContext = agentLoopResult.additionalContext;
     logInfo("chat.service.context_lookup.completed", {
@@ -102,6 +139,89 @@ export class ChatService {
       warningCount: additionalContext.warnings?.length ?? 0,
       agentPassCount: agentLoopResult.debug?.passCount ?? 0,
     });
+    const metadataPathAnswer = buildFieldInventoryAnswerFromContext(
+      request,
+      additionalContext,
+    );
+    if (metadataPathAnswer) {
+      logInfo("chat.service.metadata_path_answer.used", {
+        sessionId,
+        messageId,
+        requestType: additionalContext.questionInterpretation?.requestType,
+        fieldProfileCount:
+          additionalContext.datasourceFieldProfiles?.length ?? 0,
+      });
+      return this.persistAndBuildResponse({
+        sessionId,
+        messageId,
+        ownerUserId,
+        request,
+        answer: metadataPathAnswer,
+        notionPostIdeaDraft: buildNotionDraft(
+          request.question,
+          metadataPathAnswer,
+          request,
+          additionalContext,
+        ),
+        dashboardContextPatch: buildDashboardContextPatch(
+          request,
+          additionalContext,
+        ),
+        debug: {
+          usedMock: this.answerGenerator.name === "mock",
+          tableauContextProvider: additionalContext.provider,
+          ...(config.tableau.mcp.debugLogResults
+            ? {
+                mcpExecutionDebug: additionalContext.mcpExecutionDebug,
+                mcpObservations: additionalContext.mcpObservations,
+                agentExecutionDebug: agentLoopResult.debug,
+              }
+            : {}),
+        },
+      });
+    }
+    const remainingTimeBeforeAnswer =
+      options.getRemainingTimeInMillis?.() ?? Number.POSITIVE_INFINITY;
+    if (remainingTimeBeforeAnswer < 8_000) {
+      const deadlineFallback = buildDeadlineAwareDeterministicAnswer(
+        request,
+        additionalContext,
+      );
+      logWarn("chat.service.answer_generation_skipped_due_to_deadline", {
+        sessionId,
+        messageId,
+        remainingTimeMs: remainingTimeBeforeAnswer,
+        provider: additionalContext.provider,
+      });
+      return this.persistAndBuildResponse({
+        sessionId,
+        messageId,
+        ownerUserId,
+        request,
+        answer: deadlineFallback,
+        notionPostIdeaDraft: buildNotionDraft(
+          request.question,
+          deadlineFallback,
+          request,
+          additionalContext,
+        ),
+        dashboardContextPatch: buildDashboardContextPatch(
+          request,
+          additionalContext,
+        ),
+        debug: {
+          usedMock: this.answerGenerator.name === "mock",
+          tableauContextProvider: additionalContext.provider,
+          ...(config.tableau.mcp.debugLogResults
+            ? {
+                mcpExecutionDebug: additionalContext.mcpExecutionDebug,
+                mcpObservations: additionalContext.mcpObservations,
+                agentExecutionDebug: agentLoopResult.debug,
+              }
+            : {}),
+        },
+      });
+    }
     const prompt = buildPrompt(
       request,
       additionalContext,
@@ -153,26 +273,12 @@ export class ChatService {
       });
     }
     const createdAt = new Date().toISOString();
-
-    await this.repository.save({
+    return this.persistAndBuildResponse({
       sessionId,
       messageId,
-      ownerUserId: ownerUserId ?? null,
-      question: request.question,
+      ownerUserId,
+      request,
       answer: sanitizedAnswer,
-      dashboardName: request.dashboardContext.dashboardName,
-      workbookName: request.dashboardContext.workbookName ?? null,
-      worksheetNames: request.dashboardContext.worksheets.map(
-        (worksheet) => worksheet.name,
-      ),
-      createdAt,
-      source: request.clientContext?.source,
-    });
-
-    return {
-      answer: sanitizedAnswer,
-      sessionId,
-      messageId,
       notionPostIdeaDraft,
       dashboardContextPatch,
       debug: {
@@ -186,7 +292,8 @@ export class ChatService {
             }
           : {}),
       },
-    };
+      createdAt,
+    });
   }
 
   async getDashboardContextPatch(
@@ -229,6 +336,42 @@ export class ChatService {
       debug: {
         tableauContextProvider: additionalContext.provider,
       },
+    };
+  }
+
+  private async persistAndBuildResponse(input: {
+    sessionId: string;
+    messageId: string;
+    ownerUserId?: string;
+    request: ChatRequest;
+    answer: string;
+    notionPostIdeaDraft?: ChatResponse["notionPostIdeaDraft"];
+    dashboardContextPatch?: ChatResponse["dashboardContextPatch"];
+    debug?: ChatResponse["debug"];
+    createdAt?: string;
+  }): Promise<ChatResponse> {
+    await this.repository.save({
+      sessionId: input.sessionId,
+      messageId: input.messageId,
+      ownerUserId: input.ownerUserId ?? null,
+      question: input.request.question,
+      answer: input.answer,
+      dashboardName: input.request.dashboardContext.dashboardName,
+      workbookName: input.request.dashboardContext.workbookName ?? null,
+      worksheetNames: input.request.dashboardContext.worksheets.map(
+        (worksheet) => worksheet.name,
+      ),
+      createdAt: input.createdAt ?? new Date().toISOString(),
+      source: input.request.clientContext?.source,
+    });
+
+    return {
+      answer: input.answer,
+      sessionId: input.sessionId,
+      messageId: input.messageId,
+      notionPostIdeaDraft: input.notionPostIdeaDraft,
+      dashboardContextPatch: input.dashboardContextPatch,
+      debug: input.debug,
     };
   }
 }
@@ -500,6 +643,22 @@ export function finalizeUserFacingAnswer(
     ReturnType<TableauContextProvider["getAdditionalContext"]>
   >,
 ): string {
+  const datasourceInventoryAnswer = buildDatasourceInventoryAnswerFromContext(
+    request,
+    additionalContext,
+  );
+  if (datasourceInventoryAnswer) {
+    return datasourceInventoryAnswer;
+  }
+
+  const fieldInventoryAnswer = buildFieldInventoryAnswerFromContext(
+    request,
+    additionalContext,
+  );
+  if (fieldInventoryAnswer) {
+    return fieldInventoryAnswer;
+  }
+
   const structuredAnswer = buildStructuredDataAnalysisAnswer(
     request,
     additionalContext,
@@ -862,6 +1021,210 @@ function buildNoValidatedRankingFallback(
       ].join("\n");
 }
 
+function buildDatasourceInventoryFastPathAnswer(
+  request: ChatRequest,
+  interpretation: QuestionInterpretation,
+): string | undefined {
+  if (interpretation.requestType !== "datasource_inventory") {
+    return undefined;
+  }
+
+  const datasourceNames =
+    request.dashboardContext.dataSources
+      ?.map((datasource) => datasource.name?.trim())
+      .filter((name): name is string => Boolean(name)) ?? [];
+  if (!datasourceNames.length) {
+    return undefined;
+  }
+
+  const uniqueDatasourceNames = [...new Set(datasourceNames)];
+  const lines = [
+    `このダッシュボードで使用されているデータソースは ${uniqueDatasourceNames.join("、")} です。`,
+  ];
+  if (request.dashboardContext.workbookName) {
+    lines.push(
+      `ワークブック「${request.dashboardContext.workbookName}」の現在のダッシュボード文脈から確認しています。`,
+    );
+  }
+  lines.push(
+    "より詳しいフィールド構成が必要な場合は、このデータソースのフィールド一覧まで確認できます。",
+  );
+  return lines.join("\n");
+}
+
+function buildDeadlineAwareDeterministicAnswer(
+  request: ChatRequest,
+  additionalContext: Awaited<
+    ReturnType<TableauContextProvider["getAdditionalContext"]>
+  >,
+): string {
+  const datasourceInventoryAnswer = buildDatasourceInventoryAnswerFromContext(
+    request,
+    additionalContext,
+  );
+  if (datasourceInventoryAnswer) {
+    return datasourceInventoryAnswer;
+  }
+
+  const fieldInventoryAnswer = buildFieldInventoryAnswerFromContext(
+    request,
+    additionalContext,
+  );
+  if (fieldInventoryAnswer) {
+    return fieldInventoryAnswer;
+  }
+
+  const structuredAnswer = buildStructuredDataAnalysisAnswer(
+    request,
+    additionalContext,
+  );
+  if (structuredAnswer) {
+    return structuredAnswer;
+  }
+
+  const workbookName =
+    request.dashboardContext.workbookName ??
+    additionalContext.normalizedContext?.workbook?.name;
+  const datasourceNames =
+    additionalContext.normalizedContext?.datasources
+      ?.map((datasource) => datasource.name)
+      .filter(Boolean) ??
+    request.dashboardContext.dataSources
+      ?.map((datasource) => datasource.name)
+      .filter(Boolean) ??
+    [];
+  const warningLine = additionalContext.warnings?.length
+    ? `補足: ${additionalContext.warnings.join(" ")}`
+    : undefined;
+
+  return [
+    `このダッシュボード「${request.dashboardContext.dashboardName}」の確認結果です。`,
+    workbookName ? `ワークブック: ${workbookName}` : undefined,
+    datasourceNames.length
+      ? `データソース: ${[...new Set(datasourceNames)].join("、")}`
+      : undefined,
+    warningLine,
+    "詳細な自然文の整形は省略しましたが、取得できたTableau情報をもとに回答しています。",
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+function buildDatasourceInventoryAnswerFromContext(
+  request: ChatRequest,
+  additionalContext: Awaited<
+    ReturnType<TableauContextProvider["getAdditionalContext"]>
+  >,
+): string | undefined {
+  const interpretation = additionalContext.questionInterpretation;
+  if (interpretation?.requestType !== "datasource_inventory") {
+    return undefined;
+  }
+
+  const datasourceNames =
+    additionalContext.normalizedContext?.datasources
+      ?.map((datasource) => datasource.name)
+      .filter(Boolean) ??
+    request.dashboardContext.dataSources
+      ?.map((datasource) => datasource.name)
+      .filter(Boolean) ??
+    [];
+  if (!datasourceNames.length) {
+    return undefined;
+  }
+
+  return [
+    `このダッシュボードで使用されているデータソースは ${[...new Set(datasourceNames)].join("、")} です。`,
+    additionalContext.normalizedContext?.workbook?.name
+      ? `取得できた Tableau Cloud 情報では、ワークブック「${additionalContext.normalizedContext.workbook.name}」に関連付けられています。`
+      : undefined,
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+function buildFieldInventoryAnswerFromContext(
+  request: ChatRequest,
+  additionalContext: Awaited<
+    ReturnType<TableauContextProvider["getAdditionalContext"]>
+  >,
+): string | undefined {
+  const interpretation = additionalContext.questionInterpretation;
+  if (interpretation?.requestType !== "field_inventory") {
+    return undefined;
+  }
+
+  const fieldProfiles = additionalContext.datasourceFieldProfiles ?? [];
+  if (!fieldProfiles.length) {
+    return undefined;
+  }
+
+  const preferredDatasourceName = interpretation.datasourceName?.trim();
+  const selectedProfiles = preferredDatasourceName
+    ? fieldProfiles.filter(
+        (profile) =>
+          profile.datasourceName.trim().toLowerCase() ===
+          preferredDatasourceName.toLowerCase(),
+      )
+    : fieldProfiles;
+  const profilesToRender = selectedProfiles.length
+    ? selectedProfiles
+    : fieldProfiles;
+  if (!profilesToRender.length) {
+    return undefined;
+  }
+
+  const datasourceNames = [
+    ...new Set(profilesToRender.map((p) => p.datasourceName)),
+  ];
+  const lines = [
+    `データソース ${datasourceNames.join("、")} で確認できたフィールド一覧です。`,
+  ];
+  if (additionalContext.normalizedContext?.workbook?.name) {
+    lines.push(
+      `取得できた Tableau Cloud 情報では、ワークブック「${additionalContext.normalizedContext.workbook.name}」に関連付けられています。`,
+    );
+  }
+
+  for (const profile of profilesToRender) {
+    lines.push(`- ${profile.datasourceName}（${profile.fieldCount}件）`);
+    const details: Array<{
+      name: string;
+      dataType?: string;
+      role?: string;
+      semanticRole?: string;
+    }> = profile.fields.length
+      ? profile.fields
+      : profile.fieldNames.map((fieldName) => ({
+          name: fieldName,
+          dataType: undefined,
+          role: undefined,
+          semanticRole: undefined,
+        }));
+    lines.push(
+      ...details.slice(0, 20).map((fieldDetail) => {
+        const annotations = [
+          fieldDetail.dataType,
+          fieldDetail.role,
+          fieldDetail.semanticRole,
+        ].filter(Boolean);
+        return annotations.length
+          ? `  - ${fieldDetail.name} [${annotations.join(" / ")}]`
+          : `  - ${fieldDetail.name}`;
+      }),
+    );
+    if (details.length > 20) {
+      lines.push(`  - ...ほか ${details.length - 20} 件`);
+    }
+  }
+
+  lines.push(
+    "必要であれば、この中の特定フィールドが何を表すかも続けて説明できます。",
+  );
+
+  return lines.join("\n");
+}
+
 function describeMetricField(fieldName: string): string {
   const normalized = fieldName.toLowerCase();
   if (/favorite|favourite/.test(normalized)) {
@@ -892,6 +1255,22 @@ function selectBestQueryInsight(
   interpretation: QuestionInterpretation | undefined,
   question: string,
 ): QueryDatasourceInsight | undefined {
+  if (
+    interpretation?.requestType === "field_inventory" ||
+    interpretation?.requestType === "datasource_inventory"
+  ) {
+    logDebug("chat.query_insight.selected", {
+      requestType: interpretation.requestType,
+      selectedMetricField: undefined,
+      selectedDatasourceName: undefined,
+      selectedRowCount: 0,
+      selectedScore: undefined,
+      selectedReasons: ["request_type_blocks_query_insights"],
+      candidateCount: insights.length,
+    });
+    return undefined;
+  }
+
   const candidates = insights
     .map((insight, index) => ({
       insight,

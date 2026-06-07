@@ -4,6 +4,7 @@ import type {
   QuestionGroupingIntent,
   QuestionInterpretation,
   QuestionMetricIntent,
+  QuestionRequestType,
 } from "../types/tableau";
 
 const WHITESPACE_PATTERN = /\s+/g;
@@ -19,6 +20,11 @@ const JAPANESE_AUTHOR = "\u8457\u8005";
 const JAPANESE_POSTER = "\u6295\u7a3f\u8005";
 const JAPANESE_USER = "\u30e6\u30fc\u30b6\u30fc";
 const JAPANESE_DATASOURCE = "\u30c7\u30fc\u30bf\u30bd\u30fc\u30b9";
+const JAPANESE_FIELDS = "\u30d5\u30a3\u30fc\u30eb\u30c9";
+const JAPANESE_LIST = "\u4e00\u89a7";
+const JAPANESE_TELL_ME = "\u6559\u3048\u3066";
+const JAPANESE_WHAT = "\u4f55";
+const JAPANESE_WHICH = "\u3069\u306e";
 const JAPANESE_VIEW = "\u30d3\u30e5\u30fc";
 const JAPANESE_VIEW_COUNT = "\u30d3\u30e5\u30fc\u6570";
 const JAPANESE_BROWSE = "\u95b2\u89a7";
@@ -158,12 +164,19 @@ export function interpretQuestion(input: {
     detectGroupingIntent(input.question),
     detectGroupingIntent(investigationQuestion),
   );
+  const requestType = detectQuestionRequestType({
+    originalQuestion: input.question,
+    sanitizedQuestion: investigationQuestion,
+    metricIntent,
+    asksForRanking,
+  });
 
   return {
     originalQuestion: input.question,
     investigationQuestion,
     ...(datasourceName ? { datasourceName } : {}),
     datasourceMentions,
+    requestType,
     metricIntent,
     asksForRanking,
     topN,
@@ -179,9 +192,7 @@ export function detectMetricIntent(question: string): QuestionMetricIntent {
     METRIC_INTENT_KEYWORDS,
   ) as Array<[Exclude<QuestionMetricIntent, "unknown">, string[]]>) {
     if (
-      keywords.some((keyword) =>
-        normalized.includes(normalizeQuestionForIntent(keyword)),
-      )
+      keywords.some((keyword) => containsNormalizedKeyword(normalized, keyword))
     ) {
       return intent;
     }
@@ -193,7 +204,7 @@ export function detectMetricIntent(question: string): QuestionMetricIntent {
 export function detectRankingIntent(question: string): boolean {
   const normalized = normalizeQuestionForIntent(question);
   return RANKING_KEYWORDS.some((keyword) =>
-    normalized.includes(normalizeQuestionForIntent(keyword)),
+    containsNormalizedKeyword(normalized, keyword),
   );
 }
 
@@ -215,9 +226,7 @@ export function detectGroupingIntent(question: string): QuestionGroupingIntent {
   >) {
     if (
       intent !== "unknown" &&
-      keywords.some((keyword) =>
-        normalized.includes(normalizeQuestionForIntent(keyword)),
-      )
+      keywords.some((keyword) => containsNormalizedKeyword(normalized, keyword))
     ) {
       return intent;
     }
@@ -257,7 +266,7 @@ export function matchesMetricFieldIntent(
 
   const normalizedFieldName = normalizeQuestionForIntent(fieldName);
   return METRIC_INTENT_KEYWORDS[intent].some((keyword) =>
-    normalizedFieldName.includes(normalizeQuestionForIntent(keyword)),
+    containsNormalizedKeyword(normalizedFieldName, keyword),
   );
 }
 
@@ -337,11 +346,44 @@ function readExplicitTopN(question: string | undefined): number | undefined {
 function normalizeQuestionForIntent(value: string): string {
   return value
     .normalize("NFKC")
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .replace(/([A-Z]+)([A-Z][a-z])/g, "$1 $2")
     .toLowerCase()
     .replace(/[(){}\[\]<>]/g, " ")
     .replace(/[\\/_,.:;!?-]/g, " ")
     .replace(WHITESPACE_PATTERN, " ")
     .trim();
+}
+
+function containsNormalizedKeyword(
+  normalizedQuestion: string,
+  keyword: string,
+): boolean {
+  const normalizedKeyword = normalizeQuestionForIntent(keyword);
+  if (!normalizedKeyword) {
+    return false;
+  }
+
+  const hasAsciiLetterOrDigit = /[a-z0-9]/i.test(normalizedKeyword);
+  if (!hasAsciiLetterOrDigit) {
+    return normalizedQuestion.includes(normalizedKeyword);
+  }
+
+  const paddedQuestion = ` ${normalizedQuestion} `;
+  const paddedKeyword = ` ${normalizedKeyword} `;
+  if (normalizedKeyword.includes(" ")) {
+    return paddedQuestion.includes(paddedKeyword);
+  }
+
+  const escapedKeyword = normalizedKeyword.replace(
+    /[.*+?^${}()|[\]\\]/g,
+    "\\$&",
+  );
+  const boundaryPattern = new RegExp(
+    `(^|[^a-z0-9])${escapedKeyword}(?=$|[^a-z0-9])`,
+    "i",
+  );
+  return boundaryPattern.test(normalizedQuestion);
 }
 
 function chooseKnownMetricIntent(
@@ -354,4 +396,78 @@ function chooseKnownGroupingIntent(
   ...candidates: QuestionGroupingIntent[]
 ): QuestionGroupingIntent {
   return candidates.find((candidate) => candidate !== "unknown") ?? "unknown";
+}
+
+function detectQuestionRequestType(input: {
+  originalQuestion: string;
+  sanitizedQuestion: string;
+  metricIntent: QuestionMetricIntent;
+  asksForRanking: boolean;
+}): QuestionRequestType {
+  if (input.metricIntent !== "unknown" || input.asksForRanking) {
+    return "general";
+  }
+
+  const normalized = normalizeQuestionForIntent(input.originalQuestion);
+  const sanitized = normalizeQuestionForIntent(input.sanitizedQuestion);
+  const combined = `${normalized} ${sanitized}`;
+
+  const datasourceInventoryKeywords = [
+    JAPANESE_DATASOURCE,
+    JAPANESE_LIST,
+    JAPANESE_TELL_ME,
+    JAPANESE_WHAT,
+    JAPANESE_WHICH,
+    "datasource",
+    "data source",
+    "what datasource",
+    "which datasource",
+    "show datasource",
+    "list datasource",
+  ];
+  const fieldInventoryKeywords = [
+    JAPANESE_FIELDS,
+    "field",
+    "fields",
+    "column",
+    "columns",
+    "schema",
+    "metadata",
+  ];
+
+  const hasDatasourceKeyword = datasourceInventoryKeywords.some((keyword) =>
+    containsNormalizedKeyword(combined, keyword),
+  );
+  const hasFieldKeyword = fieldInventoryKeywords.some((keyword) =>
+    containsNormalizedKeyword(combined, keyword),
+  );
+  const hasPromptingKeyword = [
+    JAPANESE_LIST,
+    JAPANESE_TELL_ME,
+    JAPANESE_WHAT,
+    JAPANESE_WHICH,
+    "show",
+    "tell me",
+    "what",
+    "which",
+    "list",
+  ].some((keyword) => containsNormalizedKeyword(combined, keyword));
+
+  const mentionsDatasourceInventory =
+    hasDatasourceKeyword && hasPromptingKeyword && !hasFieldKeyword;
+
+  if (mentionsDatasourceInventory) {
+    return "datasource_inventory";
+  }
+
+  const mentionsFieldInventory =
+    hasFieldKeyword &&
+    (hasDatasourceKeyword ||
+      hasPromptingKeyword ||
+      /schema|metadata/.test(combined));
+  if (mentionsFieldInventory) {
+    return "field_inventory";
+  }
+
+  return "general";
 }

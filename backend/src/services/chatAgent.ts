@@ -7,6 +7,7 @@ import {
   logDebug,
   logError,
   logInfo,
+  logWarn,
   safeErrorDetails,
   safeHash,
 } from "../logging";
@@ -29,6 +30,7 @@ import type {
 import type { ChatHistoryRecord, ChatRequest } from "../types/chat";
 import type {
   McpExecutionDebug,
+  QuestionInterpretation,
   TableauAdditionalContext,
   TableauDatasourceRef,
 } from "../types/tableau";
@@ -275,13 +277,18 @@ export async function runLightweightAgentLoop(input: {
   recentHistory: ChatHistoryRecord[];
   authenticatedUser?: AuthenticatedUser;
   tableauSubject?: string;
+  baseQuestionInterpretation?: QuestionInterpretation;
+  getRemainingTimeInMillis?: () => number;
 }): Promise<AgentLoopResult> {
   const config = getConfig();
-  const baseQuestionInterpretation = interpretQuestion({
-    question: input.request.question,
-    dashboardContext: input.request.dashboardContext,
-  });
+  const baseQuestionInterpretation =
+    input.baseQuestionInterpretation ??
+    interpretQuestion({
+      question: input.request.question,
+      dashboardContext: input.request.dashboardContext,
+    });
   logDebug("chat.analysis_request.parsed", {
+    requestType: baseQuestionInterpretation.requestType,
     metricIntent: baseQuestionInterpretation.metricIntent,
     asksForRanking: baseQuestionInterpretation.asksForRanking,
     topN: baseQuestionInterpretation.topN,
@@ -310,11 +317,15 @@ export async function runLightweightAgentLoop(input: {
     };
   }
 
-  const { plan, source } = await input.agent.createPlan({
+  const { plan: rawPlan, source } = await input.agent.createPlan({
     request: input.request,
     recentHistory: input.recentHistory,
     contextProvider: input.contextProvider,
   });
+  const plan = applyRequestTypePlanOverride(
+    rawPlan,
+    baseQuestionInterpretation,
+  );
 
   const passes: AgentExecutionDebug["passes"] = [];
   const collectedContexts: TableauAdditionalContext[] = [];
@@ -322,8 +333,19 @@ export async function runLightweightAgentLoop(input: {
   let planningQuestion = plan.normalizedQuestion || input.request.question;
   let latestEvaluation: AgentEvaluation | undefined;
   let fallbackReason: string | undefined;
+  let previousProgressSnapshot: ContextProgressSnapshot | undefined;
 
   for (let pass = 0; pass < config.agent.maxContextPasses; pass += 1) {
+    const remainingTimeMs =
+      input.getRemainingTimeInMillis?.() ?? Number.POSITIVE_INFINITY;
+    if (remainingTimeMs < 12_000) {
+      fallbackReason = "agent_stopped_due_to_deadline";
+      logWarn("chat.agent.deadline_guard_triggered", {
+        pass: pass + 1,
+        remainingTimeMs,
+      });
+      break;
+    }
     if (attemptedQuestions.has(planningQuestion)) {
       fallbackReason = "agent_repeated_follow_up_question";
       break;
@@ -389,6 +411,24 @@ export async function runLightweightAgentLoop(input: {
       ...(latestEvaluation ? { evaluation: latestEvaluation } : {}),
     });
 
+    const currentProgressSnapshot = snapshotContextProgress(mergedContext);
+    if (
+      previousProgressSnapshot &&
+      latestEvaluation?.followUpQuestion &&
+      !latestEvaluation.isSufficient &&
+      !hasMeaningfulProgress(previousProgressSnapshot, currentProgressSnapshot)
+    ) {
+      fallbackReason = "agent_no_progress_replan_stopped";
+      logInfo("chat.agent.no_progress_replan_stopped", {
+        pass: pass + 1,
+        remainingTimeMs,
+        executedTools: currentProgressSnapshot.executedTools,
+        blockedTools: currentProgressSnapshot.blockedTools,
+      });
+      break;
+    }
+    previousProgressSnapshot = currentProgressSnapshot;
+
     if (
       !latestEvaluation ||
       latestEvaluation.isSufficient ||
@@ -431,15 +471,16 @@ export async function runLightweightAgentLoop(input: {
 }
 
 function buildHeuristicPlan(request: ChatRequest): AgentPlan {
-  const intent = classifyQuestionIntent(
-    request.question,
-    request.dashboardContext,
-    [],
-  );
   const interpretation = interpretQuestion({
     question: request.question,
     dashboardContext: request.dashboardContext,
   });
+  const intent = classifyQuestionIntent(
+    request.question,
+    request.dashboardContext,
+    [],
+    interpretation.requestType,
+  );
 
   return {
     intent: intent.intent,
@@ -450,6 +491,37 @@ function buildHeuristicPlan(request: ChatRequest): AgentPlan {
     reasonBrief: intent.reasonBrief,
     requiredEvidence: inferRequiredEvidence(request.question, intent),
   };
+}
+
+function applyRequestTypePlanOverride(
+  plan: AgentPlan,
+  interpretation: QuestionInterpretation,
+): AgentPlan {
+  if (interpretation.requestType === "datasource_inventory") {
+    return {
+      ...plan,
+      intent: "dashboard_explanation",
+      needsMcp: false,
+      answerStyle: "direct",
+      reasonBrief:
+        "The question asks which datasources are used, so a lightweight dashboard-context answer should be preferred.",
+      requiredEvidence: ["dashboard context", "datasource list"],
+    };
+  }
+
+  if (interpretation.requestType === "field_inventory") {
+    return {
+      ...plan,
+      intent: "metadata_lookup",
+      needsMcp: true,
+      answerStyle: "direct",
+      reasonBrief:
+        "The question asks for datasource fields or schema, so metadata lookup should be preferred over aggregate analysis.",
+      requiredEvidence: ["datasource metadata", "field list"],
+    };
+  }
+
+  return plan;
 }
 
 function inferRequiredEvidence(
@@ -954,6 +1026,44 @@ function summarizeInterpretationDrift(
   }
 
   return Object.keys(drift).length ? drift : undefined;
+}
+
+type ContextProgressSnapshot = {
+  datasourceCount: number;
+  hasMetadata: boolean;
+  queryInsightCount: number;
+  warningCount: number;
+  executedTools: string[];
+  blockedTools: string[];
+};
+
+function snapshotContextProgress(
+  context: TableauAdditionalContext,
+): ContextProgressSnapshot {
+  return {
+    datasourceCount: context.datasources?.length ?? 0,
+    hasMetadata: hasResolvedMetadata(context),
+    queryInsightCount:
+      context.queryInsights?.filter((insight) => insight.rows.length > 0)
+        .length ?? 0,
+    warningCount: context.warnings?.length ?? 0,
+    executedTools: [...(context.mcpExecutionDebug?.executedTools ?? [])].sort(),
+    blockedTools: [...(context.mcpExecutionDebug?.blockedTools ?? [])].sort(),
+  };
+}
+
+function hasMeaningfulProgress(
+  previous: ContextProgressSnapshot,
+  current: ContextProgressSnapshot,
+): boolean {
+  return (
+    current.datasourceCount > previous.datasourceCount ||
+    (current.hasMetadata && !previous.hasMetadata) ||
+    current.queryInsightCount > previous.queryInsightCount ||
+    current.warningCount < previous.warningCount ||
+    current.executedTools.join("|") !== previous.executedTools.join("|") ||
+    current.blockedTools.join("|") !== previous.blockedTools.join("|")
+  );
 }
 
 function hasResolvedMetadata(

@@ -249,6 +249,95 @@ describe("ChatService with mock provider", () => {
     expect(sanitized).not.toContain("workbook_reactionCounts_LAUGH");
   });
 
+  it("returns a deterministic field inventory answer instead of a bogus aggregate summary", () => {
+    const finalized = finalizeUserFacingAnswer(
+      "Posts Countが高いVizです。",
+      {
+        question:
+          "X Account Analytics Contentsのフィールドについて教えてください。",
+        dashboardContext: {
+          dashboardName: "Analytics",
+          workbookName: "Social Workbook",
+          worksheets: [{ name: "Posts" }],
+          filters: [],
+          parameters: [],
+          dataSources: [{ name: "X Account Analytics Contents" }],
+          capturedAt: new Date().toISOString(),
+        },
+      },
+      {
+        provider: "tableau-mcp",
+        questionInterpretation: interpretQuestion({
+          question:
+            "X Account Analytics Contentsのフィールドについて教えてください。",
+          dashboardContext: {
+            dashboardName: "Analytics",
+            workbookName: "Social Workbook",
+            worksheets: [{ name: "Posts" }],
+            filters: [],
+            parameters: [],
+            dataSources: [{ name: "X Account Analytics Contents" }],
+            capturedAt: new Date().toISOString(),
+          },
+        }),
+        datasourceFieldProfiles: [
+          {
+            datasourceName: "X Account Analytics Contents",
+            fields: [
+              {
+                name: "Posts Count",
+                dataType: "INTEGER",
+                role: "MEASURE",
+                source: "datasourceModel",
+              },
+              {
+                name: "Last Date",
+                dataType: "DATE",
+                role: "DIMENSION",
+                source: "datasourceModel",
+              },
+            ],
+            fieldNames: ["Posts Count", "Last Date"],
+            fieldCount: 2,
+            sourceTool: "get-datasource-metadata",
+          },
+        ],
+        normalizedContext: {
+          dashboard: { name: "Analytics" },
+          workbook: { type: "workbook", name: "Social Workbook" },
+          views: [],
+          datasources: [
+            { type: "datasource", name: "X Account Analytics Contents" },
+          ],
+          projects: [],
+        },
+        mcpExecutionDebug: {
+          intent: "data_analysis",
+          intentConfidence: 0.8,
+          answerableFromDashboardContext: false,
+          needsMcp: true,
+          maxToolCalls: 5,
+          plannedTools: [
+            "list-datasources",
+            "get-datasource-metadata",
+            "query-datasource",
+          ],
+          blockedTools: [],
+          executedTools: ["list-datasources", "get-datasource-metadata"],
+          skippedTools: [],
+          toolCallCount: 2,
+          replanUsed: false,
+          timingMs: { planning: 0, execution: 0 },
+        },
+      },
+    );
+
+    expect(finalized).toContain("X Account Analytics Contents");
+    expect(finalized).toContain("Posts Count");
+    expect(finalized).toContain("Last Date");
+    expect(finalized).not.toContain("高いViz");
+  });
+
   it("removes manual query instructions when data-analysis query was not executed", () => {
     const sanitized = sanitizeUserFacingAnswer(
       [
@@ -856,5 +945,81 @@ describe("ChatService with mock provider", () => {
     expect(response.notionPostIdeaDraft?.summary?.length ?? 0).toBeGreaterThan(
       0,
     );
+  });
+
+  it("answers datasource inventory questions from dashboard context without invoking the answer generator", async () => {
+    const repository = new InMemoryChatHistoryRepository();
+    const answerGenerator: AnswerGenerator = {
+      name: "mock",
+      async generate() {
+        throw new Error("Answer generator should not be called for fast path");
+      },
+    };
+    const service = new ChatService(
+      new MockTableauContextProvider(),
+      answerGenerator,
+      repository,
+    );
+
+    const response = await service.generateAnswer({
+      question: "使われているデータソースを教えてください",
+      dashboardContext: {
+        dashboardName: "Mock Dashboard",
+        workbookName: "Mock Workbook",
+        worksheets: [{ name: "Sheet 1" }],
+        filters: [],
+        parameters: [],
+        dataSources: [{ name: "Mock Datasource" }],
+        capturedAt: new Date().toISOString(),
+      },
+      clientContext: {
+        source: "tableau-extension",
+      },
+    });
+
+    expect(response.answer).toContain("Mock Datasource");
+    expect(repository.getAll()).toHaveLength(1);
+  });
+
+  it("skips bedrock answer generation when remaining execution time is too low", async () => {
+    const repository = new InMemoryChatHistoryRepository();
+    const answerGenerator: AnswerGenerator = {
+      name: "bedrock",
+      async generate() {
+        throw new Error(
+          "Bedrock answer generation should not run near timeout",
+        );
+      },
+    };
+    const service = new ChatService(
+      new MockTableauContextProvider(),
+      answerGenerator,
+      repository,
+    );
+
+    const response = await service.generateAnswer(
+      {
+        question: "このダッシュボードを要約してください",
+        dashboardContext: {
+          dashboardName: "Mock Dashboard",
+          workbookName: "Mock Workbook",
+          worksheets: [{ name: "Sheet 1" }],
+          filters: [],
+          parameters: [],
+          dataSources: [{ name: "Mock Datasource" }],
+          capturedAt: new Date().toISOString(),
+        },
+        clientContext: {
+          source: "tableau-extension",
+        },
+      },
+      undefined,
+      {
+        getRemainingTimeInMillis: () => 7_500,
+      },
+    );
+
+    expect(response.answer).toContain("Mock Dashboard");
+    expect(response.answer).toContain("Mock Datasource");
   });
 });
