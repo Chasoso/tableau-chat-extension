@@ -57,10 +57,12 @@ npm run ci
 
 ```bash
 curl http://localhost:3001/health
-curl -X POST http://localhost:3001/chat \
+curl -X POST http://localhost:3001/chat-jobs \
   -H "Content-Type: application/json" \
   -d '{"question":"What is this dashboard?","dashboardContext":{"dashboardName":"Mock","worksheets":[],"filters":[],"parameters":[],"capturedAt":"2026-05-24T00:00:00.000Z"},"clientContext":{"source":"tableau-extension","appVersion":"0.1.0"}}'
 ```
+
+The `POST /chat-jobs` response returns a `jobId` immediately. Poll `GET /chat-jobs/{jobId}` with the `X-Chat-Owner-Token` header from the create response when auth is disabled.
 
 ## 日本語
 
@@ -102,7 +104,7 @@ npm test
 
 ```bash
 curl http://localhost:3001/health
-curl -X POST http://localhost:3001/chat \
+curl -X POST http://localhost:3001/chat-jobs \
   -H "Content-Type: application/json" \
   -d '{"question":"What is this dashboard?","dashboardContext":{"dashboardName":"Mock","worksheets":[],"filters":[],"parameters":[],"capturedAt":"2026-05-24T00:00:00.000Z"},"clientContext":{"source":"tableau-extension","appVersion":"0.1.0"}}'
 ```

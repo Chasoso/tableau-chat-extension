@@ -3,7 +3,10 @@ import {
   TableauMcpContextProvider,
   buildRuleBasedInitialSelections,
 } from "../src/tableau/tableauMcpContextProvider";
-import type { ClassifiedQuestionIntent } from "../src/services/tableauMcpToolPlanner";
+import {
+  TableauMcpToolPlanner,
+  type ClassifiedQuestionIntent,
+} from "../src/services/tableauMcpToolPlanner";
 import type { GetAdditionalContextInput } from "../src/tableau/contextProvider";
 
 const mocks = vi.hoisted(() => {
@@ -357,4 +360,156 @@ describe("TableauMcpContextProvider", () => {
     expect(selection.selections).toHaveLength(1);
     expect(selection.plannedTools).toEqual(["list-views"]);
   });
+
+  it("runs independent initial tool calls in parallel when possible", async () => {
+    setMcpEnv({
+      TABLEAU_MCP_TRANSPORT: "stdio",
+      TABLEAU_MCP_SERVER_URL: "",
+      TABLEAU_MCP_TIMEOUT_MS: "5000",
+      TABLEAU_MCP_ALLOWED_TOOLS:
+        "get-workbook,get-datasource-metadata",
+      TABLEAU_MCP_MAX_TOOL_CALLS: "2",
+      TABLEAU_MCP_COMMAND: "",
+      TABLEAU_MCP_ARGS: "",
+      TABLEAU_MCP_TOOL_PLANNING_ENABLED: "true",
+      TABLEAU_MCP_METADATA_CACHE_ENABLED: "false",
+    });
+
+    const planSpy = vi
+      .spyOn(TableauMcpToolPlanner.prototype, "plan")
+      .mockResolvedValue({
+      intent: "data_analysis",
+      confidence: 0.9,
+      answerableFromDashboardContext: false,
+      needsMcp: true,
+      reasonBrief: "Need two independent lookups.",
+      maxToolCalls: 2,
+      toolCalls: [
+        {
+          toolName: "get-workbook",
+          arguments: { workbookId: "11111111-1111-1111-1111-111111111111" },
+          purpose: "Load workbook metadata.",
+        },
+        {
+          toolName: "get-datasource-metadata",
+          arguments: {
+            datasourceLuid: "22222222-2222-2222-2222-222222222222",
+          },
+          purpose: "Load datasource metadata.",
+          },
+        ],
+      });
+
+    const deferreds = {
+      workbook: createDeferred<unknown>(),
+      metadata: createDeferred<unknown>(),
+    };
+    let activeCalls = 0;
+    let maxActiveCalls = 0;
+
+    mocks.client.listTools.mockResolvedValue({
+      tools: [
+        {
+          name: "get-workbook",
+          inputSchema: {
+            type: "object",
+            properties: {
+              workbookId: { type: "string" },
+            },
+            required: ["workbookId"],
+          },
+        },
+        {
+          name: "get-datasource-metadata",
+          inputSchema: {
+            type: "object",
+            properties: {
+              datasourceLuid: { type: "string" },
+            },
+            required: ["datasourceLuid"],
+          },
+        },
+      ],
+    });
+    mocks.getTableauConnectedAppSecrets.mockResolvedValue({
+      clientId: "client-id",
+      secretId: "secret-id",
+      secretValue: "secret-value",
+    });
+    mocks.client.connect.mockResolvedValue(undefined);
+    mocks.client.callTool.mockImplementation(async ({ name }) => {
+      activeCalls += 1;
+      maxActiveCalls = Math.max(maxActiveCalls, activeCalls);
+      try {
+        if (name === "get-workbook") {
+          return await deferreds.workbook.promise;
+        }
+
+        return await deferreds.metadata.promise;
+      } finally {
+        activeCalls -= 1;
+      }
+    });
+
+    const contextPromise = provider.getAdditionalContext({
+      dashboardContext,
+      question: "Load workbook and datasource metadata in parallel.",
+      intentHint: {
+        intent: "data_analysis",
+        confidence: 0.9,
+        reasonBrief: "Need two independent lookups.",
+        answerableFromDashboardContext: false,
+        needsMcp: true,
+        maxToolCalls: 2,
+      },
+      tableauSubject: "user@example.com",
+    });
+
+    await flushMicrotasks();
+    expect(maxActiveCalls).toBe(2);
+
+    deferreds.workbook.resolve({
+      content: [
+        {
+          text: JSON.stringify({
+            id: "11111111-1111-1111-1111-111111111111",
+            name: "Workbook A",
+          }),
+        },
+      ],
+    });
+    deferreds.metadata.resolve({
+      content: [
+        {
+          text: JSON.stringify({
+            datasourceName: "Datasource A",
+            datasourceModel: { fields: [] },
+          }),
+        },
+      ],
+    });
+
+    const result = await contextPromise;
+
+    expect(mocks.client.callTool).toHaveBeenCalledTimes(2);
+    expect(result.provider).toBe("tableau-mcp");
+    expect(maxActiveCalls).toBeGreaterThanOrEqual(2);
+    planSpy.mockRestore();
+  });
 });
+
+function createDeferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+
+  return { promise, resolve, reject };
+}
+
+async function flushMicrotasks(): Promise<void> {
+  await Promise.resolve();
+  await new Promise((resolve) => setImmediate(resolve));
+}

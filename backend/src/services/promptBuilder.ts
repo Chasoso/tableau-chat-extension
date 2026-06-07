@@ -1,5 +1,8 @@
 import type { ChatHistoryRecord, ChatRequest } from "../types/chat";
-import type { TableauAdditionalContext } from "../types/tableau";
+import type {
+  McpObservation,
+  TableauAdditionalContext,
+} from "../types/tableau";
 import {
   compressDashboardContext,
   renderCompressedContext,
@@ -26,6 +29,9 @@ export function buildPrompt(
     additionalContext,
   );
   const observationCount = additionalContext.mcpObservations?.length ?? 0;
+  const observationDigest = summarizeMcpObservations(
+    additionalContext.mcpObservations,
+  );
   const executionDebug = additionalContext.mcpExecutionDebug;
 
   return [
@@ -61,6 +67,9 @@ export function buildPrompt(
     observationCount
       ? "You received MCP observations. Prioritize them as evidence over assumptions."
       : "No MCP observations were collected. Rely only on dashboard context and clearly mention limitations.",
+    observationDigest
+      ? `MCP evidence summary: ${observationDigest}`
+      : "",
     "Respond in the same language as the user's question when practical.",
     executionDebug
       ? `Execution summary: intent=${executionDebug.intent}, needsMcp=${String(executionDebug.needsMcp)}, toolCalls=${executionDebug.toolCallCount}, replanUsed=${String(executionDebug.replanUsed)}`
@@ -79,6 +88,27 @@ export function buildPrompt(
     "Context:",
     renderCompressedContext(compressedContext),
   ].join("\n");
+}
+
+function summarizeMcpObservations(
+  observations: McpObservation[] | undefined,
+): string | undefined {
+  if (!observations?.length) {
+    return undefined;
+  }
+
+  return observations
+    .slice(-4)
+    .map((observation) => {
+      const status = observation.success ? "ok" : "fail";
+      const summary =
+        observation.resultSummary ||
+        observation.errorMessage ||
+        observation.rawResultPreview ||
+        "no-summary";
+      return `${observation.tool}:${status}:${truncateText(summary, 80)}`;
+    })
+    .join(" | ");
 }
 
 function truncateText(value: string, maxChars: number): string {

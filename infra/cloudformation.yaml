@@ -218,6 +218,40 @@ Resources:
       SSESpecification:
         SSEEnabled: true
 
+  ChatJobsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub "${AWS::StackName}-chat-jobs"
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: jobId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: jobId
+          KeyType: HASH
+      TimeToLiveSpecification:
+        AttributeName: expiresAt
+        Enabled: true
+      SSESpecification:
+        SSEEnabled: true
+
+  TableauMcpMetadataCacheTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub "${AWS::StackName}-tableau-mcp-metadata-cache"
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: cacheKey
+          AttributeType: S
+      KeySchema:
+        - AttributeName: cacheKey
+          KeyType: HASH
+      TimeToLiveSpecification:
+        AttributeName: expiresAt
+        Enabled: true
+      SSESpecification:
+        SSEEnabled: true
+
   NotionConnectionsTable:
     Type: AWS::DynamoDB::Table
     Properties:
@@ -285,6 +319,12 @@ Resources:
       LogGroupName: !Sub "/aws/lambda/${AWS::StackName}-chat"
       RetentionInDays: 30
 
+  ChatJobWorkerFunctionLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${AWS::StackName}-chat-job-worker"
+      RetentionInDays: 30
+
   HealthFunctionLogGroup:
     Type: AWS::Logs::LogGroup
     Properties:
@@ -313,12 +353,24 @@ Resources:
                   - logs:PutLogEvents
                 Resource:
                   - !Sub "${ChatFunctionLogGroup.Arn}:*"
+                  - !Sub "${ChatJobWorkerFunctionLogGroup.Arn}:*"
                   - !Sub "${HealthFunctionLogGroup.Arn}:*"
               - Effect: Allow
                 Action:
                   - dynamodb:PutItem
                   - dynamodb:Query
                 Resource: !GetAtt ChatHistoryTable.Arn
+              - Effect: Allow
+                Action:
+                  - dynamodb:GetItem
+                  - dynamodb:PutItem
+                  - dynamodb:UpdateItem
+                Resource: !GetAtt ChatJobsTable.Arn
+              - Effect: Allow
+                Action:
+                  - dynamodb:GetItem
+                  - dynamodb:PutItem
+                Resource: !GetAtt TableauMcpMetadataCacheTable.Arn
               - Effect: Allow
                 Action:
                   - dynamodb:Query
@@ -336,6 +388,11 @@ Resources:
                   - !GetAtt NotionOAuthStatesTable.Arn
                   - !GetAtt CognitoAuthTransactionsTable.Arn
                   - !Sub "${CognitoAuthTransactionsTable.Arn}/index/*"
+              - Effect: Allow
+                Action:
+                  - lambda:InvokeFunction
+                Resource:
+                  - !GetAtt ChatJobWorkerFunction.Arn
               - Effect: Allow
                 Action:
                   - ssm:GetParameter
@@ -373,8 +430,87 @@ Resources:
       Environment:
         Variables:
           CHAT_HISTORY_TABLE_NAME: !Ref ChatHistoryTable
+          CHAT_JOBS_TABLE_NAME: !Ref ChatJobsTable
+          CHAT_JOB_WORKER_FUNCTION_NAME: !Ref ChatJobWorkerFunction
+          CHAT_JOB_TTL_SECONDS: "86400"
+          CHAT_JOB_LEASE_SECONDS: "120"
+          CHAT_JOB_PROGRESS_MESSAGE_LIMIT: "12"
+          CHAT_JOB_OWNER_TOKEN_HEADER_NAME: x-chat-owner-token
+          TABLEAU_MCP_METADATA_CACHE_TABLE_NAME: !Ref TableauMcpMetadataCacheTable
           USE_IN_MEMORY_REPOSITORY: "false"
           CORS_ALLOWED_ORIGIN: !Ref CorsAllowedOrigin
+          TABLEAU_SERVER_URL: !Ref TableauServerUrl
+          TABLEAU_SITE_CONTENT_URL: !Ref TableauSiteContentUrl
+          TABLEAU_API_VERSION: !Ref TableauApiVersion
+          TABLEAU_CONNECTED_APP_CLIENT_ID: !Ref TableauConnectedAppClientId
+          TABLEAU_CONNECTED_APP_SECRET_ID: !Ref TableauConnectedAppSecretId
+          TABLEAU_CONNECTED_APP_SECRET_VALUE: !Ref TableauConnectedAppSecretValue
+          TABLEAU_DEFAULT_SUBJECT: !Ref TableauDefaultSubject
+          TABLEAU_SCOPES: !Ref TableauScopes
+          TABLEAU_CONTEXT_PROVIDER: !Ref TableauContextProvider
+          AUTH_REQUIRED: !Ref AuthRequired
+          COGNITO_USER_POOL_ID: !Ref CognitoUserPoolId
+          COGNITO_CLIENT_ID: !Ref CognitoClientId
+          COGNITO_REGION: !Ref CognitoRegion
+          COGNITO_DOMAIN: !Ref CognitoDomain
+          COGNITO_POPUP_REDIRECT_URI: !Ref CognitoPopupRedirectUri
+          COGNITO_AUTH_TRANSACTIONS_TABLE: !Ref CognitoAuthTransactionsTable
+          COGNITO_AUTH_TRANSACTION_KEY_PARAM: !Ref CognitoAuthTransactionKeyParam
+          COGNITO_AUTH_TRANSACTION_TTL_SECONDS: !Sub "${CognitoAuthTransactionTtlSeconds}"
+          TABLEAU_MCP_SERVER_URL: !Ref TableauMcpServerUrl
+          TABLEAU_MCP_TRANSPORT: !Ref TableauMcpTransport
+          TABLEAU_MCP_AUTH_MODE: !Ref TableauMcpAuthMode
+          TABLEAU_MCP_TIMEOUT_MS: !Sub "${TableauMcpTimeoutMs}"
+          TABLEAU_MCP_COMMAND: !Ref TableauMcpCommand
+          TABLEAU_MCP_ARGS: !Ref TableauMcpArgs
+          TABLEAU_MCP_ALLOWED_TOOLS: !Ref TableauMcpAllowedTools
+          TABLEAU_MCP_MAX_TOOL_CALLS: !Sub "${TableauMcpMaxToolCalls}"
+          TABLEAU_MCP_DEBUG_LOG_RESULTS: !Ref TableauMcpDebugLogResults
+          TABLEAU_MCP_TOOL_PLANNING_ENABLED: !Ref TableauMcpToolPlanningEnabled
+          TABLEAU_MCP_PLANNER_MAX_OUTPUT_TOKENS: !Sub "${TableauMcpPlannerMaxOutputTokens}"
+          MODEL_PROVIDER: !Ref ModelProvider
+          BEDROCK_REGION: !Ref BedrockRegion
+          BEDROCK_MODEL_ID: !Ref BedrockModelId
+          BEDROCK_MAX_OUTPUT_TOKENS: !Sub "${BedrockMaxOutputTokens}"
+          BEDROCK_TEMPERATURE: !Sub "${BedrockTemperature}"
+          CHAT_MEMORY_MESSAGE_LIMIT: !Sub "${ChatMemoryMessageLimit}"
+          LOG_LEVEL: !Ref LogLevel
+          CHAT_DEBUG_MAX_CHARS: !Sub "${ChatDebugMaxChars}"
+          NOTION_MCP_ENABLED: !Ref NotionMcpEnabled
+          NOTION_MCP_URL: !Ref NotionMcpUrl
+          NOTION_REDIRECT_URI: !Ref NotionRedirectUri
+          NOTION_CONNECTIONS_TABLE: !Ref NotionConnectionsTable
+          NOTION_OAUTH_STATES_TABLE: !Ref NotionOAuthStatesTable
+          NOTION_TOKEN_ENCRYPTION_KEY_PARAM: !Ref NotionTokenEncryptionKeyParam
+          NOTION_MCP_ALLOWED_TOOLS: !Ref NotionMcpAllowedTools
+          NOTION_DEFAULT_TARGET_PARENT_PAGE_ID: !Ref NotionDefaultTargetParentPageId
+          NOTION_DEFAULT_TARGET_DATABASE_ID: !Ref NotionDefaultTargetDatabaseId
+          NOTION_LOCAL_DEV_USER_ID: !Ref NotionLocalDevUserId
+          NOTION_OAUTH_CLIENT_ID: !Ref NotionOauthClientId
+          NOTION_OAUTH_CLIENT_SECRET: !Ref NotionOauthClientSecret
+
+  ChatJobWorkerFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub "${AWS::StackName}-chat-job-worker"
+      Runtime: nodejs22.x
+      Handler: chatJobWorkerHandler.handler
+      Role: !GetAtt BackendRole.Arn
+      Code:
+        S3Bucket: !Ref LambdaCodeS3Bucket
+        S3Key: !Ref LambdaCodeS3Key
+      Timeout: 600
+      MemorySize: 512
+      Environment:
+        Variables:
+          CHAT_HISTORY_TABLE_NAME: !Ref ChatHistoryTable
+          CHAT_JOBS_TABLE_NAME: !Ref ChatJobsTable
+          CHAT_JOB_TTL_SECONDS: "86400"
+          CHAT_JOB_LEASE_SECONDS: "120"
+          CHAT_JOB_PROGRESS_MESSAGE_LIMIT: "12"
+          CHAT_JOB_OWNER_TOKEN_HEADER_NAME: x-chat-owner-token
+          TABLEAU_MCP_METADATA_CACHE_TABLE_NAME: !Ref TableauMcpMetadataCacheTable
+          USE_IN_MEMORY_REPOSITORY: "false"
           TABLEAU_SERVER_URL: !Ref TableauServerUrl
           TABLEAU_SITE_CONTENT_URL: !Ref TableauSiteContentUrl
           TABLEAU_API_VERSION: !Ref TableauApiVersion
@@ -452,6 +588,7 @@ Resources:
           - Content-Type
           - Authorization
           - X-Auth-Poll-Token
+          - X-Chat-Owner-Token
         AllowMethods:
           - OPTIONS
           - GET
@@ -494,6 +631,20 @@ Resources:
     Properties:
       ApiId: !Ref HttpApi
       RouteKey: "POST /context"
+      Target: !Sub "integrations/${ChatIntegration}"
+
+  ChatJobsCreateRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref HttpApi
+      RouteKey: "POST /chat-jobs"
+      Target: !Sub "integrations/${ChatIntegration}"
+
+  ChatJobsGetRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref HttpApi
+      RouteKey: "GET /chat-jobs/{jobId}"
       Target: !Sub "integrations/${ChatIntegration}"
 
   HealthRoute:
@@ -581,6 +732,22 @@ Resources:
       FunctionName: !Ref ChatFunction
       Principal: apigateway.amazonaws.com
       SourceArn: !Sub "arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${HttpApi}/*/*/context"
+
+  ChatJobsCreateInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref ChatFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub "arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${HttpApi}/*/*/chat-jobs"
+
+  ChatJobsGetInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref ChatFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub "arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${HttpApi}/*/*/chat-jobs/*"
 
   NotionStatusInvokePermission:
     Type: AWS::Lambda::Permission

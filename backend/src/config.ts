@@ -1,8 +1,16 @@
 export type AppConfig = {
   chatHistoryTableName?: string;
+  chatJobsTableName?: string;
   useInMemoryRepository: boolean;
   chatMemoryMessageLimit: number;
   corsAllowedOrigin: string;
+  chatJob: {
+    ttlSeconds: number;
+    leaseSeconds: number;
+    progressMessageLimit: number;
+    workerFunctionName: string;
+    ownerTokenHeaderName: string;
+  };
   agent: {
     enabled: boolean;
     maxContextPasses: number;
@@ -63,6 +71,7 @@ export type AppConfig = {
       argMaxObjectKeys: number;
       metadataCacheEnabled: boolean;
       metadataCacheTtlMs: number;
+      metadataCacheTableName?: string;
       queryDatasourceMaxLimit: number;
       queryDatasourceMaxFields: number;
     };
@@ -90,9 +99,27 @@ export function getConfig(): AppConfig {
   const notionAllowedTools = parseCsv(process.env.NOTION_MCP_ALLOWED_TOOLS);
   return {
     chatHistoryTableName: process.env.CHAT_HISTORY_TABLE_NAME,
+    chatJobsTableName: process.env.CHAT_JOBS_TABLE_NAME,
     useInMemoryRepository: process.env.USE_IN_MEMORY_REPOSITORY !== "false",
     chatMemoryMessageLimit: Number(process.env.CHAT_MEMORY_MESSAGE_LIMIT ?? 10),
     corsAllowedOrigin: process.env.CORS_ALLOWED_ORIGIN ?? "*",
+    chatJob: {
+      ttlSeconds: parsePositiveInt(
+        process.env.CHAT_JOB_TTL_SECONDS,
+        60 * 60 * 24,
+      ),
+      leaseSeconds: parsePositiveInt(
+        process.env.CHAT_JOB_LEASE_SECONDS,
+        120,
+      ),
+      progressMessageLimit: parsePositiveInt(
+        process.env.CHAT_JOB_PROGRESS_MESSAGE_LIMIT,
+        12,
+      ),
+      workerFunctionName: process.env.CHAT_JOB_WORKER_FUNCTION_NAME ?? "",
+      ownerTokenHeaderName:
+        process.env.CHAT_JOB_OWNER_TOKEN_HEADER_NAME ?? "x-chat-owner-token",
+    },
     agent: {
       enabled: process.env.CHAT_AGENT_ENABLED !== "false",
       maxContextPasses: parsePositiveInt(
@@ -193,6 +220,8 @@ export function getConfig(): AppConfig {
         metadataCacheTtlMs: Number(
           process.env.TABLEAU_MCP_METADATA_CACHE_TTL_MS ?? 30000,
         ),
+        metadataCacheTableName:
+          process.env.TABLEAU_MCP_METADATA_CACHE_TABLE_NAME,
         queryDatasourceMaxLimit: Number(
           process.env.TABLEAU_MCP_QUERY_MAX_LIMIT ?? 50,
         ),

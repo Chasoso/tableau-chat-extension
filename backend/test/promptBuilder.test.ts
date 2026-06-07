@@ -122,4 +122,31 @@ describe("buildPrompt", () => {
     );
     expect(prompt).toContain("Remaining evidence gaps: none");
   });
+
+  it("compresses MCP observations into a short evidence summary", () => {
+    const prompt = buildPrompt(request, {
+      provider: "mock",
+      mcpObservations: [
+        {
+          tool: "list-workbooks",
+          purpose: "Look up workbook context",
+          argsSummary: {},
+          success: true,
+          resultSummary: "Found 2 workbooks",
+        },
+        {
+          tool: "get-workbook",
+          purpose: "Inspect workbook metadata",
+          argsSummary: {},
+          success: false,
+          resultSummary: "No workbook id available",
+          errorMessage: "Missing workbook id",
+        },
+      ],
+    });
+
+    expect(prompt).toContain("MCP evidence summary:");
+    expect(prompt).toContain("list-workbooks:ok:Found 2 workbooks");
+    expect(prompt).toContain("get-workbook:fail:No workbook id available");
+  });
 });
