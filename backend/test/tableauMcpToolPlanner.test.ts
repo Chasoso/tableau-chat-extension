@@ -120,6 +120,26 @@ describe("tableauMcpToolPlanner", () => {
     expect(intent.intent).toBe("metadata_lookup");
   });
 
+  it("uses the request type hint to keep field inventory questions out of data analysis", () => {
+    const intent = classifyQuestionIntent(
+      "X Account Analytics Contentsのフィールドについて教えてください。",
+      {
+        dashboardName: "Analytics",
+        workbookName: "Social Workbook",
+        worksheets: [{ name: "Posts" }],
+        filters: [],
+        parameters: [],
+        dataSources: [{ name: "X Account Analytics Contents" }],
+        capturedAt: "2026-06-07T00:00:00.000Z",
+      },
+      ["list-datasources", "get-datasource-metadata", "query-datasource"],
+      "field_inventory",
+    );
+
+    expect(intent.intent).toBe("metadata_lookup");
+    expect(intent.needsMcp).toBe(true);
+  });
+
   it("prioritizes data_analysis when the question asks for ranked query results", () => {
     const intent = classifyQuestionIntent(
       "viewCountが最も多いworkbookは何か、データソースをクエリして求めてください。",

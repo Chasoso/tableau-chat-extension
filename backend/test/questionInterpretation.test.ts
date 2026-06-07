@@ -28,6 +28,8 @@ const mayViewsTop10OnlyQuestion =
   "2026\u5e745\u6708\u306eView\u6570\u3092Top10\u307e\u3067\u6559\u3048\u3066\u304f\u3060\u3055\u3044\u3002";
 const datasourceInventoryQuestion =
   "\u4f7f\u308f\u308c\u3066\u3044\u308b\u30c7\u30fc\u30bf\u30bd\u30fc\u30b9\u3092\u6559\u3048\u3066\u304f\u3060\u3055\u3044";
+const fieldInventoryQuestion =
+  "X Account Analytics Contents\u306e\u30d5\u30a3\u30fc\u30eb\u30c9\u306b\u3064\u3044\u3066\u6559\u3048\u3066\u304f\u3060\u3055\u3044\u3002";
 
 describe("questionInterpretation", () => {
   it("prefers the user-requested month over a datasource literal mention", () => {
@@ -105,6 +107,20 @@ describe("questionInterpretation", () => {
     });
 
     expect(interpretation.requestType).toBe("datasource_inventory");
+    expect(interpretation.metricIntent).toBe("unknown");
+    expect(interpretation.asksForRanking).toBe(false);
+  });
+
+  it("classifies datasource field questions as field inventory requests", () => {
+    const interpretation = interpretQuestion({
+      question: fieldInventoryQuestion,
+      dashboardContext: {
+        ...dashboardContext,
+        dataSources: [{ name: "X Account Analytics Contents" }],
+      },
+    });
+
+    expect(interpretation.requestType).toBe("field_inventory");
     expect(interpretation.metricIntent).toBe("unknown");
     expect(interpretation.asksForRanking).toBe(false);
   });

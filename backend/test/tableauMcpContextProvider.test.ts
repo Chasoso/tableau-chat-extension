@@ -346,6 +346,44 @@ describe("TableauMcpContextProvider extraction helpers", () => {
     );
   });
 
+  it("does not build aggregate recovery selections for field inventory questions", () => {
+    const selection = buildDataAnalysisQueryRecoverySelection({
+      tools: [{ name: "query-datasource", inputSchema: { properties: {} } }],
+      allowedToolNames: ["query-datasource"],
+      input: {
+        ...baseInput,
+        question:
+          "X Account Analytics Contentsのフィールドについて教えてください。",
+        questionInterpretation: interpretQuestion({
+          question:
+            "X Account Analytics Contentsのフィールドについて教えてください。",
+          dashboardContext: {
+            ...baseInput.dashboardContext,
+            dataSources: [{ name: "X Account Analytics Contents" }],
+          },
+        }),
+        dashboardContext: {
+          ...baseInput.dashboardContext,
+          dataSources: [{ name: "X Account Analytics Contents" }],
+        },
+      },
+      intent: {
+        intent: "metadata_lookup",
+        confidence: 0.9,
+        reasonBrief: "metadata",
+        answerableFromDashboardContext: false,
+        needsMcp: true,
+        maxToolCalls: 4,
+      },
+      calledToolNames: new Set<string>(),
+      rawToolResults: [],
+      observations: [],
+      remainingToolBudget: 2,
+    });
+
+    expect(selection).toBeUndefined();
+  });
+
   it("extracts datasource field profiles from get-datasource-metadata results", () => {
     const rawToolResults = [
       {

@@ -288,6 +288,7 @@ export async function runLightweightAgentLoop(input: {
       dashboardContext: input.request.dashboardContext,
     });
   logDebug("chat.analysis_request.parsed", {
+    requestType: baseQuestionInterpretation.requestType,
     metricIntent: baseQuestionInterpretation.metricIntent,
     asksForRanking: baseQuestionInterpretation.asksForRanking,
     topN: baseQuestionInterpretation.topN,
@@ -316,11 +317,15 @@ export async function runLightweightAgentLoop(input: {
     };
   }
 
-  const { plan, source } = await input.agent.createPlan({
+  const { plan: rawPlan, source } = await input.agent.createPlan({
     request: input.request,
     recentHistory: input.recentHistory,
     contextProvider: input.contextProvider,
   });
+  const plan = applyRequestTypePlanOverride(
+    rawPlan,
+    baseQuestionInterpretation,
+  );
 
   const passes: AgentExecutionDebug["passes"] = [];
   const collectedContexts: TableauAdditionalContext[] = [];
@@ -466,15 +471,16 @@ export async function runLightweightAgentLoop(input: {
 }
 
 function buildHeuristicPlan(request: ChatRequest): AgentPlan {
-  const intent = classifyQuestionIntent(
-    request.question,
-    request.dashboardContext,
-    [],
-  );
   const interpretation = interpretQuestion({
     question: request.question,
     dashboardContext: request.dashboardContext,
   });
+  const intent = classifyQuestionIntent(
+    request.question,
+    request.dashboardContext,
+    [],
+    interpretation.requestType,
+  );
 
   return {
     intent: intent.intent,
@@ -485,6 +491,37 @@ function buildHeuristicPlan(request: ChatRequest): AgentPlan {
     reasonBrief: intent.reasonBrief,
     requiredEvidence: inferRequiredEvidence(request.question, intent),
   };
+}
+
+function applyRequestTypePlanOverride(
+  plan: AgentPlan,
+  interpretation: QuestionInterpretation,
+): AgentPlan {
+  if (interpretation.requestType === "datasource_inventory") {
+    return {
+      ...plan,
+      intent: "dashboard_explanation",
+      needsMcp: false,
+      answerStyle: "direct",
+      reasonBrief:
+        "The question asks which datasources are used, so a lightweight dashboard-context answer should be preferred.",
+      requiredEvidence: ["dashboard context", "datasource list"],
+    };
+  }
+
+  if (interpretation.requestType === "field_inventory") {
+    return {
+      ...plan,
+      intent: "metadata_lookup",
+      needsMcp: true,
+      answerStyle: "direct",
+      reasonBrief:
+        "The question asks for datasource fields or schema, so metadata lookup should be preferred over aggregate analysis.",
+      requiredEvidence: ["datasource metadata", "field list"],
+    };
+  }
+
+  return plan;
 }
 
 function inferRequiredEvidence(

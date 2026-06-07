@@ -192,9 +192,7 @@ export function detectMetricIntent(question: string): QuestionMetricIntent {
     METRIC_INTENT_KEYWORDS,
   ) as Array<[Exclude<QuestionMetricIntent, "unknown">, string[]]>) {
     if (
-      keywords.some((keyword) =>
-        normalized.includes(normalizeQuestionForIntent(keyword)),
-      )
+      keywords.some((keyword) => containsNormalizedKeyword(normalized, keyword))
     ) {
       return intent;
     }
@@ -206,7 +204,7 @@ export function detectMetricIntent(question: string): QuestionMetricIntent {
 export function detectRankingIntent(question: string): boolean {
   const normalized = normalizeQuestionForIntent(question);
   return RANKING_KEYWORDS.some((keyword) =>
-    normalized.includes(normalizeQuestionForIntent(keyword)),
+    containsNormalizedKeyword(normalized, keyword),
   );
 }
 
@@ -228,9 +226,7 @@ export function detectGroupingIntent(question: string): QuestionGroupingIntent {
   >) {
     if (
       intent !== "unknown" &&
-      keywords.some((keyword) =>
-        normalized.includes(normalizeQuestionForIntent(keyword)),
-      )
+      keywords.some((keyword) => containsNormalizedKeyword(normalized, keyword))
     ) {
       return intent;
     }
@@ -270,7 +266,7 @@ export function matchesMetricFieldIntent(
 
   const normalizedFieldName = normalizeQuestionForIntent(fieldName);
   return METRIC_INTENT_KEYWORDS[intent].some((keyword) =>
-    normalizedFieldName.includes(normalizeQuestionForIntent(keyword)),
+    containsNormalizedKeyword(normalizedFieldName, keyword),
   );
 }
 
@@ -350,11 +346,44 @@ function readExplicitTopN(question: string | undefined): number | undefined {
 function normalizeQuestionForIntent(value: string): string {
   return value
     .normalize("NFKC")
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .replace(/([A-Z]+)([A-Z][a-z])/g, "$1 $2")
     .toLowerCase()
     .replace(/[(){}\[\]<>]/g, " ")
     .replace(/[\\/_,.:;!?-]/g, " ")
     .replace(WHITESPACE_PATTERN, " ")
     .trim();
+}
+
+function containsNormalizedKeyword(
+  normalizedQuestion: string,
+  keyword: string,
+): boolean {
+  const normalizedKeyword = normalizeQuestionForIntent(keyword);
+  if (!normalizedKeyword) {
+    return false;
+  }
+
+  const hasAsciiLetterOrDigit = /[a-z0-9]/i.test(normalizedKeyword);
+  if (!hasAsciiLetterOrDigit) {
+    return normalizedQuestion.includes(normalizedKeyword);
+  }
+
+  const paddedQuestion = ` ${normalizedQuestion} `;
+  const paddedKeyword = ` ${normalizedKeyword} `;
+  if (normalizedKeyword.includes(" ")) {
+    return paddedQuestion.includes(paddedKeyword);
+  }
+
+  const escapedKeyword = normalizedKeyword.replace(
+    /[.*+?^${}()|[\]\\]/g,
+    "\\$&",
+  );
+  const boundaryPattern = new RegExp(
+    `(^|[^a-z0-9])${escapedKeyword}(?=$|[^a-z0-9])`,
+    "i",
+  );
+  return boundaryPattern.test(normalizedQuestion);
 }
 
 function chooseKnownMetricIntent(
@@ -406,23 +435,36 @@ function detectQuestionRequestType(input: {
     "metadata",
   ];
 
+  const hasDatasourceKeyword = datasourceInventoryKeywords.some((keyword) =>
+    containsNormalizedKeyword(combined, keyword),
+  );
+  const hasFieldKeyword = fieldInventoryKeywords.some((keyword) =>
+    containsNormalizedKeyword(combined, keyword),
+  );
+  const hasPromptingKeyword = [
+    JAPANESE_LIST,
+    JAPANESE_TELL_ME,
+    JAPANESE_WHAT,
+    JAPANESE_WHICH,
+    "show",
+    "tell me",
+    "what",
+    "which",
+    "list",
+  ].some((keyword) => containsNormalizedKeyword(combined, keyword));
+
   const mentionsDatasourceInventory =
-    datasourceInventoryKeywords.some((keyword) =>
-      combined.includes(normalizeQuestionForIntent(keyword)),
-    ) &&
-    !fieldInventoryKeywords.some((keyword) =>
-      combined.includes(normalizeQuestionForIntent(keyword)),
-    );
+    hasDatasourceKeyword && hasPromptingKeyword && !hasFieldKeyword;
 
   if (mentionsDatasourceInventory) {
     return "datasource_inventory";
   }
 
   const mentionsFieldInventory =
-    combined.includes(normalizeQuestionForIntent(JAPANESE_FIELDS)) ||
-    fieldInventoryKeywords.some((keyword) =>
-      combined.includes(normalizeQuestionForIntent(keyword)),
-    );
+    hasFieldKeyword &&
+    (hasDatasourceKeyword ||
+      hasPromptingKeyword ||
+      /schema|metadata/.test(combined));
   if (mentionsFieldInventory) {
     return "field_inventory";
   }

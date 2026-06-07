@@ -192,6 +192,7 @@ export class TableauMcpContextProvider implements TableauContextProvider {
           effectiveQuestion,
           input.dashboardContext,
           allowedToolNames,
+          questionInterpretation.requestType,
         );
       const effectiveMaxToolCalls = Math.max(
         0,
@@ -1817,6 +1818,13 @@ export function buildDataAnalysisQueryRecoverySelection(input: {
   remainingToolBudget: number;
 }): SelectedTool | undefined {
   if (!["metadata_lookup", "data_analysis"].includes(input.intent.intent)) {
+    return undefined;
+  }
+
+  if (
+    input.input.questionInterpretation?.requestType === "field_inventory" ||
+    input.input.questionInterpretation?.requestType === "datasource_inventory"
+  ) {
     return undefined;
   }
 
@@ -4013,6 +4021,18 @@ function buildAggregateQueryDatasourceArgs(
   rawToolResults: RawMcpToolResult[],
   questionInterpretation: QuestionInterpretation,
 ): Record<string, unknown> | undefined {
+  if (
+    questionInterpretation.requestType === "datasource_inventory" ||
+    questionInterpretation.requestType === "field_inventory"
+  ) {
+    logDebug("tableau.mcp.query.skipped_for_request_type", {
+      requestType: questionInterpretation.requestType,
+      datasourceNameHash: safeHash(datasourceRef.name),
+      metricIntent: questionInterpretation.metricIntent,
+    });
+    return undefined;
+  }
+
   const datasourceLuid =
     readString(datasourceRef.luid) ?? readString(datasourceRef.id);
   if (!datasourceLuid) {

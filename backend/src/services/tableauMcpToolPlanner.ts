@@ -4,7 +4,11 @@ import {
 } from "@aws-sdk/client-bedrock-runtime";
 import { getConfig } from "../config";
 import { logError, logInfo, logWarn, safeErrorDetails } from "../logging";
-import type { DashboardContext, QuestionIntent } from "../types/tableau";
+import type {
+  DashboardContext,
+  QuestionIntent,
+  QuestionRequestType,
+} from "../types/tableau";
 
 export type PlannerToolFilterMode = "strict" | "soft" | "off";
 export type PlannerIntentClassifierMode = "heuristic" | "hybrid";
@@ -374,6 +378,7 @@ export function classifyQuestionIntent(
   question: string,
   dashboardContext: DashboardContext,
   allowedToolNames: string[] = [],
+  requestTypeHint?: QuestionRequestType,
 ): ClassifiedQuestionIntent {
   const normalizedQuestion = question
     .normalize("NFKC")
@@ -382,7 +387,35 @@ export function classifyQuestionIntent(
     .trim();
   const hasQuestionMark = /[?\uFF1F]/u.test(question);
   const containsAny = (keywords: string[]): boolean =>
-    keywords.some((keyword) => normalizedQuestion.includes(keyword));
+    keywords.some((keyword) =>
+      containsNormalizedPlannerKeyword(normalizedQuestion, keyword),
+    );
+
+  if (requestTypeHint === "datasource_inventory") {
+    const policy = QUESTION_INTENT_POLICY.dashboard_explanation;
+    return {
+      intent: "dashboard_explanation",
+      confidence: 0.96,
+      reasonBrief:
+        "The question explicitly asks which datasources are used, so a lightweight dashboard-context answer should be preferred.",
+      answerableFromDashboardContext: policy.answerableFromDashboardContext,
+      needsMcp: false,
+      maxToolCalls: 0,
+    };
+  }
+
+  if (requestTypeHint === "field_inventory") {
+    const policy = QUESTION_INTENT_POLICY.metadata_lookup;
+    return {
+      intent: "metadata_lookup",
+      confidence: 0.96,
+      reasonBrief:
+        "The question explicitly asks for datasource fields or schema, so metadata lookup should run before any aggregate analysis.",
+      answerableFromDashboardContext: policy.answerableFromDashboardContext,
+      needsMcp: policy.needsMcp,
+      maxToolCalls: policy.maxToolCalls,
+    };
+  }
   const hasHowToKeywords = containsAny([
     "how to",
     "how do i",
@@ -649,6 +682,33 @@ export function classifyQuestionIntent(
     needsMcp: policy.needsMcp,
     maxToolCalls: policy.maxToolCalls,
   };
+}
+
+function containsNormalizedPlannerKeyword(
+  normalizedQuestion: string,
+  keyword: string,
+): boolean {
+  const normalizedKeyword = keyword
+    .normalize("NFKC")
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!normalizedKeyword) {
+    return false;
+  }
+
+  const hasAsciiLetterOrDigit = /[a-z0-9]/i.test(normalizedKeyword);
+  if (!hasAsciiLetterOrDigit) {
+    return normalizedQuestion.includes(normalizedKeyword);
+  }
+
+  const paddedQuestion = ` ${normalizedQuestion} `;
+  const paddedKeyword = ` ${normalizedKeyword} `;
+  if (normalizedKeyword.includes(" ")) {
+    return paddedQuestion.includes(paddedKeyword);
+  }
+
+  return normalizedQuestion.split(" ").includes(normalizedKeyword);
 }
 export function parseToolPlanResponse(
   text: string,

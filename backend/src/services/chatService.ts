@@ -139,6 +139,47 @@ export class ChatService {
       warningCount: additionalContext.warnings?.length ?? 0,
       agentPassCount: agentLoopResult.debug?.passCount ?? 0,
     });
+    const metadataPathAnswer = buildFieldInventoryAnswerFromContext(
+      request,
+      additionalContext,
+    );
+    if (metadataPathAnswer) {
+      logInfo("chat.service.metadata_path_answer.used", {
+        sessionId,
+        messageId,
+        requestType: additionalContext.questionInterpretation?.requestType,
+        fieldProfileCount:
+          additionalContext.datasourceFieldProfiles?.length ?? 0,
+      });
+      return this.persistAndBuildResponse({
+        sessionId,
+        messageId,
+        ownerUserId,
+        request,
+        answer: metadataPathAnswer,
+        notionPostIdeaDraft: buildNotionDraft(
+          request.question,
+          metadataPathAnswer,
+          request,
+          additionalContext,
+        ),
+        dashboardContextPatch: buildDashboardContextPatch(
+          request,
+          additionalContext,
+        ),
+        debug: {
+          usedMock: this.answerGenerator.name === "mock",
+          tableauContextProvider: additionalContext.provider,
+          ...(config.tableau.mcp.debugLogResults
+            ? {
+                mcpExecutionDebug: additionalContext.mcpExecutionDebug,
+                mcpObservations: additionalContext.mcpObservations,
+                agentExecutionDebug: agentLoopResult.debug,
+              }
+            : {}),
+        },
+      });
+    }
     const remainingTimeBeforeAnswer =
       options.getRemainingTimeInMillis?.() ?? Number.POSITIVE_INFINITY;
     if (remainingTimeBeforeAnswer < 8_000) {
@@ -610,6 +651,14 @@ export function finalizeUserFacingAnswer(
     return datasourceInventoryAnswer;
   }
 
+  const fieldInventoryAnswer = buildFieldInventoryAnswerFromContext(
+    request,
+    additionalContext,
+  );
+  if (fieldInventoryAnswer) {
+    return fieldInventoryAnswer;
+  }
+
   const structuredAnswer = buildStructuredDataAnalysisAnswer(
     request,
     additionalContext,
@@ -1017,6 +1066,14 @@ function buildDeadlineAwareDeterministicAnswer(
     return datasourceInventoryAnswer;
   }
 
+  const fieldInventoryAnswer = buildFieldInventoryAnswerFromContext(
+    request,
+    additionalContext,
+  );
+  if (fieldInventoryAnswer) {
+    return fieldInventoryAnswer;
+  }
+
   const structuredAnswer = buildStructuredDataAnalysisAnswer(
     request,
     additionalContext,
@@ -1086,6 +1143,88 @@ function buildDatasourceInventoryAnswerFromContext(
     .join("\n");
 }
 
+function buildFieldInventoryAnswerFromContext(
+  request: ChatRequest,
+  additionalContext: Awaited<
+    ReturnType<TableauContextProvider["getAdditionalContext"]>
+  >,
+): string | undefined {
+  const interpretation = additionalContext.questionInterpretation;
+  if (interpretation?.requestType !== "field_inventory") {
+    return undefined;
+  }
+
+  const fieldProfiles = additionalContext.datasourceFieldProfiles ?? [];
+  if (!fieldProfiles.length) {
+    return undefined;
+  }
+
+  const preferredDatasourceName = interpretation.datasourceName?.trim();
+  const selectedProfiles = preferredDatasourceName
+    ? fieldProfiles.filter(
+        (profile) =>
+          profile.datasourceName.trim().toLowerCase() ===
+          preferredDatasourceName.toLowerCase(),
+      )
+    : fieldProfiles;
+  const profilesToRender = selectedProfiles.length
+    ? selectedProfiles
+    : fieldProfiles;
+  if (!profilesToRender.length) {
+    return undefined;
+  }
+
+  const datasourceNames = [
+    ...new Set(profilesToRender.map((p) => p.datasourceName)),
+  ];
+  const lines = [
+    `データソース ${datasourceNames.join("、")} で確認できたフィールド一覧です。`,
+  ];
+  if (additionalContext.normalizedContext?.workbook?.name) {
+    lines.push(
+      `取得できた Tableau Cloud 情報では、ワークブック「${additionalContext.normalizedContext.workbook.name}」に関連付けられています。`,
+    );
+  }
+
+  for (const profile of profilesToRender) {
+    lines.push(`- ${profile.datasourceName}（${profile.fieldCount}件）`);
+    const details: Array<{
+      name: string;
+      dataType?: string;
+      role?: string;
+      semanticRole?: string;
+    }> = profile.fields.length
+      ? profile.fields
+      : profile.fieldNames.map((fieldName) => ({
+          name: fieldName,
+          dataType: undefined,
+          role: undefined,
+          semanticRole: undefined,
+        }));
+    lines.push(
+      ...details.slice(0, 20).map((fieldDetail) => {
+        const annotations = [
+          fieldDetail.dataType,
+          fieldDetail.role,
+          fieldDetail.semanticRole,
+        ].filter(Boolean);
+        return annotations.length
+          ? `  - ${fieldDetail.name} [${annotations.join(" / ")}]`
+          : `  - ${fieldDetail.name}`;
+      }),
+    );
+    if (details.length > 20) {
+      lines.push(`  - ...ほか ${details.length - 20} 件`);
+    }
+  }
+
+  lines.push(
+    "必要であれば、この中の特定フィールドが何を表すかも続けて説明できます。",
+  );
+
+  return lines.join("\n");
+}
+
 function describeMetricField(fieldName: string): string {
   const normalized = fieldName.toLowerCase();
   if (/favorite|favourite/.test(normalized)) {
@@ -1116,6 +1255,22 @@ function selectBestQueryInsight(
   interpretation: QuestionInterpretation | undefined,
   question: string,
 ): QueryDatasourceInsight | undefined {
+  if (
+    interpretation?.requestType === "field_inventory" ||
+    interpretation?.requestType === "datasource_inventory"
+  ) {
+    logDebug("chat.query_insight.selected", {
+      requestType: interpretation.requestType,
+      selectedMetricField: undefined,
+      selectedDatasourceName: undefined,
+      selectedRowCount: 0,
+      selectedScore: undefined,
+      selectedReasons: ["request_type_blocks_query_insights"],
+      candidateCount: insights.length,
+    });
+    return undefined;
+  }
+
   const candidates = insights
     .map((insight, index) => ({
       insight,
