@@ -245,6 +245,146 @@ describe("TableauMcpContextProvider extraction helpers", () => {
     );
   });
 
+  it("prefers explicit impression metrics and post identifiers for post ranking questions", () => {
+    const interpretation = interpretQuestion({
+      question:
+        "X Account Overview Analytics を使って、2026年5月のインプレッション数が最も多かったポストを教えてください。",
+      dashboardContext: {
+        ...baseInput.dashboardContext,
+        dataSources: [{ name: "X Account Overview Analytics" }],
+      },
+    });
+
+    expect(interpretation.metricIntent).toBe("impressions");
+    expect(interpretation.requestedMetricText).toBe("インプレッション数");
+    expect(interpretation.rankingTarget).toBe("post");
+
+    const metricSelection = selectAggregateMetricField(
+      [
+        {
+          name: "Post本文",
+          dataType: "STRING",
+          role: "DIMENSION",
+          source: "datasourceModel",
+        },
+        {
+          name: "Post URL",
+          dataType: "STRING",
+          role: "DIMENSION",
+          source: "datasourceModel",
+        },
+        {
+          name: "インプレッション数",
+          dataType: "INTEGER",
+          role: "MEASURE",
+          source: "datasourceModel",
+        },
+        {
+          name: "ブックマーク",
+          dataType: "INTEGER",
+          role: "MEASURE",
+          source: "datasourceModel",
+        },
+      ],
+      interpretation,
+    );
+
+    expect(metricSelection.fieldName).toBe("インプレッション数");
+
+    const selection = buildDataAnalysisQueryRecoverySelection({
+      tools: [
+        {
+          name: "query-datasource",
+          inputSchema: {
+            type: "object",
+            properties: {
+              datasourceLuid: { type: "string" },
+              query: { type: "object" },
+              limit: { type: "number" },
+            },
+          },
+        },
+      ],
+      allowedToolNames: ["query-datasource"],
+      input: {
+        ...baseInput,
+        question:
+          "X Account Overview Analytics を使って、2026年5月のインプレッション数が最も多かったポストを教えてください。",
+        dashboardContext: {
+          ...baseInput.dashboardContext,
+          dataSources: [{ name: "X Account Overview Analytics" }],
+        },
+      },
+      intent: {
+        intent: "metadata_lookup",
+        confidence: 0.9,
+        reasonBrief: "Need metadata first.",
+        answerableFromDashboardContext: false,
+        needsMcp: true,
+        maxToolCalls: 4,
+      },
+      calledToolNames: new Set(["list-datasources", "get-datasource-metadata"]),
+      rawToolResults: [
+        {
+          toolName: "list-datasources",
+          result: {
+            content: [
+              {
+                text: JSON.stringify([
+                  {
+                    name: "X Account Overview Analytics",
+                    id: "ds-123",
+                    project: { name: "Sandbox" },
+                  },
+                ]),
+              },
+            ],
+          },
+        },
+        {
+          toolName: "get-datasource-metadata",
+          result: {
+            content: [
+              {
+                text: JSON.stringify({
+                  datasourceModel: {
+                    name: "X Account Overview Analytics",
+                    fields: [
+                      { name: "Post本文" },
+                      { name: "Post URL" },
+                      { name: "インプレッション数" },
+                      { name: "ブックマーク" },
+                    ],
+                  },
+                }),
+              },
+            ],
+          },
+        },
+      ],
+      observations: [],
+      remainingToolBudget: 2,
+    });
+
+    expect(selection?.status).toBe("ready");
+    if (selection?.status === "ready") {
+      expect(selection.arguments.query).toEqual(
+        expect.objectContaining({
+          fields: [
+            { fieldCaption: "Post本文", fieldAlias: "rank_label" },
+            {
+              fieldCaption: "インプレッション数",
+              function: "SUM",
+              fieldAlias: "rank_metric",
+              sortDirection: "DESC",
+              sortPriority: 1,
+            },
+          ],
+        }),
+      );
+    }
+  });
+
   it("builds a composite reactions metric when reaction ranking is requested", () => {
     const interpretation = interpretQuestion({
       question:

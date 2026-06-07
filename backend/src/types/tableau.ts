@@ -155,9 +155,23 @@ export type QueryDatasourceInsightRow = {
 export type QuestionMetricIntent =
   | "views"
   | "favorites"
+  | "likes"
+  | "impressions"
+  | "engagements"
+  | "engagement_rate"
+  | "reposts"
+  | "replies"
+  | "post_count"
   | "love"
   | "bookmarks"
   | "reactions"
+  | "unknown";
+
+export type QuestionRankingTarget =
+  | "post"
+  | "viz"
+  | "author"
+  | "datasource"
   | "unknown";
 
 export type QuestionGroupingIntent =
@@ -181,8 +195,10 @@ export type QuestionInterpretation = {
   requestTypeConfidence?: number;
   requestTypeSignals?: string[];
   metricIntent: QuestionMetricIntent;
+  requestedMetricText?: string;
   asksForRanking: boolean;
   topN: number;
+  rankingTarget?: QuestionRankingTarget;
   groupingIntent?: QuestionGroupingIntent;
   topNExplicitlyRequested?: boolean;
   period?: QuestionPeriod;
@@ -193,15 +209,19 @@ export type QueryDatasourceInsight = {
   datasourceLuid?: string;
   dimensionField?: string;
   metricField: string;
+  requestedMetricIntent?: QuestionMetricIntent;
+  requestedMetricText?: string;
+  rankingTarget?: QuestionRankingTarget;
   rowCount: number;
   actualRowCount: number;
   rows: QueryDatasourceInsightRow[];
-  requestedMetricIntent?: QuestionMetricIntent;
   requestedTopN?: number;
   requestedRanking?: boolean;
   requestedPeriodStart?: string;
   requestedPeriodEnd?: string;
   sourceQuestion?: string;
+  metricMatchConfidence?: number;
+  dimensionMatchConfidence?: number;
   fulfillsMetricRequest?: boolean;
   fulfillsRankingRequest?: boolean;
   fulfillsPeriodRequest?: boolean;

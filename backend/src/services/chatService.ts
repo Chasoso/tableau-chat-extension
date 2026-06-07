@@ -320,11 +320,30 @@ export class ChatService {
       prompt,
       additionalContext,
     });
-    const sanitizedAnswer = finalizeUserFacingAnswer(
+    const finalAnswer = resolveFinalUserFacingAnswer(
       answer,
       request,
       additionalContext,
     );
+    const sanitizedAnswer = finalAnswer.answer;
+    logDebug("chat.final_answer.resolved", {
+      sessionId,
+      messageId,
+      requestedMetricIntent:
+        additionalContext.questionInterpretation?.metricIntent ?? "unknown",
+      requestedMetricText:
+        additionalContext.questionInterpretation?.requestedMetricText ?? null,
+      selectedMetricField: finalAnswer.selectedMetricField ?? null,
+      metricMatchConfidence: finalAnswer.metricMatchConfidence ?? null,
+      rankingTarget:
+        additionalContext.questionInterpretation?.rankingTarget ?? "unknown",
+      selectedDimensionField: finalAnswer.selectedDimensionField ?? null,
+      dimensionMatchConfidence: finalAnswer.dimensionMatchConfidence ?? null,
+      queryInsightUsedForFinalAnswer:
+        finalAnswer.queryInsightUsedForFinalAnswer,
+      finalAnswerSource: finalAnswer.finalAnswerSource,
+      markdownValidationPassed: finalAnswer.markdownValidationPassed,
+    });
     const notionPostIdeaDraft = buildNotionDraft(
       request.question,
       sanitizedAnswer,
@@ -738,12 +757,44 @@ export function finalizeUserFacingAnswer(
     ReturnType<TableauContextProvider["getAdditionalContext"]>
   >,
 ): string {
+  return resolveFinalUserFacingAnswer(answer, request, additionalContext)
+    .answer;
+}
+
+type FinalAnswerSource =
+  | "bedrock"
+  | "query_insight_template"
+  | "fast_path"
+  | "fallback";
+
+type FinalAnswerResolution = {
+  answer: string;
+  finalAnswerSource: FinalAnswerSource;
+  queryInsightUsedForFinalAnswer: boolean;
+  markdownValidationPassed: boolean;
+  selectedMetricField?: string;
+  metricMatchConfidence?: number;
+  selectedDimensionField?: string;
+  dimensionMatchConfidence?: number;
+};
+
+function resolveFinalUserFacingAnswer(
+  answer: string,
+  request: ChatRequest,
+  additionalContext: Awaited<
+    ReturnType<TableauContextProvider["getAdditionalContext"]>
+  >,
+): FinalAnswerResolution {
   const datasourceInventoryAnswer = buildDatasourceInventoryAnswerFromContext(
     request,
     additionalContext,
   );
   if (datasourceInventoryAnswer) {
-    return datasourceInventoryAnswer;
+    return finalizeMarkdownAnswer({
+      answer: datasourceInventoryAnswer,
+      finalAnswerSource: "fast_path",
+      queryInsightUsedForFinalAnswer: false,
+    });
   }
 
   const fieldInventoryAnswer = buildFieldInventoryAnswerFromContext(
@@ -751,7 +802,11 @@ export function finalizeUserFacingAnswer(
     additionalContext,
   );
   if (fieldInventoryAnswer) {
-    return fieldInventoryAnswer;
+    return finalizeMarkdownAnswer({
+      answer: fieldInventoryAnswer,
+      finalAnswerSource: "fast_path",
+      queryInsightUsedForFinalAnswer: false,
+    });
   }
 
   const mcpFailureAnswer = buildMcpConnectionFailureAnswer(
@@ -759,7 +814,11 @@ export function finalizeUserFacingAnswer(
     additionalContext,
   );
   if (mcpFailureAnswer) {
-    return mcpFailureAnswer;
+    return finalizeMarkdownAnswer({
+      answer: mcpFailureAnswer,
+      finalAnswerSource: "fallback",
+      queryInsightUsedForFinalAnswer: false,
+    });
   }
 
   const structuredAnswer = buildStructuredDataAnalysisAnswer(
@@ -767,7 +826,20 @@ export function finalizeUserFacingAnswer(
     additionalContext,
   );
   if (structuredAnswer) {
-    return structuredAnswer;
+    const selectedInsight = selectBestValidatedQueryInsight(
+      additionalContext.queryInsights ?? [],
+      additionalContext.questionInterpretation,
+      request.question,
+    );
+    return finalizeMarkdownAnswer({
+      answer: structuredAnswer,
+      finalAnswerSource: "query_insight_template",
+      queryInsightUsedForFinalAnswer: true,
+      selectedMetricField: selectedInsight?.insight.metricField,
+      metricMatchConfidence: selectedInsight?.metricMatchConfidence,
+      selectedDimensionField: selectedInsight?.insight.dimensionField,
+      dimensionMatchConfidence: selectedInsight?.dimensionMatchConfidence,
+    });
   }
 
   const noValidatedRankingFallback = buildNoValidatedRankingFallback(
@@ -775,7 +847,11 @@ export function finalizeUserFacingAnswer(
     additionalContext,
   );
   if (noValidatedRankingFallback) {
-    return noValidatedRankingFallback;
+    return finalizeMarkdownAnswer({
+      answer: noValidatedRankingFallback,
+      finalAnswerSource: "fallback",
+      queryInsightUsedForFinalAnswer: false,
+    });
   }
 
   const safeDataAnalysisFallback = buildSafeDataAnalysisFallback(
@@ -783,10 +859,76 @@ export function finalizeUserFacingAnswer(
     additionalContext,
   );
   if (safeDataAnalysisFallback) {
-    return safeDataAnalysisFallback;
+    return finalizeMarkdownAnswer({
+      answer: safeDataAnalysisFallback,
+      finalAnswerSource: "fallback",
+      queryInsightUsedForFinalAnswer: false,
+    });
   }
 
-  return sanitizeUserFacingAnswer(answer, request, additionalContext);
+  return finalizeMarkdownAnswer({
+    answer: sanitizeUserFacingAnswer(answer, request, additionalContext),
+    finalAnswerSource: "bedrock",
+    queryInsightUsedForFinalAnswer: false,
+  });
+}
+
+function finalizeMarkdownAnswer(input: {
+  answer: string;
+  finalAnswerSource: FinalAnswerSource;
+  queryInsightUsedForFinalAnswer: boolean;
+  selectedMetricField?: string;
+  metricMatchConfidence?: number;
+  selectedDimensionField?: string;
+  dimensionMatchConfidence?: number;
+}): FinalAnswerResolution {
+  const markdownAnswer = ensureMarkdownDocument(input.answer);
+  return {
+    answer: markdownAnswer.answer,
+    finalAnswerSource: input.finalAnswerSource,
+    queryInsightUsedForFinalAnswer: input.queryInsightUsedForFinalAnswer,
+    markdownValidationPassed: markdownAnswer.passed,
+    selectedMetricField: input.selectedMetricField,
+    metricMatchConfidence: input.metricMatchConfidence,
+    selectedDimensionField: input.selectedDimensionField,
+    dimensionMatchConfidence: input.dimensionMatchConfidence,
+  };
+}
+
+function ensureMarkdownDocument(answer: string): {
+  answer: string;
+  passed: boolean;
+} {
+  const trimmed = answer.trim();
+  if (!trimmed) {
+    return {
+      answer: "## 回答\n\n回答を生成できませんでした。",
+      passed: true,
+    };
+  }
+
+  if (looksLikeMarkdownDocument(trimmed)) {
+    return { answer: trimmed, passed: true };
+  }
+
+  const paragraphs = trimmed
+    .split(/\n{2,}/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  return {
+    answer: ["## 回答", "", ...paragraphs].join("\n"),
+    passed: true,
+  };
+}
+
+function looksLikeMarkdownDocument(answer: string): boolean {
+  return (
+    /(^|\n)#{1,6}\s+\S/.test(answer) ||
+    /(^|\n)(-|\*|\d+\.)\s+\S/.test(answer) ||
+    /\n\|.+\|/.test(answer) ||
+    /```/.test(answer) ||
+    />\s+\S/.test(answer)
+  );
 }
 
 function sanitizeHallucinatedFieldMentions(
@@ -958,17 +1100,22 @@ export function buildStructuredDataAnalysisAnswer(
   }
 
   const interpretation = additionalContext.questionInterpretation;
-  const insight = selectBestQueryInsight(
+  const selection = selectBestValidatedQueryInsight(
     additionalContext.queryInsights ?? [],
     interpretation,
     request.question,
   );
-  if (!insight) {
+  if (!selection) {
     return undefined;
   }
 
+  const insight = selection.insight;
+
   const rows = insight.rows.filter((row) => row.label || row.value !== null);
   if (!rows.length) {
+    return undefined;
+  }
+  if (!rows.some((row) => isMeaningfulInsightLabel(row.label))) {
     return undefined;
   }
 
@@ -982,6 +1129,9 @@ export function buildStructuredDataAnalysisAnswer(
     request.question,
   );
   const requestedTopN = interpretation?.topN ?? 10;
+  const rankingTargetLabel = getRankingTargetLabel(
+    interpretation?.rankingTarget ?? "unknown",
+  );
   const visibleRows = rows.slice(
     0,
     isRankingQuestion
@@ -989,31 +1139,42 @@ export function buildStructuredDataAnalysisAnswer(
       : Math.min(3, rows.length),
   );
   const intro = isRankingQuestion
-    ? `${periodLabel ? `${periodLabel}の` : ""}${metricLabel}ランキングです。`
-    : `${periodLabel ? `${periodLabel}の` : ""}${metricLabel}が高いVizです。`;
-  const body = isRankingQuestion
-    ? visibleRows
-        .map(
-          (row, index) =>
-            `${index + 1}. ${row.label ?? "名称不明"}: ${formatMetricValue(row.value)}`,
-        )
-        .join("\n")
-    : visibleRows
-        .map(
-          (row) =>
-            `- ${row.label ?? "名称不明"}: ${formatMetricValue(row.value)}`,
-        )
-        .join("\n");
+    ? rankingTargetLabel === "ポスト" && requestedTopN === 1
+      ? `${periodLabel ? `${periodLabel}に` : ""}最も${metricLabel}が多かった${rankingTargetLabel}は以下です。`
+      : `${periodLabel ? `${periodLabel}の` : ""}${rankingTargetLabel}の${metricLabel}ランキングです。`
+    : `${periodLabel ? `${periodLabel}の` : ""}${metricLabel}が高い${rankingTargetLabel}です。`;
+  const tableHeader = isRankingQuestion
+    ? `| 順位 | ${rankingTargetLabel} | ${metricLabel} |`
+    : `| ${rankingTargetLabel} | ${metricLabel} |`;
+  const tableSeparator = isRankingQuestion ? "|---:|---|---:|" : "|---|---:|";
+  const bodyRows = visibleRows.map((row, index) => {
+    const label = escapeMarkdownTableCell(row.label ?? "名称不明");
+    const value = formatMetricValue(row.value);
+    return isRankingQuestion
+      ? `| ${index + 1} | ${label} | ${value} |`
+      : `| ${label} | ${value} |`;
+  });
 
   return [
-    `${intro}`,
-    `このダッシュボードの現在のフィルター範囲で参照されているデータソース「${insight.datasourceName}」から集計しています。`,
+    "## 結論",
+    "",
+    intro,
+    "",
+    tableHeader,
+    tableSeparator,
+    ...bodyRows,
     ...(isRankingQuestion && rows.length < requestedTopN
-      ? [`取得できたランキング件数は ${rows.length} 件です。`]
+      ? ["", `取得できたランキング件数は ${rows.length} 件です。`]
       : []),
     "",
-    body,
-  ].join("\n");
+    "## 集計条件",
+    "",
+    `- データソース: \`${insight.datasourceName}\``,
+    periodLabel ? `- 期間: \`${periodLabel}\`` : undefined,
+    `- 指標: \`${metricLabel}\``,
+  ]
+    .filter(Boolean)
+    .join("\n");
 }
 
 function buildSafeDataAnalysisFallback(
@@ -1055,10 +1216,14 @@ function buildSafeDataAnalysisFallback(
     : "対象データソース";
 
   return [
+    "## 回答",
+    "",
     `${
       periodLabel ? `${periodLabel}の` : ""
     }${metricLabel}を安全に確定できませんでした。`,
+    "",
     `このダッシュボードの現在のフィルター範囲でのデータソース「${datasourceText}」に対する集計クエリ自体は実行しましたが、返却結果が要求した期間や指標と一致していることを確認できなかったため、誤ったランキングは返さないようにしています。`,
+    "",
     "これはデータソース全体にデータがないことを意味しません。次は、要求した指標名に対応するフィールドの有無と、query-datasource の返却列名を確認するのがよいです。",
   ].join("\n");
 }
@@ -1113,13 +1278,21 @@ function buildNoValidatedRankingFallback(
 
   return queryExecuted
     ? [
+        "## 回答",
+        "",
         `${periodLabel ? `${periodLabel}の` : ""}${metricLabel}ランキングを安全に確定できませんでした。`,
+        "",
         `このダッシュボードの現在のフィルター範囲でのデータソース「${datasourceText}」への集計クエリは実行しましたが、返却結果が要求した指標・件数と一致していることを確認できませんでした。`,
+        "",
         "誤ったランキングを返さないため、結果の提示は保留しています。これはデータソース全体が空という意味ではありません。次は query-datasource の返却行数と列名を確認するのがよいです。",
       ].join("\n")
     : [
+        "## 回答",
+        "",
         `${periodLabel ? `${periodLabel}の` : ""}${metricLabel}ランキングをまだ確定できませんでした。`,
+        "",
         `このダッシュボードの現在のフィルター範囲でのデータソース「${datasourceText}」に対して、要求した指標に一致する集計クエリまで到達できていません。`,
+        "",
         "誤ったランキング表を返さないため、結果の提示は保留しています。これはデータソース全体が空という意味ではありません。次は要求した指標に対応する集計フィールドを確認するのがよいです。",
       ].join("\n");
 }
@@ -1157,8 +1330,12 @@ function buildMcpConnectionFailureAnswer(
     : "対象データソース";
 
   return [
+    "## 回答",
+    "",
     `Tableau MCP への接続に失敗したため、${periodLabel ? `${periodLabel}の` : ""}${metricLabel}について実データに基づく分析結果を確定できませんでした。`,
+    "",
     `現在のダッシュボードのフィルター範囲で対象だったデータソースは「${datasourceText}」ですが、MCP が起動段階で失敗しており、ランキングや合計値を裏付ける観測値は取得できていません。`,
+    "",
     "これはデータソース全体にデータがないことを意味しません。接続が回復したら再実行すると、実データに基づく分析ができます。",
   ].join("\n");
 }
@@ -1181,14 +1358,18 @@ function buildDatasourceInventoryFastPathAnswer(
 
   const uniqueDatasourceNames = [...new Set(datasourceNames)];
   const lines = [
+    "## データソース概要",
+    "",
     `このダッシュボードで使用されているデータソースは ${uniqueDatasourceNames.join("、")} です。`,
   ];
   if (request.dashboardContext.workbookName) {
     lines.push(
-      `ワークブック「${request.dashboardContext.workbookName}」の現在のダッシュボード文脈から確認しています。`,
+      "",
+      `- ワークブック: \`${request.dashboardContext.workbookName}\``,
     );
   }
   lines.push(
+    "",
     "より詳しいフィールド構成が必要な場合は、このデータソースのフィールド一覧まで確認できます。",
   );
   return lines.join("\n");
@@ -1235,18 +1416,21 @@ function buildDeadlineAwareDeterministicAnswer(
       ?.map((datasource) => datasource.name)
       .filter(Boolean) ??
     [];
-  const warningLine = additionalContext.warnings?.length
-    ? `補足: ${additionalContext.warnings.join(" ")}`
+  const warningText = additionalContext.warnings?.length
+    ? additionalContext.warnings.join(" ")
     : undefined;
 
   return [
+    "## 回答",
+    "",
     `このダッシュボード「${request.dashboardContext.dashboardName}」の確認結果です。`,
-    workbookName ? `ワークブック: ${workbookName}` : undefined,
+    workbookName ? `- ワークブック: \`${workbookName}\`` : undefined,
     datasourceNames.length
-      ? `データソース: ${[...new Set(datasourceNames)].join("、")}`
+      ? `- データソース: \`${[...new Set(datasourceNames)].join("、")}\``
       : undefined,
-    warningLine,
-    "詳細な自然文の整形は省略しましたが、取得できたTableau情報をもとに回答しています。",
+    warningText ? `- 補足: ${warningText}` : undefined,
+    "",
+    "取得できたTableau情報をもとに回答しています。",
   ]
     .filter(Boolean)
     .join("\n");
@@ -1276,9 +1460,11 @@ function buildDatasourceInventoryAnswerFromContext(
   }
 
   return [
+    "## データソース概要",
+    "",
     `このダッシュボードで使用されているデータソースは ${[...new Set(datasourceNames)].join("、")} です。`,
     additionalContext.normalizedContext?.workbook?.name
-      ? `取得できた Tableau Cloud 情報では、ワークブック「${additionalContext.normalizedContext.workbook.name}」に関連付けられています。`
+      ? `- ワークブック: \`${additionalContext.normalizedContext.workbook.name}\``
       : undefined,
   ]
     .filter(Boolean)
@@ -1320,16 +1506,19 @@ function buildFieldInventoryAnswerFromContext(
     ...new Set(profilesToRender.map((p) => p.datasourceName)),
   ];
   const lines = [
+    "## フィールド一覧",
+    "",
     `データソース ${datasourceNames.join("、")} で確認できたフィールド一覧です。`,
   ];
   if (additionalContext.normalizedContext?.workbook?.name) {
     lines.push(
-      `取得できた Tableau Cloud 情報では、ワークブック「${additionalContext.normalizedContext.workbook.name}」に関連付けられています。`,
+      `- ワークブック: \`${additionalContext.normalizedContext.workbook.name}\``,
     );
   }
 
   for (const profile of profilesToRender) {
-    lines.push(`- ${profile.datasourceName}（${profile.fieldCount}件）`);
+    lines.push(`### ${profile.datasourceName}`);
+    lines.push(`- フィールド数: ${profile.fieldCount}件`);
     const details: Array<{
       name: string;
       dataType?: string;
@@ -1356,11 +1545,12 @@ function buildFieldInventoryAnswerFromContext(
       }),
     );
     if (details.length > 20) {
-      lines.push(`  - ...ほか ${details.length - 20} 件`);
+      lines.push(`- ...ほか ${details.length - 20} 件`);
     }
   }
 
   lines.push(
+    "",
     "必要であれば、この中の特定フィールドが何を表すかも続けて説明できます。",
   );
 
@@ -1392,11 +1582,50 @@ function formatMetricValue(value: number | null): string {
   return new Intl.NumberFormat("ja-JP").format(value);
 }
 
-function selectBestQueryInsight(
+function getRankingTargetLabel(
+  target: NonNullable<QuestionInterpretation["rankingTarget"]>,
+): string {
+  switch (target) {
+    case "post":
+      return "ポスト";
+    case "viz":
+      return "Viz";
+    case "author":
+      return "著者";
+    case "datasource":
+      return "データソース";
+    default:
+      return "項目";
+  }
+}
+
+function escapeMarkdownTableCell(value: string): string {
+  return value.replace(/\|/g, "\\|").replace(/\n+/g, " ");
+}
+
+type QueryInsightSelection = {
+  insight: QueryDatasourceInsight;
+  score: number;
+  reasons: string[];
+  metricMatchConfidence: number;
+  dimensionMatchConfidence: number;
+  validationReasons: string[];
+};
+
+type QueryInsightEvaluation = {
+  score: number;
+  reasons: string[];
+  metricMatchConfidence: number;
+  dimensionMatchConfidence: number;
+  validationReasons: string[];
+  isValid: boolean;
+};
+
+function selectBestValidatedQueryInsight(
   insights: QueryDatasourceInsight[],
   interpretation: QuestionInterpretation | undefined,
   question: string,
-): QueryDatasourceInsight | undefined {
+): QueryInsightSelection | undefined {
   if (
     interpretation?.requestType === "field_inventory" ||
     interpretation?.requestType === "datasource_inventory"
@@ -1404,9 +1633,13 @@ function selectBestQueryInsight(
     logDebug("chat.query_insight.selected", {
       requestType: interpretation.requestType,
       selectedMetricField: undefined,
+      selectedDimensionField: undefined,
       selectedDatasourceName: undefined,
       selectedRowCount: 0,
       selectedScore: undefined,
+      metricMatchConfidence: undefined,
+      dimensionMatchConfidence: undefined,
+      queryInsightUsedForFinalAnswer: false,
       selectedReasons: ["request_type_blocks_query_insights"],
       candidateCount: insights.length,
     });
@@ -1416,15 +1649,13 @@ function selectBestQueryInsight(
   const candidates = insights
     .map((insight, index) => ({
       insight,
-      evaluation: evaluateQueryInsight(
-        insight,
-        interpretation,
-        question,
-        index,
-      ),
+      evaluation: assessQueryInsight(insight, interpretation, question, index),
       index,
     }))
-    .filter((candidate) => candidate.insight.rows.length > 0)
+    .filter(
+      (candidate) =>
+        candidate.insight.rows.length > 0 && candidate.evaluation.isValid,
+    )
     .sort((left, right) => {
       if (right.evaluation.score !== left.evaluation.score) {
         return right.evaluation.score - left.evaluation.score;
@@ -1438,10 +1669,17 @@ function selectBestQueryInsight(
       : undefined;
   logDebug("chat.query_insight.selected", {
     selectedMetricField: selected?.insight.metricField,
+    selectedDimensionField: selected?.insight.dimensionField,
     selectedDatasourceName: selected?.insight.datasourceName,
     selectedRowCount: selected?.insight.rows.length,
     selectedScore: selected?.evaluation.score,
     selectedReasons: selected?.evaluation.reasons,
+    requestedMetricIntent: interpretation?.metricIntent ?? "unknown",
+    requestedMetricText: interpretation?.requestedMetricText ?? null,
+    rankingTarget: interpretation?.rankingTarget ?? "unknown",
+    metricMatchConfidence: selected?.evaluation.metricMatchConfidence,
+    dimensionMatchConfidence: selected?.evaluation.dimensionMatchConfidence,
+    queryInsightUsedForFinalAnswer: Boolean(selected),
     candidateCount: candidates.length,
   });
   if (candidates.length) {
@@ -1451,25 +1689,49 @@ function selectBestQueryInsight(
         .slice(0, 5)
         .map((candidate) => ({
           metricField: candidate.insight.metricField,
+          dimensionField: candidate.insight.dimensionField,
           datasourceName: candidate.insight.datasourceName,
           rowCount: candidate.insight.rows.length,
           score: candidate.evaluation.score,
           reasons: candidate.evaluation.reasons,
+          validationReasons: candidate.evaluation.validationReasons,
+          metricMatchConfidence: candidate.evaluation.metricMatchConfidence,
+          dimensionMatchConfidence:
+            candidate.evaluation.dimensionMatchConfidence,
         })),
     });
   }
 
-  return selected?.insight;
+  return selected
+    ? {
+        insight: selected.insight,
+        score: selected.evaluation.score,
+        reasons: selected.evaluation.reasons,
+        metricMatchConfidence: selected.evaluation.metricMatchConfidence,
+        dimensionMatchConfidence: selected.evaluation.dimensionMatchConfidence,
+        validationReasons: selected.evaluation.validationReasons,
+      }
+    : undefined;
 }
 
-function evaluateQueryInsight(
+function selectBestQueryInsight(
+  insights: QueryDatasourceInsight[],
+  interpretation: QuestionInterpretation | undefined,
+  question: string,
+): QueryDatasourceInsight | undefined {
+  return selectBestValidatedQueryInsight(insights, interpretation, question)
+    ?.insight;
+}
+
+function assessQueryInsight(
   insight: QueryDatasourceInsight,
   interpretation: QuestionInterpretation | undefined,
   question: string,
   index: number,
-): { score: number; reasons: string[] } {
+): QueryInsightEvaluation {
   let score = index;
   const reasons: string[] = ["later_pass_preference"];
+  const validationReasons: string[] = [];
 
   if (insight.rows.length > 0) {
     score += 10;
@@ -1495,6 +1757,18 @@ function evaluateQueryInsight(
     }
   }
 
+  const metricMatchConfidence = computeMetricMatchConfidence(
+    insight.metricField,
+    interpretation,
+  );
+  const metricExplicitMatch = metricMatchConfidence >= 0.8;
+  if (interpretation?.requestedMetricText) {
+    reasons.push(
+      metricExplicitMatch
+        ? "requested_metric_text_match"
+        : "metric_text_mismatch",
+    );
+  }
   if (
     interpretation?.metricIntent &&
     interpretation.metricIntent !== "unknown"
@@ -1511,7 +1785,25 @@ function evaluateQueryInsight(
       score -= 260;
       reasons.push("metric_mismatch");
     }
+  } else if (interpretation?.requestedMetricText) {
+    if (metricExplicitMatch) {
+      score += 95;
+      reasons.push("requested_metric_text_match");
+    } else {
+      score -= 180;
+      reasons.push("metric_text_mismatch");
+    }
   }
+
+  const dimensionMatchConfidence = computeDimensionMatchConfidence(
+    insight.dimensionField,
+    interpretation,
+    question,
+    insight.rows,
+  );
+  const meaningfulRowLabels = insight.rows.some((row) =>
+    isMeaningfulInsightLabel(row.label),
+  );
 
   if (
     interpretation?.period &&
@@ -1540,7 +1832,180 @@ function evaluateQueryInsight(
     reasons.push("insufficient_rows_for_requested_topn");
   }
 
-  return { score, reasons };
+  const fulfillsMetricRequest =
+    interpretation?.metricIntent && interpretation.metricIntent !== "unknown"
+      ? insight.requestedMetricIntent === interpretation.metricIntent ||
+        matchesMetricFieldIntent(
+          insight.metricField,
+          interpretation.metricIntent,
+        )
+      : interpretation?.requestedMetricText
+        ? metricExplicitMatch
+        : insight.fulfillsMetricRequest !== false;
+  const fulfillsRankingRequest = rankingRequested
+    ? insight.fulfillsRankingRequest !== false
+    : true;
+  const fulfillsPeriodRequest = Boolean(insight.fulfillsPeriodRequest ?? true);
+  const dimensionMatches =
+    !rankingRequested ||
+    dimensionMatchConfidence >= 0.8 ||
+    interpretation?.rankingTarget === "unknown";
+  const isValid =
+    meaningfulRowLabels &&
+    fulfillsMetricRequest &&
+    fulfillsRankingRequest &&
+    fulfillsPeriodRequest &&
+    metricMatchConfidence >= 0.8 &&
+    dimensionMatches;
+  if (!meaningfulRowLabels) {
+    validationReasons.push("insufficient_row_labels");
+  }
+  if (!fulfillsMetricRequest) {
+    validationReasons.push("metric_request_not_fulfilled");
+  }
+  if (!fulfillsRankingRequest) {
+    validationReasons.push("ranking_request_not_fulfilled");
+  }
+  if (!fulfillsPeriodRequest) {
+    validationReasons.push("period_request_not_fulfilled");
+  }
+  if (metricMatchConfidence < 0.8) {
+    validationReasons.push("metric_match_confidence_low");
+  }
+  if (!dimensionMatches) {
+    validationReasons.push("dimension_match_confidence_low");
+  }
+
+  return {
+    score,
+    reasons,
+    metricMatchConfidence,
+    dimensionMatchConfidence,
+    validationReasons,
+    isValid,
+  };
+}
+
+function computeMetricMatchConfidence(
+  metricField: string,
+  interpretation: QuestionInterpretation | undefined,
+): number {
+  if (
+    !interpretation ||
+    (interpretation.metricIntent === "unknown" &&
+      !interpretation.requestedMetricText)
+  ) {
+    return 0.5;
+  }
+
+  if (
+    interpretation.metricIntent !== "unknown" &&
+    matchesMetricFieldIntent(metricField, interpretation.metricIntent)
+  ) {
+    return 1;
+  }
+
+  if (
+    interpretation.requestedMetricText &&
+    matchesRequestedMetricText(metricField, interpretation.requestedMetricText)
+  ) {
+    return 0.95;
+  }
+
+  if (interpretation.metricIntent !== "unknown") {
+    return 0;
+  }
+
+  return 0.2;
+}
+
+function computeDimensionMatchConfidence(
+  dimensionField: string | undefined,
+  interpretation: QuestionInterpretation | undefined,
+  question: string,
+  rows: Array<{ label?: string; value: number | null }>,
+): number {
+  if (!dimensionField) {
+    return 0;
+  }
+
+  if (
+    interpretation?.rankingTarget === "post" &&
+    isPostDimensionField(dimensionField)
+  ) {
+    return hasMeaningfulRowLabels(rows) ? 1 : 0.7;
+  }
+
+  if (
+    interpretation?.rankingTarget &&
+    interpretation.rankingTarget !== "unknown" &&
+    isDimensionFieldAlignedWithRankingTarget(dimensionField, interpretation)
+  ) {
+    return hasMeaningfulRowLabels(rows) ? 0.95 : 0.7;
+  }
+
+  if (question && isMeaningfulInsightLabel(dimensionField)) {
+    return 0.8;
+  }
+
+  return 0.2;
+}
+
+function matchesRequestedMetricText(
+  fieldName: string,
+  requestedMetricText: string,
+): boolean {
+  const normalizedField = normalizeFieldToken(fieldName);
+  const normalizedRequested = normalizeFieldToken(requestedMetricText);
+  return (
+    normalizedField === normalizedRequested ||
+    normalizedField.includes(normalizedRequested) ||
+    normalizedRequested.includes(normalizedField)
+  );
+}
+
+function hasMeaningfulRowLabels(
+  rows: Array<{ label?: string; value: number | null }>,
+): boolean {
+  return rows.some((row) => isMeaningfulInsightLabel(row.label));
+}
+
+function isMeaningfulInsightLabel(label: string | undefined): boolean {
+  if (!label) {
+    return false;
+  }
+
+  const normalized = label.trim().toLowerCase();
+  return (
+    normalized !== "(value)" &&
+    normalized !== "名称不明" &&
+    normalized !== "unknown" &&
+    normalized !== "n/a"
+  );
+}
+
+function isPostDimensionField(fieldName: string): boolean {
+  return /ポスト本文|ポストのリンク|ポストid|ポストID|post id|post.*link|url|permalink|tweet id|tweet url|tweet/i.test(
+    fieldName,
+  );
+}
+
+function isDimensionFieldAlignedWithRankingTarget(
+  fieldName: string,
+  interpretation: QuestionInterpretation,
+): boolean {
+  switch (interpretation.rankingTarget) {
+    case "post":
+      return isPostDimensionField(fieldName);
+    case "viz":
+      return /viz|title|name|workbook|dashboard/i.test(fieldName);
+    case "author":
+      return /author|creator|user|profile|poster/i.test(fieldName);
+    case "datasource":
+      return /datasource|data source/i.test(fieldName);
+    default:
+      return false;
+  }
 }
 
 function isRankingLikeRequest(

@@ -38,6 +38,7 @@ import type {
   TableauViewRef,
   TableauWorkbookRef,
   TableauAdditionalContext,
+  QuestionRankingTarget,
   TableauMcpToolResultSummary,
   TableauMcpToolSummary,
 } from "../types/tableau";
@@ -3451,13 +3452,64 @@ export function extractQueryDatasourceInsightsFromRawToolResults(
         (row): row is { label?: string; value: number | null } =>
           row !== undefined,
       );
+    const requestedMetricText = questionInterpretation?.requestedMetricText;
+    const rankingTarget = questionInterpretation?.rankingTarget ?? "unknown";
+    const metricMatchConfidence = computeMetricMatchConfidence(
+      metricField,
+      questionInterpretation,
+    );
+    const dimensionMatchConfidence = computeDimensionMatchConfidence(
+      dimensionField,
+      questionInterpretation,
+      rows,
+    );
+    const hasMeaningfulRowLabels = rows.some((row) =>
+      isMeaningfulInsightLabel(row.label),
+    );
+    const hasExplicitMetricRequest = Boolean(
+      (questionInterpretation?.metricIntent &&
+        questionInterpretation.metricIntent !== "unknown") ||
+      requestedMetricText,
+    );
+    const rankingRequested = Boolean(
+      questionInterpretation?.asksForRanking ||
+      (questionInterpretation?.topN ?? 1) > 1,
+    );
+    const fulfillsMetricRequest = hasExplicitMetricRequest
+      ? metricMatchConfidence >= 0.8
+      : Boolean(
+          !questionInterpretation?.metricIntent ||
+          questionInterpretation.metricIntent === "unknown" ||
+          matchesMetricFieldIntent(
+            metricField,
+            questionInterpretation.metricIntent,
+          ),
+        );
+    const fulfillsRankingRequest = rankingRequested
+      ? rows.length >= Math.min(questionInterpretation?.topN ?? 10, 10) &&
+        hasMeaningfulRowLabels &&
+        (rankingTarget === "unknown" || dimensionMatchConfidence >= 0.8)
+      : true;
+    const fulfillsPeriodRequest = Boolean(
+      !questionInterpretation?.period ||
+      (questionInterpretation.period.startDate &&
+        questionInterpretation.period.endDate),
+    );
 
     if (!rows.length) {
       logDebug("tableau.mcp.query.rows_extracted", {
         datasourceNameHash: safeHash(datasourceName),
         datasourceLuidHash: safeHash(datasourceLuid),
+        selectedMetricField: metricField,
+        selectedDimensionField: dimensionField,
         metricField,
         dimensionField,
+        requestedMetricIntent:
+          questionInterpretation?.metricIntent ?? "unknown",
+        requestedMetricText: requestedMetricText ?? null,
+        rankingTarget,
+        metricMatchConfidence,
+        dimensionMatchConfidence,
         requestedTopN: questionInterpretation?.topN,
         actualRowCount: 0,
         sampleLabels: [],
@@ -3466,25 +3518,21 @@ export function extractQueryDatasourceInsightsFromRawToolResults(
       continue;
     }
 
-    const fulfillsMetricRequest = Boolean(
-      !questionInterpretation?.metricIntent ||
-      questionInterpretation.metricIntent === "unknown" ||
-      matchesMetricFieldIntent(
-        metricField,
-        questionInterpretation.metricIntent,
-      ),
-    );
-    if (
-      questionInterpretation?.metricIntent &&
-      questionInterpretation.metricIntent !== "unknown" &&
-      !fulfillsMetricRequest
-    ) {
+    if (hasExplicitMetricRequest && !fulfillsMetricRequest) {
       logDebug("tableau.mcp.query.rows_extracted", {
         datasourceNameHash: safeHash(datasourceName),
         datasourceLuidHash: safeHash(datasourceLuid),
+        selectedMetricField: metricField,
+        selectedDimensionField: dimensionField,
         metricField,
         dimensionField,
-        requestedTopN: questionInterpretation.topN,
+        requestedMetricIntent:
+          questionInterpretation?.metricIntent ?? "unknown",
+        requestedMetricText: requestedMetricText ?? null,
+        rankingTarget,
+        metricMatchConfidence,
+        dimensionMatchConfidence,
+        requestedTopN: questionInterpretation?.topN,
         actualRowCount: rows.length,
         sampleLabels: rows.slice(0, 5).map((row) => row.label ?? "(value)"),
         rejectedReason: "metric_mismatch",
@@ -3498,6 +3546,12 @@ export function extractQueryDatasourceInsightsFromRawToolResults(
         datasourceLuidHash: safeHash(datasourceLuid),
         metricField,
         dimensionField,
+        requestedMetricIntent:
+          questionInterpretation?.metricIntent ?? "unknown",
+        requestedMetricText: requestedMetricText ?? null,
+        rankingTarget,
+        metricMatchConfidence,
+        dimensionMatchConfidence,
         requestedTopN: questionInterpretation?.topN,
         actualRowCount: rows.length,
         sampleLabels: rows.slice(0, 5).map((row) => row.label ?? "(value)"),
@@ -3506,24 +3560,18 @@ export function extractQueryDatasourceInsightsFromRawToolResults(
       continue;
     }
 
-    const rankingRequested = Boolean(
-      questionInterpretation?.asksForRanking ||
-      (questionInterpretation?.topN ?? 1) > 1,
-    );
-    const fulfillsRankingRequest = rankingRequested
-      ? rows.length >= Math.min(questionInterpretation?.topN ?? 10, 10)
-      : true;
-    const fulfillsPeriodRequest = Boolean(
-      !questionInterpretation?.period ||
-      (questionInterpretation.period.startDate &&
-        questionInterpretation.period.endDate),
-    );
-
     logDebug("tableau.mcp.query.rows_extracted", {
       datasourceNameHash: safeHash(datasourceName),
       datasourceLuidHash: safeHash(datasourceLuid),
+      selectedMetricField: metricField,
+      selectedDimensionField: dimensionField,
       metricField,
       dimensionField,
+      requestedMetricIntent: questionInterpretation?.metricIntent ?? "unknown",
+      requestedMetricText: requestedMetricText ?? null,
+      rankingTarget,
+      metricMatchConfidence,
+      dimensionMatchConfidence,
       requestedTopN: questionInterpretation?.topN,
       actualRowCount: rows.length,
       sampleLabels: rows.slice(0, 5).map((row) => row.label ?? "(value)"),
@@ -3541,11 +3589,15 @@ export function extractQueryDatasourceInsightsFromRawToolResults(
       actualRowCount: rows.length,
       rows: rows.slice(0, 20),
       requestedMetricIntent: questionInterpretation?.metricIntent,
+      requestedMetricText,
+      rankingTarget,
       requestedTopN: questionInterpretation?.topN,
       requestedRanking: questionInterpretation?.asksForRanking,
       requestedPeriodStart: questionInterpretation?.period?.startDate,
       requestedPeriodEnd: questionInterpretation?.period?.endDate,
       sourceQuestion: questionInterpretation?.originalQuestion,
+      metricMatchConfidence,
+      dimensionMatchConfidence,
       fulfillsMetricRequest,
       fulfillsRankingRequest,
       fulfillsPeriodRequest,
@@ -3630,6 +3682,175 @@ function normalizeQueryDatasourceInsightRow(
     ...(label ? { label } : {}),
     value: value ?? null,
   };
+}
+
+function computeMetricMatchConfidence(
+  metricField: string,
+  questionInterpretation: QuestionInterpretation | undefined,
+): number {
+  if (!questionInterpretation) {
+    return 0.5;
+  }
+
+  if (
+    questionInterpretation.metricIntent !== "unknown" &&
+    matchesMetricFieldIntent(metricField, questionInterpretation.metricIntent)
+  ) {
+    return 1;
+  }
+
+  if (
+    questionInterpretation.requestedMetricText &&
+    matchesRequestedMetricText(
+      metricField,
+      questionInterpretation.requestedMetricText,
+    )
+  ) {
+    return 0.95;
+  }
+
+  if (
+    questionInterpretation.metricIntent &&
+    questionInterpretation.metricIntent !== "unknown"
+  ) {
+    return 0;
+  }
+
+  return questionInterpretation.requestedMetricText ? 0.2 : 0.5;
+}
+
+function computeDimensionMatchConfidence(
+  dimensionField: string | undefined,
+  questionInterpretation: QuestionInterpretation | undefined,
+  rows: Array<{ label?: string; value: number | null }>,
+): number {
+  if (!dimensionField || !questionInterpretation) {
+    return 0;
+  }
+
+  if (
+    questionInterpretation.rankingTarget === "post" &&
+    isPostSpecificDimensionField(dimensionField)
+  ) {
+    return hasMeaningfulRowLabels(rows) ? 1 : 0.65;
+  }
+
+  if (
+    questionInterpretation.rankingTarget &&
+    questionInterpretation.rankingTarget !== "unknown" &&
+    isDimensionFieldAlignedWithRankingTarget(
+      dimensionField,
+      questionInterpretation.rankingTarget,
+    )
+  ) {
+    return hasMeaningfulRowLabels(rows) ? 0.95 : 0.7;
+  }
+
+  return isLikelyLabelField(dimensionField) ? 0.6 : 0.15;
+}
+
+function matchesRequestedMetricText(
+  fieldName: string,
+  requestedMetricText: string,
+): boolean {
+  const normalizedField = normalizeNameForMatch(fieldName);
+  const normalizedRequested = normalizeNameForMatch(requestedMetricText);
+  if (!normalizedField || !normalizedRequested) {
+    return false;
+  }
+
+  return (
+    normalizedField === normalizedRequested ||
+    normalizedField.includes(normalizedRequested) ||
+    normalizedRequested.includes(normalizedField)
+  );
+}
+
+function hasMeaningfulRowLabels(
+  rows: Array<{ label?: string; value: number | null }>,
+): boolean {
+  return rows.some((row) => isMeaningfulInsightLabel(row.label));
+}
+
+function isMeaningfulInsightLabel(label: string | undefined): boolean {
+  if (!label) {
+    return false;
+  }
+
+  const normalized = normalizeNameForMatch(label);
+  return Boolean(
+    normalized &&
+    normalized !== "value" &&
+    normalized !== "unknown" &&
+    normalized !== "na" &&
+    normalized !== "n/a" &&
+    normalized !== "名称不明",
+  );
+}
+
+function isLikelyLabelField(fieldName: string): boolean {
+  return /title|name|text|body|content|caption|label|post|tweet|url|link|id|permalink|本文|リンク|id$|名前|名称/i.test(
+    fieldName,
+  );
+}
+
+function isPostSpecificDimensionField(fieldName: string): boolean {
+  return (
+    /post|tweet|ポスト|投稿/i.test(fieldName) &&
+    /title|name|text|body|content|caption|url|link|id|permalink|本文|リンク|id$/i.test(
+      fieldName,
+    )
+  );
+}
+
+function scorePostDimensionField(fieldName: string): number {
+  let score = 0;
+  if (/post|tweet|ポスト|投稿/i.test(fieldName)) {
+    score += 80;
+  }
+  if (/title|name/i.test(fieldName)) {
+    score += 20;
+  }
+  if (/text|body|content|caption|本文/i.test(fieldName)) {
+    score += 120;
+  }
+  if (/url|link|permalink|リンク/i.test(fieldName)) {
+    score += 110;
+  }
+  if (
+    /(^|_|\/)(id|postid|tweetid)(_|$)|id$|ID$|ポストID|ポストid/i.test(
+      fieldName,
+    )
+  ) {
+    score += 100;
+  }
+  if (
+    /bookmark|impression|view|like|reaction|reply|repost|engagement|count|metric/i.test(
+      fieldName,
+    )
+  ) {
+    score -= 180;
+  }
+
+  return score;
+}
+
+function isDimensionFieldAlignedWithRankingTarget(
+  fieldName: string,
+  rankingTarget: QuestionRankingTarget,
+): boolean {
+  switch (rankingTarget) {
+    case "post":
+      return isPostSpecificDimensionField(fieldName);
+    case "viz":
+      return /viz|workbook|dashboard|title|name/i.test(fieldName);
+    case "author":
+      return /author|creator|user|profile|poster/i.test(fieldName);
+    case "datasource":
+      return /datasource|data source/i.test(fieldName);
+    default:
+      return false;
+  }
 }
 
 function extractFieldDetailsFromDatasourceModel(
@@ -4695,7 +4916,9 @@ function buildAggregateQueryDatasourceArgs(
     datasourceNameHash: safeHash(datasourceRef.name),
     datasourceLuidHash: safeHash(datasourceLuid),
     metricIntent: questionInterpretation.metricIntent,
+    requestedMetricText: questionInterpretation.requestedMetricText ?? null,
     groupingIntent: questionInterpretation.groupingIntent ?? "unknown",
+    rankingTarget: questionInterpretation.rankingTarget ?? "unknown",
     metricField,
     dimensionField,
     dateField,
@@ -4710,6 +4933,7 @@ function buildAggregateQueryDatasourceArgs(
   logDebug("tableau.mcp.query.metric_candidates_scored", {
     datasourceNameHash: safeHash(datasourceRef.name),
     metricIntent: questionInterpretation.metricIntent,
+    requestedMetricText: questionInterpretation.requestedMetricText ?? null,
     selectedMetricField: metricField,
     componentFields: metricSelection.componentFields,
     candidates: metricSelection.candidates.slice(0, 8),
@@ -4726,6 +4950,28 @@ function chooseAggregateDimensionField(
     .map((fieldDetail) => fieldDetail.name.trim())
     .filter(Boolean);
   if (!trimmed.length) {
+    return undefined;
+  }
+
+  if (questionInterpretation.rankingTarget === "post") {
+    const postCandidates = trimmed
+      .map((fieldName) => ({
+        fieldName,
+        score: scorePostDimensionField(fieldName),
+        postSpecific: isPostSpecificDimensionField(fieldName),
+      }))
+      .sort((left, right) => {
+        if (right.score !== left.score) {
+          return right.score - left.score;
+        }
+        return right.fieldName.length - left.fieldName.length;
+      });
+    const selectedPostCandidate = postCandidates.find(
+      (candidate) => candidate.postSpecific && candidate.score > 0,
+    );
+    if (selectedPostCandidate) {
+      return selectedPostCandidate.fieldName;
+    }
     return undefined;
   }
 
@@ -4862,13 +5108,27 @@ export function selectAggregateMetricField(
       let score = 0;
 
       if (
+        questionInterpretation.requestedMetricText &&
+        matchesRequestedMetricText(
+          fieldDetail.name,
+          questionInterpretation.requestedMetricText,
+        )
+      ) {
+        score += 220;
+        reasons.push("requested_metric_text_exact_match");
+      } else if (questionInterpretation.requestedMetricText) {
+        score -= 120;
+        reasons.push("requested_metric_text_mismatch");
+      }
+
+      if (
         questionInterpretation.metricIntent !== "unknown" &&
         matchesMetricFieldIntent(
           fieldDetail.name,
           questionInterpretation.metricIntent,
         )
       ) {
-        score += 45;
+        score += 140;
         reasons.push("metric_intent_match");
       }
 
@@ -4895,6 +5155,27 @@ export function selectAggregateMetricField(
       ) {
         score += 25;
         reasons.push("aggregate_name_hint");
+      }
+
+      if (questionInterpretation.metricIntent === "impressions") {
+        if (/impression|インプレッション/i.test(fieldDetail.name)) {
+          score += 90;
+          reasons.push("impression_priority_boost");
+        } else {
+          score -= 80;
+          reasons.push("impression_mismatch_penalty");
+        }
+      }
+
+      if (questionInterpretation.metricIntent === "post_count") {
+        if (
+          /post count|posts count|post数|ポスト数|投稿数|件数/i.test(
+            fieldDetail.name,
+          )
+        ) {
+          score += 80;
+          reasons.push("post_count_priority_boost");
+        }
       }
 
       if (

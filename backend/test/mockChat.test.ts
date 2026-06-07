@@ -100,8 +100,12 @@ describe("ChatService with mock provider", () => {
       userA,
     );
 
+    expect(secondResponse.answer).toContain(
+      "Recent conversation in the same authenticated session:",
+    );
     expect(secondResponse.answer).toContain("Turn 1 user: First question");
-    expect(secondResponse.answer).toContain("Turn 1 assistant: First answer");
+    expect(secondResponse.answer).toContain("Turn 1 assistant: ## 回答");
+    expect(secondResponse.answer).toContain("First answer");
 
     const otherUserResponse = await service.generateAnswer(
       {
@@ -118,9 +122,7 @@ describe("ChatService with mock provider", () => {
     expect(otherUserResponse.answer).not.toContain(
       "Turn 1 user: First question",
     );
-    expect(otherUserResponse.answer).not.toContain(
-      "Turn 1 assistant: First answer",
-    );
+    expect(otherUserResponse.answer).not.toContain("First answer");
   });
 
   it("sanitizes internal tool instructions in metadata-unavailable answers", () => {
@@ -466,9 +468,9 @@ describe("ChatService with mock provider", () => {
       },
     );
 
-    expect(formatted).toContain("2026年5月のFavorite数ランキング");
-    expect(formatted).toContain("1. Viz A: 120");
-    expect(formatted).not.toContain("2. Viz B: 88");
+    expect(formatted).toContain("2026年5月のVizのFavorite数ランキング");
+    expect(formatted).toContain("| 1 | Viz A | 120 |");
+    expect(formatted).not.toContain("| 2 | Viz B | 88 |");
     expect(formatted).toContain("Tableau Public Per Day(2025/04-)");
   });
 
@@ -539,7 +541,7 @@ describe("ChatService with mock provider", () => {
       },
     );
 
-    expect(formatted).toContain("2026年のFavorite数ランキング");
+    expect(formatted).toContain("2026年のVizのFavorite数ランキング");
   });
 
   it("prefers the latest insight that matches the requested metric and ranking shape", () => {
@@ -631,8 +633,8 @@ describe("ChatService with mock provider", () => {
       },
     );
 
-    expect(formatted).toContain("2026年5月のビュー数ランキング");
-    expect(formatted).toContain("1. View Viz: 120");
+    expect(formatted).toContain("2026年5月のVizのビュー数ランキング");
+    expect(formatted).toContain("| 1 | View Viz | 120 |");
     expect(formatted).not.toContain("Favorite Viz");
   });
 
@@ -703,7 +705,7 @@ describe("ChatService with mock provider", () => {
       },
     );
 
-    expect(formatted).toContain("直近1週間のFavorite数ランキング");
+    expect(formatted).toContain("直近1週間のVizのFavorite数ランキング");
   });
 
   it("prefers structured query results over a manual SQL-style answer", () => {
@@ -783,7 +785,7 @@ describe("ChatService with mock provider", () => {
     );
 
     expect(finalized).not.toContain("```sql");
-    expect(finalized).toContain("1. Viz A: 120");
+    expect(finalized).toContain("| 1 | Viz A | 120 |");
   });
 
   it("returns a safe data-analysis fallback when query results cannot be validated", () => {
