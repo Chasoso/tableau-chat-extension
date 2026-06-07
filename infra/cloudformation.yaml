@@ -313,24 +313,6 @@ Resources:
       SSESpecification:
         SSEEnabled: true
 
-  ChatFunctionLogGroup:
-    Type: AWS::Logs::LogGroup
-    Properties:
-      LogGroupName: !Sub "/aws/lambda/${AWS::StackName}-chat"
-      RetentionInDays: 30
-
-  ChatJobWorkerFunctionLogGroup:
-    Type: AWS::Logs::LogGroup
-    Properties:
-      LogGroupName: !Sub "/aws/lambda/${AWS::StackName}-chat-job-worker"
-      RetentionInDays: 30
-
-  HealthFunctionLogGroup:
-    Type: AWS::Logs::LogGroup
-    Properties:
-      LogGroupName: !Sub "/aws/lambda/${AWS::StackName}-health"
-      RetentionInDays: 30
-
   BackendRole:
     Type: AWS::IAM::Role
     Properties:
@@ -349,12 +331,25 @@ Resources:
             Statement:
               - Effect: Allow
                 Action:
+                  - logs:CreateLogGroup
                   - logs:CreateLogStream
                   - logs:PutLogEvents
                 Resource:
-                  - !Sub "${ChatFunctionLogGroup.Arn}:*"
-                  - !Sub "${ChatJobWorkerFunctionLogGroup.Arn}:*"
-                  - !Sub "${HealthFunctionLogGroup.Arn}:*"
+                  - "*"
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource:
+                  - !Sub
+                    - "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${StackName}-chat:*"
+                    - StackName: !Ref AWS::StackName
+                  - !Sub
+                    - "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${StackName}-chat-job-worker:*"
+                    - StackName: !Ref AWS::StackName
+                  - !Sub
+                    - "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${StackName}-health:*"
+                    - StackName: !Ref AWS::StackName
               - Effect: Allow
                 Action:
                   - dynamodb:PutItem

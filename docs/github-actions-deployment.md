@@ -168,6 +168,7 @@ The Lambda package now includes production `node_modules` because the MCP provid
 - Use `--only-show-errors` and `--no-progress` for S3 commands.
 - Mask physical resource IDs before using them.
 - Keep failure event output sanitized.
+- Lambda log groups are not managed by CloudFormation; Lambda creates them automatically.
 
 ## 日本語
 
