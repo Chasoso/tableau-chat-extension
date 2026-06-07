@@ -70,6 +70,13 @@ const QUERY_DIMENSION_ALIAS = "rank_label";
 const QUERY_METRIC_ALIAS = "rank_metric";
 const metadataCacheRepository = new TableauMcpMetadataCacheRepository();
 
+type QueryFieldSpec = {
+  fieldCaption: string | undefined;
+  fieldAlias: string | undefined;
+  function: string | undefined;
+  calculation: string | undefined;
+};
+
 type CacheEntry = {
   expiresAt: number;
   result: unknown;
@@ -254,6 +261,7 @@ export class TableauMcpContextProvider implements TableauContextProvider {
           input.dashboardContext,
           allowedToolNames,
           questionInterpretation.requestType,
+          questionInterpretation,
         );
       const effectiveMaxToolCalls = Math.max(
         0,
@@ -2502,7 +2510,7 @@ function isDataQuestion(question: string): boolean {
 }
 
 function isAggregateAnalysisQuestion(question: string): boolean {
-  return /query|aggregate|max|min|highest|lowest|most|least|top|bottom|rank|ranking|compare|sum|average|avg|count|countd|trend|increase|decrease|growth|クエリ|集計|最大|最小|最も|最多|ランキング|比較|推移|増加|減少|直近|過去|今週|先週|今月|先月|今年|昨年|去年/.test(
+  return /query|aggregate|max|min|highest|lowest|most|least|top|bottom|rank|ranking|compare|sum|average|avg|count|countd|trend|increase|decrease|growth|クエリ|集計|最大|最小|最も|最多|ランキング|比較|推移|傾向|洗い出し|高い|低い|ごと|別|ハッシュタグ|増加|減少|直近|過去|今週|先週|今月|先月|今年|昨年|去年/.test(
     question.toLowerCase(),
   );
 }
@@ -2525,6 +2533,12 @@ async function executeToolWithCache(input: {
 }): Promise<{ result: unknown; cacheHit: boolean }> {
   const config = getConfig().tableau.mcp;
   if (!config.metadataCacheEnabled || !isCacheableToolName(input.toolName)) {
+    if (input.toolName === "query-datasource") {
+      logInfo("tableau.mcp.query.execution_started", {
+        queryDatasourceCalled: true,
+        queryArgsSummary: summarizeQueryDatasourceArgs(input.args),
+      });
+    }
     const result = await input.client.callTool(
       {
         name: input.toolName,
@@ -2571,6 +2585,12 @@ async function executeToolWithCache(input: {
     });
   }
 
+  if (input.toolName === "query-datasource") {
+    logInfo("tableau.mcp.query.execution_started", {
+      queryDatasourceCalled: true,
+      queryArgsSummary: summarizeQueryDatasourceArgs(input.args),
+    });
+  }
   const result = await input.client.callTool(
     {
       name: input.toolName,
@@ -3058,6 +3078,17 @@ function chooseKnownDatasourceName(
   }
 
   const normalizedQuestion = input.question.toLowerCase();
+  const preferredSocialAnalyticsDatasource = datasourceNames.find((name) =>
+    /x account analytics contents/i.test(name),
+  );
+  if (
+    preferredSocialAnalyticsDatasource &&
+    /ハッシュタグ|hashtag|hash tag|#|ポスト|投稿|post|tweet|エンゲージメント|impression/i.test(
+      normalizedQuestion,
+    )
+  ) {
+    return preferredSocialAnalyticsDatasource;
+  }
   return (
     datasourceNames.find((name) =>
       normalizedQuestion.includes(name.toLowerCase()),
@@ -3415,13 +3446,45 @@ export function extractQueryDatasourceInsightsFromRawToolResults(
 
       return !readString((field as Record<string, unknown>).function);
     }) as Record<string, unknown> | undefined;
-    const metricFieldRecord = fields.find((field) => {
-      if (!isPlainObject(field)) {
-        return false;
-      }
+    const metricFieldRecord =
+      (fields.find((field) => {
+        if (!isPlainObject(field)) {
+          return false;
+        }
 
-      return Boolean(readString((field as Record<string, unknown>).function));
-    }) as Record<string, unknown> | undefined;
+        return (
+          Number((field as Record<string, unknown>).sortPriority ?? 0) === 1 ||
+          readString((field as Record<string, unknown>).fieldAlias) ===
+            QUERY_METRIC_ALIAS ||
+          readString((field as Record<string, unknown>).fieldAlias) ===
+            "engagement_rate"
+        );
+      }) as Record<string, unknown> | undefined) ??
+      (fields.find((field) => {
+        if (!isPlainObject(field)) {
+          return false;
+        }
+
+        return Boolean(readString((field as Record<string, unknown>).function));
+      }) as Record<string, unknown> | undefined);
+    const queryFieldSpecs = fields
+      .map((field) =>
+        isPlainObject(field)
+          ? ({
+              fieldCaption: readString(
+                (field as Record<string, unknown>).fieldCaption,
+              ),
+              fieldAlias: readString(
+                (field as Record<string, unknown>).fieldAlias,
+              ),
+              function: readString((field as Record<string, unknown>).function),
+              calculation: readString(
+                (field as Record<string, unknown>).calculation,
+              ),
+            } satisfies QueryFieldSpec)
+          : undefined,
+      )
+      .filter((field): field is QueryFieldSpec => Boolean(field));
     const dimensionField =
       readString(dimensionFieldRecord?.fieldCaption) ??
       readString(dimensionFieldRecord?.fieldAlias);
@@ -3449,8 +3512,13 @@ export function extractQueryDatasourceInsightsFromRawToolResults(
         ),
       )
       .filter(
-        (row): row is { label?: string; value: number | null } =>
-          row !== undefined,
+        (
+          row,
+        ): row is {
+          label?: string;
+          value: number | null;
+          raw: Record<string, unknown>;
+        } => row !== undefined,
       );
     const requestedMetricText = questionInterpretation?.requestedMetricText;
     const rankingTarget = questionInterpretation?.rankingTarget ?? "unknown";
@@ -3495,12 +3563,20 @@ export function extractQueryDatasourceInsightsFromRawToolResults(
       (questionInterpretation.period.startDate &&
         questionInterpretation.period.endDate),
     );
+    const queryDatasourceLogBase = {
+      analysisIntent: questionInterpretation?.analysisIntent ?? "unknown",
+      groupingIntent: questionInterpretation?.groupingIntent ?? "unknown",
+      selectedGroupingField: dimensionField,
+      selectedMetricField: metricField,
+      queryDatasourceCalled: true,
+      queryDatasourceRowCount: rows.length,
+    };
 
     if (!rows.length) {
       logDebug("tableau.mcp.query.rows_extracted", {
         datasourceNameHash: safeHash(datasourceName),
         datasourceLuidHash: safeHash(datasourceLuid),
-        selectedMetricField: metricField,
+        ...queryDatasourceLogBase,
         selectedDimensionField: dimensionField,
         metricField,
         dimensionField,
@@ -3522,7 +3598,7 @@ export function extractQueryDatasourceInsightsFromRawToolResults(
       logDebug("tableau.mcp.query.rows_extracted", {
         datasourceNameHash: safeHash(datasourceName),
         datasourceLuidHash: safeHash(datasourceLuid),
-        selectedMetricField: metricField,
+        ...queryDatasourceLogBase,
         selectedDimensionField: dimensionField,
         metricField,
         dimensionField,
@@ -3544,6 +3620,7 @@ export function extractQueryDatasourceInsightsFromRawToolResults(
       logDebug("tableau.mcp.query.rows_extracted", {
         datasourceNameHash: safeHash(datasourceName),
         datasourceLuidHash: safeHash(datasourceLuid),
+        ...queryDatasourceLogBase,
         metricField,
         dimensionField,
         requestedMetricIntent:
@@ -3563,7 +3640,7 @@ export function extractQueryDatasourceInsightsFromRawToolResults(
     logDebug("tableau.mcp.query.rows_extracted", {
       datasourceNameHash: safeHash(datasourceName),
       datasourceLuidHash: safeHash(datasourceLuid),
-      selectedMetricField: metricField,
+      ...queryDatasourceLogBase,
       selectedDimensionField: dimensionField,
       metricField,
       dimensionField,
@@ -3585,6 +3662,7 @@ export function extractQueryDatasourceInsightsFromRawToolResults(
       datasourceLuid,
       dimensionField,
       metricField,
+      queryFields: queryFieldSpecs,
       rowCount: rows.length,
       actualRowCount: rows.length,
       rows: rows.slice(0, 20),
@@ -3667,7 +3745,9 @@ function normalizeQueryDatasourceInsightRow(
   row: Record<string, unknown>,
   dimensionKeyCandidates: string[],
   metricKeyCandidates: string[],
-): { label?: string; value: number | null } | undefined {
+):
+  | { label?: string; value: number | null; raw: Record<string, unknown> }
+  | undefined {
   const label = dimensionKeyCandidates
     .map((key) => readString(row[key]))
     .find((value) => Boolean(value));
@@ -3681,6 +3761,7 @@ function normalizeQueryDatasourceInsightRow(
   return {
     ...(label ? { label } : {}),
     value: value ?? null,
+    raw: row,
   };
 }
 
@@ -4874,18 +4955,47 @@ function buildAggregateQueryDatasourceArgs(
   );
   const dateField = chooseAggregateDateField(fieldDetails);
   const period = questionInterpretation.period;
-  const topN = questionInterpretation.topN;
-  const fields: Array<Record<string, unknown>> = [];
+  const isGroupedTrend =
+    questionInterpretation.analysisIntent === "grouped_trend" ||
+    questionInterpretation.groupingIntent === "hashtag";
+  const topN = isGroupedTrend
+    ? Math.max(questionInterpretation.topN, 10)
+    : questionInterpretation.topN;
+  const queryFields: Array<Record<string, unknown>> = [];
   if (dimensionField) {
-    fields.push({
+    queryFields.push({
       fieldCaption: dimensionField,
       fieldAlias: QUERY_DIMENSION_ALIAS,
     });
   }
-  if (!metricSelection.fieldSpec) {
-    return undefined;
+
+  const groupedTrendFields = isGroupedTrend
+    ? buildGroupedTrendQueryFieldSpecs({
+        fieldDetails,
+        questionInterpretation,
+        metricSelection,
+      })
+    : undefined;
+  const fields = groupedTrendFields?.length
+    ? [
+        ...(dimensionField
+          ? [
+              {
+                fieldCaption: dimensionField,
+                fieldAlias: QUERY_DIMENSION_ALIAS,
+              },
+            ]
+          : []),
+        ...groupedTrendFields,
+      ]
+    : undefined;
+  if (!fields?.length) {
+    if (!metricSelection.fieldSpec) {
+      return undefined;
+    }
+    queryFields.push(metricSelection.fieldSpec);
   }
-  fields.push(metricSelection.fieldSpec);
+  const effectiveFields = fields?.length ? fields : queryFields;
 
   const filters =
     dateField && period
@@ -4906,20 +5016,26 @@ function buildAggregateQueryDatasourceArgs(
   const queryArgs = {
     datasourceLuid,
     query: {
-      fields,
+      fields: effectiveFields,
       ...(filters ? { filters } : {}),
     },
     limit: topN,
   };
 
   logDebug("tableau.mcp.query.aggregate_args_built", {
+    selectedDatasourceName: datasourceRef.name,
     datasourceNameHash: safeHash(datasourceRef.name),
     datasourceLuidHash: safeHash(datasourceLuid),
+    analysisIntent: questionInterpretation.analysisIntent,
     metricIntent: questionInterpretation.metricIntent,
     requestedMetricText: questionInterpretation.requestedMetricText ?? null,
     groupingIntent: questionInterpretation.groupingIntent ?? "unknown",
+    groupingFieldHint: questionInterpretation.groupingFieldHint ?? [],
+    selectedGroupingField: dimensionField,
     rankingTarget: questionInterpretation.rankingTarget ?? "unknown",
     metricField,
+    selectedMetricField: metricField,
+    derivedMetricFormula: questionInterpretation.derivedMetricFormula ?? null,
     dimensionField,
     dateField,
     periodStart: period?.startDate,
@@ -4951,6 +5067,32 @@ function chooseAggregateDimensionField(
     .filter(Boolean);
   if (!trimmed.length) {
     return undefined;
+  }
+
+  const preferredHints = questionInterpretation.groupingFieldHint ?? [];
+  const hintHit = findFieldByHints(trimmed, preferredHints);
+  if (hintHit) {
+    return hintHit;
+  }
+
+  if (questionInterpretation.groupingIntent === "hashtag") {
+    const hashtagCandidates = trimmed
+      .map((fieldName) => ({
+        fieldName,
+        score: scoreHashtagDimensionField(fieldName),
+      }))
+      .sort((left, right) => {
+        if (right.score !== left.score) {
+          return right.score - left.score;
+        }
+        return right.fieldName.length - left.fieldName.length;
+      });
+    const selectedHashtagCandidate = hashtagCandidates.find(
+      (candidate) => candidate.score > 0,
+    );
+    if (selectedHashtagCandidate) {
+      return selectedHashtagCandidate.fieldName;
+    }
   }
 
   if (questionInterpretation.rankingTarget === "post") {
@@ -4997,6 +5139,53 @@ function chooseAggregateDimensionField(
   }
 
   return trimmed[0];
+}
+
+function findFieldByHints(
+  fieldNames: string[],
+  hints: string[],
+): string | undefined {
+  const normalizedFieldNames = fieldNames.map((fieldName) => ({
+    fieldName,
+    normalized: normalizeNameForMatch(fieldName),
+  }));
+  for (const hint of hints) {
+    const normalizedHint = normalizeNameForMatch(hint);
+    const exactMatch = normalizedFieldNames.find(
+      (candidate) =>
+        candidate.normalized === normalizedHint ||
+        candidate.normalized.includes(normalizedHint) ||
+        normalizedHint.includes(candidate.normalized),
+    );
+    if (exactMatch) {
+      return exactMatch.fieldName;
+    }
+  }
+  return undefined;
+}
+
+function scoreHashtagDimensionField(fieldName: string): number {
+  const normalized = normalizeNameForMatch(fieldName);
+  if (!normalized) {
+    return 0;
+  }
+  if (/hashtag normalized/.test(normalized)) {
+    return 120;
+  }
+  if (/hashtag|hash tag|ハッシュタグ/.test(normalized)) {
+    return 100;
+  }
+  if (/tag/.test(normalized) && /hash/.test(normalized)) {
+    return 85;
+  }
+  if (/position|rank/.test(normalized) && /hashtag/.test(normalized)) {
+    return 70;
+  }
+  return 0;
+}
+
+function escapeTableauCalculationName(value: string): string {
+  return value.replace(/]/g, "\\]");
 }
 
 type AggregateMetricCandidate = {
@@ -5099,6 +5288,95 @@ export function selectAggregateMetricField(
       candidates: reactionCandidates,
       componentFields,
     };
+  }
+
+  if (questionInterpretation.metricIntent === "engagement_rate") {
+    const directRateCandidates = fieldDetails
+      .filter((fieldDetail) => fieldDetail.name.trim().length > 0)
+      .map((fieldDetail) => {
+        const reasons: string[] = [];
+        let score = 0;
+        if (
+          /engagement.?rate|engagement_rate|エンゲージメント率|率/i.test(
+            fieldDetail.name,
+          )
+        ) {
+          score += 200;
+          reasons.push("explicit_rate_field");
+        }
+        if (isNumericFieldDetail(fieldDetail)) {
+          score += 70;
+          reasons.push("numeric_type");
+        } else {
+          score -= 40;
+          reasons.push("non_numeric_penalty");
+        }
+        if (isMeasureFieldDetail(fieldDetail)) {
+          score += 25;
+          reasons.push("measure_role");
+        }
+        return {
+          fieldName: fieldDetail.name,
+          dataType: fieldDetail.dataType,
+          role: fieldDetail.role ?? fieldDetail.semanticRole,
+          score,
+          reasons,
+        };
+      })
+      .sort((left, right) => right.score - left.score);
+    const directRateField = directRateCandidates.find(
+      (candidate) => candidate.score >= 200,
+    );
+    if (directRateField) {
+      return {
+        fieldName: directRateField.fieldName,
+        fieldSpec: {
+          fieldCaption: directRateField.fieldName,
+          function: "AVG",
+          fieldAlias: QUERY_METRIC_ALIAS,
+          sortDirection: "DESC",
+          sortPriority: 1,
+        },
+        candidates: directRateCandidates,
+      };
+    }
+
+    const engagementField = fieldDetails.find((fieldDetail) =>
+      /engagement|エンゲージメント/i.test(fieldDetail.name),
+    )?.name;
+    const impressionField = fieldDetails.find((fieldDetail) =>
+      /impression|インプレッション/i.test(fieldDetail.name),
+    )?.name;
+    if (engagementField && impressionField) {
+      const formula = `SUM([${escapeTableauCalculationName(
+        engagementField,
+      )}]) / SUM([${escapeTableauCalculationName(impressionField)}])`;
+      return {
+        fieldName: "エンゲージメント率",
+        fieldSpec: {
+          fieldCaption: "エンゲージメント率",
+          calculation: formula,
+          fieldAlias: QUERY_METRIC_ALIAS,
+          sortDirection: "DESC",
+          sortPriority: 1,
+        },
+        candidates: [
+          {
+            fieldName: "エンゲージメント率",
+            dataType: "NUMBER",
+            role: "MEASURE",
+            score: 999,
+            reasons: [
+              "derived_engagement_rate_formula",
+              engagementField,
+              impressionField,
+            ],
+          },
+          ...directRateCandidates,
+        ],
+        componentFields: [engagementField, impressionField],
+      };
+    }
   }
 
   const candidates = fieldDetails
@@ -5209,6 +5487,89 @@ export function selectAggregateMetricField(
       : undefined,
     candidates,
   };
+}
+
+function buildGroupedTrendQueryFieldSpecs(input: {
+  fieldDetails: DatasourceFieldDetail[];
+  questionInterpretation: QuestionInterpretation;
+  metricSelection: AggregateMetricSelection;
+}): Record<string, unknown>[] {
+  const fieldNames = input.fieldDetails
+    .map((fieldDetail) => fieldDetail.name.trim())
+    .filter(Boolean);
+  const engagementField =
+    fieldNames.find((fieldName) =>
+      /engagement|エンゲージメント/i.test(fieldName),
+    ) ?? undefined;
+  const impressionField =
+    fieldNames.find((fieldName) =>
+      /impression|インプレッション/i.test(fieldName),
+    ) ?? undefined;
+  const postIdField =
+    fieldNames.find((fieldName) =>
+      /ポストid|ポストID|post id|post id|post_id|tweet id|tweet id|url|link/i.test(
+        fieldName,
+      ),
+    ) ?? undefined;
+  const fields: Record<string, unknown>[] = [];
+
+  if (postIdField) {
+    fields.push({
+      fieldCaption: postIdField,
+      function: "COUNT",
+      fieldAlias: "post_count",
+      sortDirection: "DESC",
+      sortPriority: 2,
+    });
+  } else {
+    fields.push({
+      fieldCaption:
+        postIdField ??
+        input.fieldDetails[0]?.name ??
+        input.questionInterpretation.groupingFieldHint?.[0] ??
+        "post_count",
+      function: "COUNT",
+      fieldAlias: "post_count",
+      sortDirection: "DESC",
+      sortPriority: 2,
+    });
+  }
+
+  if (engagementField) {
+    fields.push({
+      fieldCaption: engagementField,
+      function: "SUM",
+      fieldAlias: "engagement_total",
+      sortDirection: "DESC",
+      sortPriority: 3,
+    });
+  }
+
+  if (impressionField) {
+    fields.push({
+      fieldCaption: impressionField,
+      function: "SUM",
+      fieldAlias: "impression_total",
+      sortDirection: "DESC",
+      sortPriority: 4,
+    });
+  }
+
+  const primaryMetricSpec = input.metricSelection.fieldSpec ?? {
+    fieldCaption: input.metricSelection.fieldName ?? "aggregated value",
+    function: "SUM",
+    fieldAlias: QUERY_METRIC_ALIAS,
+    sortDirection: "DESC",
+    sortPriority: 1,
+  };
+  fields.push({
+    ...primaryMetricSpec,
+    fieldAlias: "engagement_rate",
+    sortDirection: "DESC",
+    sortPriority: 1,
+  });
+
+  return fields;
 }
 
 function chooseAggregateDateField(

@@ -1,6 +1,7 @@
 ﻿import { parseQuestionPeriod } from "../utils/questionPeriod";
 import type {
   DashboardContext,
+  QuestionAnalysisIntent,
   QuestionGroupingIntent,
   QuestionInterpretation,
   QuestionMetricIntent,
@@ -46,6 +47,7 @@ const JAPANESE_IMPRESSION = "\u30a4\u30f3\u30d7\u30ec\u30c3\u30b7\u30e7\u30f3";
 const JAPANESE_POST = "\u30dd\u30b9\u30c8";
 const JAPANESE_POSTING = "\u6295\u7a3f";
 const JAPANESE_POST_COUNT = "\u30dd\u30b9\u30c8\u6570";
+const JAPANESE_HASHTAG = "\u30cf\u30c3\u30b7\u30e5\u30bf\u30b0";
 const JAPANESE_REPOST = "\u30ea\u30dd\u30b9\u30c8";
 const JAPANESE_REPLY = "\u8fd4\u4fe1";
 const JAPANESE_REACTION = "\u30ea\u30a2\u30af\u30b7\u30e7\u30f3";
@@ -54,6 +56,8 @@ const JAPANESE_COUNT = "\u6570";
 const JAPANESE_ITEM_COUNT = "\u4ef6\u6570";
 const JAPANESE_RATE = "\u7387";
 const JAPANESE_TRANSITION = "\u63a8\u79fb";
+const JAPANESE_TRENDS = "\u50be\u5411";
+const JAPANESE_BREAKDOWN = "\u6d17\u3044\u51fa\u3057";
 const JAPANESE_TOTAL = "\u5408\u8a08";
 const JAPANESE_AVERAGE = "\u5e73\u5747";
 const JAPANESE_MANY = "\u591a\u3044";
@@ -142,6 +146,7 @@ const GROUPING_KEYWORDS: Record<QuestionGroupingIntent, string[]> = {
   ],
   datasource: [JAPANESE_DATASOURCE, "datasource", "data source"],
   dashboard: [JAPANESE_DASHBOARD, "dashboard"],
+  hashtag: [JAPANESE_HASHTAG, "hashtag", "hash tag", "#"],
   unknown: [],
 };
 
@@ -379,18 +384,33 @@ export function interpretQuestion(input: {
   const requestedMetricText =
     detectRequestedMetricText(input.question, metricIntent) ??
     detectRequestedMetricText(investigationQuestion, metricIntent);
-  const asksForRanking =
+  const baseAsksForRanking =
     detectRankingIntent(input.question) ||
     detectRankingIntent(investigationQuestion) ||
     typeof explicitTopN === "number";
+  const groupingIntent = chooseKnownGroupingIntent(
+    detectGroupingIntent(input.question),
+    detectGroupingIntent(investigationQuestion),
+  );
+  const analysisIntent = detectAnalysisIntent({
+    question: input.question,
+    investigationQuestion,
+    metricIntent,
+    groupingIntent,
+    asksForRanking: baseAsksForRanking,
+    hasPeriod: Boolean(period),
+  });
+  const groupingFieldHint = getGroupingFieldHint(groupingIntent);
+  const derivedMetricFormula =
+    metricIntent === "engagement_rate"
+      ? "SUM([エンゲージメント]) / SUM([インプレッション数])"
+      : undefined;
+  const asksForRanking =
+    baseAsksForRanking || analysisIntent === "grouped_trend";
   const topN = inferRequestedTopN(
     explicitTopN,
     asksForRanking,
     prefersSingleBestRanking,
-  );
-  const groupingIntent = chooseKnownGroupingIntent(
-    detectGroupingIntent(input.question),
-    detectGroupingIntent(investigationQuestion),
   );
   const rankingTarget = asksForRanking
     ? (detectRankingTarget(input.question) ??
@@ -416,12 +436,15 @@ export function interpretQuestion(input: {
     ...(requestType.signals.length
       ? { requestTypeSignals: requestType.signals }
       : {}),
+    analysisIntent,
     metricIntent,
     ...(requestedMetricText ? { requestedMetricText } : {}),
     asksForRanking,
     topN,
     ...(rankingTarget !== "unknown" ? { rankingTarget } : {}),
     ...(groupingIntent !== "unknown" ? { groupingIntent } : {}),
+    ...(groupingFieldHint.length ? { groupingFieldHint } : {}),
+    ...(derivedMetricFormula ? { derivedMetricFormula } : {}),
     ...(explicitTopN ? { topNExplicitlyRequested: true } : {}),
     ...(period ? { period } : {}),
   };
@@ -584,6 +607,86 @@ export function detectGroupingIntent(question: string): QuestionGroupingIntent {
   }
 
   return "unknown";
+}
+
+function detectAnalysisIntent(input: {
+  question: string;
+  investigationQuestion: string;
+  metricIntent: QuestionMetricIntent;
+  groupingIntent: QuestionGroupingIntent;
+  asksForRanking: boolean;
+  hasPeriod: boolean;
+}): QuestionAnalysisIntent {
+  const normalized = normalizeQuestionForIntent(
+    `${input.question} ${input.investigationQuestion}`,
+  );
+  const containsAny = (keywords: string[]): boolean =>
+    keywords.some((keyword) => containsNormalizedKeyword(normalized, keyword));
+
+  const groupedTrendKeywords = [
+    JAPANESE_TRENDS,
+    JAPANESE_BREAKDOWN,
+    JAPANESE_RATE,
+    JAPANESE_MANY,
+    JAPANESE_FEW,
+    JAPANESE_COMPARISON,
+    JAPANESE_INCREASE_DECREASE,
+    JAPANESE_HASHTAG,
+    "trend",
+    "trends",
+    "trend analysis",
+    "breakdown",
+    "analysis",
+    "compare",
+    "comparison",
+    "grouped",
+    "hashtag",
+    "hash tag",
+    "#",
+    "ごと",
+    "別",
+    "傾向",
+    "洗い出し",
+    "高い",
+    "低い",
+  ];
+
+  if (
+    input.groupingIntent === "hashtag" ||
+    (input.metricIntent !== "unknown" &&
+      input.groupingIntent !== "unknown" &&
+      containsAny(groupedTrendKeywords))
+  ) {
+    return "grouped_trend";
+  }
+
+  if (input.asksForRanking) {
+    return "ranking";
+  }
+
+  if (containsAny([JAPANESE_COMPARISON, "compare", "comparison"])) {
+    return "comparison";
+  }
+
+  if (
+    input.metricIntent !== "unknown" &&
+    (input.hasPeriod || containsAny([JAPANESE_TRENDS, "trend", "trends"]))
+  ) {
+    return "comparison";
+  }
+
+  return "unknown";
+}
+
+function getGroupingFieldHint(
+  groupingIntent: QuestionGroupingIntent,
+): string[] {
+  switch (groupingIntent) {
+    case "hashtag":
+      return ["Hashtag Normalized", "Hashtag"];
+    default:
+      return [];
+  }
 }
 
 export function metricIntentLabel(intent: QuestionMetricIntent): string {
@@ -812,6 +915,8 @@ function detectQuestionRequestType(input: {
     JAPANESE_ITEM_COUNT,
     JAPANESE_RATE,
     JAPANESE_TRANSITION,
+    JAPANESE_TRENDS,
+    JAPANESE_BREAKDOWN,
     JAPANESE_TOTAL,
     JAPANESE_AVERAGE,
     JAPANESE_MANY,
@@ -819,20 +924,31 @@ function detectQuestionRequestType(input: {
     JAPANESE_EXISTS,
     JAPANESE_COMPARISON,
     JAPANESE_INCREASE_DECREASE,
+    JAPANESE_HASHTAG,
     "count",
     "counts",
     "rate",
     "rates",
     "trend",
+    "trends",
     "total",
     "sum",
     "average",
     "avg",
     "compare",
+    "comparison",
     "growth",
     "increase",
     "decrease",
     "how many",
+    "high",
+    "low",
+    "group",
+    "grouped",
+    "by",
+    "each",
+    "per",
+    "every",
   ];
 
   const hasDatasourceKeyword = datasourceInventoryKeywords.some((keyword) =>

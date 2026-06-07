@@ -482,6 +482,7 @@ function buildHeuristicPlan(request: ChatRequest): AgentPlan {
     request.dashboardContext,
     [],
     interpretation.requestType,
+    interpretation,
   );
 
   return {

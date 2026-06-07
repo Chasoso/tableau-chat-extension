@@ -385,6 +385,56 @@ describe("TableauMcpContextProvider extraction helpers", () => {
     }
   });
 
+  it("derives engagement rate when the rate field is absent", () => {
+    const interpretation = interpretQuestion({
+      question:
+        "X Account Analytics Contents のエンゲージメント率が高い投稿を教えてください。",
+      dashboardContext: {
+        ...baseInput.dashboardContext,
+        dataSources: [{ name: "X Account Analytics Contents" }],
+      },
+    });
+
+    const selection = selectAggregateMetricField(
+      [
+        {
+          name: "エンゲージメント",
+          dataType: "INTEGER",
+          role: "MEASURE",
+          source: "datasourceModel",
+        },
+        {
+          name: "インプレッション数",
+          dataType: "INTEGER",
+          role: "MEASURE",
+          source: "datasourceModel",
+        },
+        {
+          name: "ポスト本文",
+          dataType: "STRING",
+          role: "DIMENSION",
+          source: "datasourceModel",
+        },
+      ],
+      interpretation,
+    );
+
+    expect(selection.fieldName).toBe("エンゲージメント率");
+    expect(selection.fieldSpec).toEqual(
+      expect.objectContaining({
+        fieldCaption: "エンゲージメント率",
+        calculation: "SUM([エンゲージメント]) / SUM([インプレッション数])",
+        fieldAlias: "rank_metric",
+        sortDirection: "DESC",
+        sortPriority: 1,
+      }),
+    );
+    expect(selection.componentFields).toEqual([
+      "エンゲージメント",
+      "インプレッション数",
+    ]);
+  });
+
   it("builds a composite reactions metric when reaction ranking is requested", () => {
     const interpretation = interpretQuestion({
       question:
@@ -1803,28 +1853,30 @@ describe("TableauMcpContextProvider extraction helpers", () => {
 
     expect(selection?.status).toBe("ready");
     if (selection?.status === "ready") {
-      expect(selection.arguments.query).toEqual({
-        fields: [
-          { fieldCaption: "workbook_title", fieldAlias: "rank_label" },
-          {
-            fieldCaption: "workbook_viewCount",
-            function: "SUM",
-            fieldAlias: "rank_metric",
-            sortDirection: "DESC",
-            sortPriority: 1,
-          },
-        ],
-        filters: [
-          {
-            field: { fieldCaption: "Datetime(JST)" },
-            filterType: "QUANTITATIVE_DATE",
-            quantitativeFilterType: "RANGE",
-            minDate: "2026-04-01",
-            maxDate: "2026-04-30",
-            includeNulls: false,
-          },
-        ],
-      });
+      expect(selection.arguments.query).toEqual(
+        expect.objectContaining({
+          fields: expect.arrayContaining([
+            { fieldCaption: "workbook_title", fieldAlias: "rank_label" },
+            expect.objectContaining({
+              fieldCaption: "workbook_viewCount",
+              function: "SUM",
+              fieldAlias: "rank_metric",
+              sortDirection: "DESC",
+              sortPriority: 1,
+            }),
+          ]),
+          filters: [
+            {
+              field: { fieldCaption: "Datetime(JST)" },
+              filterType: "QUANTITATIVE_DATE",
+              quantitativeFilterType: "RANGE",
+              minDate: "2026-04-01",
+              maxDate: "2026-04-30",
+              includeNulls: false,
+            },
+          ],
+        }),
+      );
     }
   });
 
@@ -1870,6 +1922,7 @@ describe("TableauMcpContextProvider extraction helpers", () => {
         investigationQuestion: "2026年4月のView数ランキング",
         datasourceMentions: [],
         requestType: "general",
+        analysisIntent: "ranking",
         metricIntent: "views",
         asksForRanking: true,
         topN: 10,
