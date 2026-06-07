@@ -392,7 +392,9 @@ Resources:
                 Action:
                   - lambda:InvokeFunction
                 Resource:
-                  - !GetAtt ChatJobWorkerFunction.Arn
+                  - !Sub
+                    - "arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:${FunctionName}"
+                    - FunctionName: !Sub "${AWS::StackName}-chat-job-worker"
               - Effect: Allow
                 Action:
                   - ssm:GetParameter
