@@ -1,4 +1,5 @@
 ﻿import { createRequire } from "node:module";
+import { delimiter } from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { getTableauConnectedAppSecrets } from "../aws/secrets";
@@ -155,6 +156,8 @@ export class TableauMcpContextProvider implements TableauContextProvider {
     let client: Client | undefined;
     let transport: StdioClientTransport | undefined;
     let mcpStderrTail = "";
+    let serverUrlSummary: McpServerUrlSummary | undefined;
+    let runtimeSummary: McpRuntimeSummary | undefined;
 
     try {
       const connectedApp = await getTableauConnectedAppSecrets();
@@ -184,11 +187,20 @@ export class TableauMcpContextProvider implements TableauContextProvider {
         tableauSubject: input.tableauSubject,
         connectedApp,
       });
+      serverUrlSummary = summarizeServerUrl(config.tableau.serverUrl);
+      runtimeSummary = summarizeMcpRuntime({
+        command,
+        args,
+      });
 
       logInfo("tableau.mcp.stdio.started", {
         commandSource: mcpConfig.command ? "configured" : "package",
+        commandBaseName: summarizeCommandBaseName(command),
+        argsCount: args.length,
         authMode: mcpConfig.authMode,
         tableauSubjectHash: safeHash(input.tableauSubject),
+        serverUrlSummary,
+        runtimeSummary,
         dashboardName: input.dashboardContext.dashboardName,
         workbookNamePresent: Boolean(input.dashboardContext.workbookName),
         questionRewritten: effectiveQuestion !== input.question,
@@ -199,6 +211,14 @@ export class TableauMcpContextProvider implements TableauContextProvider {
         args,
         env,
         stderr: "pipe",
+      });
+      installMcpTransportDiagnostics(transport, {
+        command,
+        args,
+        authMode: mcpConfig.authMode || "direct-trust",
+        tableauSubjectHash: safeHash(input.tableauSubject),
+        serverUrlSummary,
+        dashboardName: input.dashboardContext.dashboardName,
       });
       transport.stderr?.on("data", (chunk: Buffer | string) => {
         // Keep a short sanitized tail so startup failures can be diagnosed without leaking secrets.
@@ -673,6 +693,8 @@ export class TableauMcpContextProvider implements TableauContextProvider {
       const safeDetails = safeErrorDetails(error);
       logError("tableau.mcp.lookup.failed", {
         ...safeDetails,
+        ...(serverUrlSummary ? { serverUrlSummary } : {}),
+        ...(runtimeSummary ? { runtimeSummary } : {}),
         stderrTail: mcpStderrTail || undefined,
       });
       if (mcpStderrTail) {
@@ -906,6 +928,175 @@ function compactEnv(
       Boolean(entry[1]),
     ),
   );
+}
+
+type McpServerUrlSummary = {
+  protocol: string;
+  hasHost: boolean;
+  hostHash?: string;
+  hasPath: boolean;
+  hasQuery: boolean;
+  siteContentUrlPresent: boolean;
+};
+
+type McpRuntimeSummary = {
+  cwd: string;
+  nodeOptionsPresent: boolean;
+  nodeOptionsHash?: string;
+  pathSegmentCount: number;
+  commandIsNode: boolean;
+  commandBaseName: string;
+  argsCount: number;
+};
+
+type McpTransportDiagnostics = {
+  command: string;
+  args: string[];
+  authMode: string;
+  tableauSubjectHash?: string;
+  serverUrlSummary: McpServerUrlSummary;
+  dashboardName: string;
+};
+
+function summarizeServerUrl(serverUrl: string): McpServerUrlSummary {
+  const parsed = new URL(trimTrailingSlash(serverUrl));
+  return {
+    protocol: parsed.protocol.replace(/:$/, ""),
+    hasHost: Boolean(parsed.hostname),
+    ...(parsed.hostname ? { hostHash: safeHash(parsed.hostname) } : {}),
+    hasPath: parsed.pathname !== "/" && parsed.pathname.trim() !== "",
+    hasQuery: Boolean(parsed.search),
+    siteContentUrlPresent: Boolean(getConfig().tableau.siteContentUrl?.trim()),
+  };
+}
+
+function summarizeMcpRuntime(input: {
+  command: string;
+  args: string[];
+}): McpRuntimeSummary {
+  const pathValue = process.env.PATH?.trim() ?? "";
+  const nodeOptions = process.env.NODE_OPTIONS?.trim() ?? "";
+  return {
+    cwd: process.cwd(),
+    nodeOptionsPresent: Boolean(nodeOptions),
+    ...(nodeOptions ? { nodeOptionsHash: safeHash(nodeOptions) } : {}),
+    pathSegmentCount: pathValue ? pathValue.split(delimiter).length : 0,
+    commandIsNode: input.command === process.execPath,
+    commandBaseName: summarizeCommandBaseName(input.command),
+    argsCount: input.args.length,
+  };
+}
+
+function summarizeCommandBaseName(command: string): string {
+  const trimmed = command.trim();
+  if (!trimmed) {
+    return "unknown";
+  }
+
+  const normalized = trimmed.replace(/\\/g, "/");
+  return normalized.split("/").filter(Boolean).at(-1) ?? normalized;
+}
+
+function installMcpTransportDiagnostics(
+  transport: StdioClientTransport,
+  diagnostics: McpTransportDiagnostics,
+): void {
+  const transportWithProcess = transport as unknown as {
+    start?: () => Promise<void>;
+    _process?: {
+      pid?: number | null;
+      exitCode: number | null;
+      signalCode?: NodeJS.Signals | null;
+      once: {
+        (event: "error", listener: (error: unknown) => void): void;
+        (
+          event: "exit",
+          listener: (exitCode: number | null, signal: string | null) => void,
+        ): void;
+      };
+    };
+    onerror?: (error: unknown) => void;
+  };
+
+  if (typeof transportWithProcess.start !== "function") {
+    return;
+  }
+
+  const originalStart = transportWithProcess.start.bind(transportWithProcess);
+  let processHooksInstalled = false;
+  let processExitLogged = false;
+
+  transportWithProcess.onerror = (error: unknown) => {
+    logWarn("tableau.mcp.stdio.transport.error", {
+      ...diagnostics,
+      ...safeErrorDetails(error),
+    });
+  };
+
+  transportWithProcess.start = async () => {
+    try {
+      await originalStart();
+      installChildProcessHooks();
+    } catch (error) {
+      logWarn("tableau.mcp.stdio.start_failed", {
+        ...diagnostics,
+        ...safeErrorDetails(error),
+      });
+      throw error;
+    }
+  };
+
+  function installChildProcessHooks(): void {
+    if (processHooksInstalled) {
+      return;
+    }
+
+    const childProcess = transportWithProcess._process;
+    if (!childProcess) {
+      logDebug("tableau.mcp.stdio.process_unavailable", diagnostics);
+      return;
+    }
+
+    processHooksInstalled = true;
+    childProcess.once("error", (error: unknown) => {
+      logError("tableau.mcp.stdio.process.error", {
+        ...diagnostics,
+        ...safeErrorDetails(error),
+      });
+    });
+    childProcess.once(
+      "exit",
+      (exitCode: number | null, signal: string | null) => {
+        logProcessExit(exitCode, signal);
+      },
+    );
+
+    if (childProcess.exitCode !== null) {
+      logProcessExit(childProcess.exitCode, childProcess.signalCode ?? null);
+    }
+  }
+
+  function logProcessExit(
+    exitCode: number | null,
+    signal: string | null,
+  ): void {
+    if (processExitLogged) {
+      return;
+    }
+
+    processExitLogged = true;
+    const payload = {
+      ...diagnostics,
+      pid: transportWithProcess._process?.pid ?? undefined,
+      exitCode,
+      signal,
+    };
+    if (exitCode !== 0 || signal) {
+      logWarn("tableau.mcp.stdio.process.exited", payload);
+    } else {
+      logDebug("tableau.mcp.stdio.process.exited", payload);
+    }
+  }
 }
 
 export type SelectedTool =

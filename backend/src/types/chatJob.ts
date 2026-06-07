@@ -14,6 +14,13 @@ export type ChatJobStatus =
 
 export type ChatJobOwnerType = "authenticated" | "anonymous";
 
+export type ChatJobAuthSnapshot = {
+  userId: string;
+  email?: string;
+  tableauSubject?: string;
+  tokenUse?: string;
+};
+
 export type ChatJobResult = {
   answer: string;
   sessionId: string;
@@ -53,6 +60,7 @@ export type ChatJobRecord = {
   ownerKey: string;
   ownerType: ChatJobOwnerType;
   ownerUserId?: string | null;
+  authContextSnapshot?: ChatJobAuthSnapshot;
   status: ChatJobStatus;
   stage: ChatJobStage;
   progressMessages: ChatJobProgressMessage[];

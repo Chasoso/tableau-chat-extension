@@ -14,6 +14,7 @@ import { createChatService } from "./chatService";
 import type { AuthenticatedUser } from "../types/auth";
 import type { ChatRequest } from "../types/chat";
 import type {
+  ChatJobAuthSnapshot,
   ChatJobCreateResponse,
   ChatJobGetResponse,
   ChatJobRecord,
@@ -40,6 +41,7 @@ export class ChatJobService {
       authenticatedUser: input.authenticatedUser,
       headers: input.headers,
     });
+    const authContextSnapshot = buildAuthSnapshot(input.authenticatedUser);
     const jobId = randomUUID();
     const createdAt = new Date().toISOString();
     const record: ChatJobRecord = {
@@ -49,6 +51,7 @@ export class ChatJobService {
       ...(input.authenticatedUser?.userId
         ? { ownerUserId: input.authenticatedUser.userId }
         : {}),
+      ...(authContextSnapshot ? { authContextSnapshot } : {}),
       status: "queued",
       stage: "queued",
       progressMessages: [
@@ -70,6 +73,7 @@ export class ChatJobService {
       jobId,
       requestId: input.requestId,
       authenticated: Boolean(input.authenticatedUser),
+      authSnapshotPresent: Boolean(authContextSnapshot),
       ownerKeyHash: safeHash(ownerContext.ownerKey),
       sessionId: input.request.sessionId,
     });
@@ -176,15 +180,27 @@ export class ChatJobService {
 
     const progressReporter = createRepositoryProgressReporter(input.jobId);
     const chatService = createChatService();
+    const effectiveAuthenticatedUser =
+      authenticatedUser ?? buildAuthenticatedUserFromSnapshot(claimed);
     const conversationOwnerKey =
       claimed.ownerType === "authenticated"
-        ? (claimed.ownerUserId ?? authenticatedUser?.userId)
+        ? (effectiveAuthenticatedUser?.userId ??
+          claimed.ownerUserId ??
+          claimed.ownerKey)
         : claimed.ownerKey;
+
+    if (claimed.ownerType === "authenticated" && !effectiveAuthenticatedUser) {
+      logWarn("chat.job.auth_context_missing", {
+        jobId: input.jobId,
+        ownerUserId: claimed.ownerUserId,
+        authSnapshotPresent: Boolean(claimed.authContextSnapshot),
+      });
+    }
 
     try {
       const response = await chatService.generateAnswer(
         claimed.request,
-        authenticatedUser,
+        effectiveAuthenticatedUser,
         {
           getRemainingTimeInMillis: input.getRemainingTimeInMillis,
           progressReporter,
@@ -356,4 +372,44 @@ function getHeader(
     ([key]) => key.toLowerCase() === name.toLowerCase(),
   );
   return entry?.[1]?.trim() || undefined;
+}
+
+function buildAuthSnapshot(
+  authenticatedUser?: AuthenticatedUser,
+): ChatJobAuthSnapshot | undefined {
+  if (!authenticatedUser?.userId) {
+    return undefined;
+  }
+
+  return {
+    userId: authenticatedUser.userId,
+    ...(authenticatedUser.email ? { email: authenticatedUser.email } : {}),
+    ...(authenticatedUser.tableauSubject || authenticatedUser.email
+      ? {
+          tableauSubject:
+            authenticatedUser.tableauSubject ?? authenticatedUser.email,
+        }
+      : {}),
+    ...(authenticatedUser.tokenUse
+      ? { tokenUse: authenticatedUser.tokenUse }
+      : {}),
+  };
+}
+
+function buildAuthenticatedUserFromSnapshot(
+  record: Pick<ChatJobRecord, "authContextSnapshot">,
+): AuthenticatedUser | undefined {
+  const snapshot = record.authContextSnapshot;
+  if (!snapshot?.userId) {
+    return undefined;
+  }
+
+  return {
+    userId: snapshot.userId,
+    ...(snapshot.email ? { email: snapshot.email } : {}),
+    ...(snapshot.tableauSubject
+      ? { tableauSubject: snapshot.tableauSubject }
+      : {}),
+    ...(snapshot.tokenUse ? { tokenUse: snapshot.tokenUse } : {}),
+  };
 }
