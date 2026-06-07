@@ -37,7 +37,8 @@ describe("ChatJobRepository", () => {
       },
     ],
     request: {
-      question: "エンゲージメントが高い傾向にある投稿について、ハッシュタグごとに傾向を洗い出してください。",
+      question:
+        "エンゲージメントが高い傾向にある投稿について、ハッシュタグごとに傾向を洗い出してください。",
       dashboardContext: {
         dashboardName: "Overview",
         workbookName: "Analytics",
@@ -197,7 +198,8 @@ describe("ChatJobRepository", () => {
           stage: "failed",
           error: {
             code: "worker_failed",
-            message: "## 回答できなかった理由\n\n- 実データの取得に失敗しました。",
+            message:
+              "## 回答できなかった理由\n\n- 実データの取得に失敗しました。",
           },
           completedAt: "2026-06-08T00:00:00.000Z",
           updatedAt: "2026-06-08T00:00:00.000Z",

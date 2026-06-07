@@ -219,7 +219,8 @@ function buildJobRecord(
       ? {
           error: {
             code: "worker_failed",
-            message: "## 回答できなかった理由\n\n- 実データの取得に失敗しました。",
+            message:
+              "## 回答できなかった理由\n\n- 実データの取得に失敗しました。",
           },
         }
       : {}),

@@ -130,8 +130,14 @@ describe("TableauMcpContextProvider query analysis", () => {
     restoreEnv("TABLEAU_MCP_TRANSPORT", originalEnv.TABLEAU_MCP_TRANSPORT);
     restoreEnv("TABLEAU_MCP_SERVER_URL", originalEnv.TABLEAU_MCP_SERVER_URL);
     restoreEnv("TABLEAU_MCP_TIMEOUT_MS", originalEnv.TABLEAU_MCP_TIMEOUT_MS);
-    restoreEnv("TABLEAU_MCP_ALLOWED_TOOLS", originalEnv.TABLEAU_MCP_ALLOWED_TOOLS);
-    restoreEnv("TABLEAU_MCP_MAX_TOOL_CALLS", originalEnv.TABLEAU_MCP_MAX_TOOL_CALLS);
+    restoreEnv(
+      "TABLEAU_MCP_ALLOWED_TOOLS",
+      originalEnv.TABLEAU_MCP_ALLOWED_TOOLS,
+    );
+    restoreEnv(
+      "TABLEAU_MCP_MAX_TOOL_CALLS",
+      originalEnv.TABLEAU_MCP_MAX_TOOL_CALLS,
+    );
     restoreEnv("TABLEAU_MCP_COMMAND", originalEnv.TABLEAU_MCP_COMMAND);
     restoreEnv("TABLEAU_MCP_ARGS", originalEnv.TABLEAU_MCP_ARGS);
     restoreEnv(
@@ -143,7 +149,10 @@ describe("TableauMcpContextProvider query analysis", () => {
       originalEnv.TABLEAU_MCP_METADATA_CACHE_ENABLED,
     );
     restoreEnv("TABLEAU_SERVER_URL", originalEnv.TABLEAU_SERVER_URL);
-    restoreEnv("TABLEAU_SITE_CONTENT_URL", originalEnv.TABLEAU_SITE_CONTENT_URL);
+    restoreEnv(
+      "TABLEAU_SITE_CONTENT_URL",
+      originalEnv.TABLEAU_SITE_CONTENT_URL,
+    );
   });
 
   it("dedupes grouped trend query fields for hashtag engagement trends", () => {
@@ -194,7 +203,9 @@ describe("TableauMcpContextProvider query analysis", () => {
       throw new Error("Expected a query selection.");
     }
 
-    const fields = selection.arguments.query.fields as Array<Record<string, unknown>>;
+    const fields = selection.arguments.query.fields as Array<
+      Record<string, unknown>
+    >;
     expect(selection.arguments.datasourceLuid).toBe("ds-123");
     expect(fields[0]?.fieldCaption).toMatch(/Hashtag Normalized|Hashtag/);
     expect(fields.some((field) => field.fieldAlias === "engagement_rate")).toBe(
@@ -203,8 +214,7 @@ describe("TableauMcpContextProvider query analysis", () => {
     expect(
       fields.filter(
         (field) =>
-          field.fieldCaption === "エンゲージメント" &&
-          field.function === "SUM",
+          field.fieldCaption === "エンゲージメント" && field.function === "SUM",
       ),
     ).toHaveLength(1);
     expect(
@@ -264,7 +274,9 @@ describe("TableauMcpContextProvider query analysis", () => {
       throw new Error("Expected a query selection.");
     }
 
-    const fields = selection.arguments.query.fields as Array<Record<string, unknown>>;
+    const fields = selection.arguments.query.fields as Array<
+      Record<string, unknown>
+    >;
     expect(fields.some((field) => field.fieldAlias === "engagement_rate")).toBe(
       false,
     );
@@ -278,8 +290,7 @@ describe("TableauMcpContextProvider query analysis", () => {
     expect(
       fields.filter(
         (field) =>
-          field.fieldCaption === "エンゲージメント" &&
-          field.function === "SUM",
+          field.fieldCaption === "エンゲージメント" && field.function === "SUM",
       ),
     ).toHaveLength(1);
   });
@@ -332,7 +343,9 @@ describe("TableauMcpContextProvider query analysis", () => {
       throw new Error("Expected a query selection.");
     }
 
-    const fields = selection.arguments.query.fields as Array<Record<string, unknown>>;
+    const fields = selection.arguments.query.fields as Array<
+      Record<string, unknown>
+    >;
     expect(fields).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -455,10 +468,7 @@ describe("TableauMcpContextProvider query analysis", () => {
       "エンゲージメントが高い傾向にある投稿について、ハッシュタグごとに傾向を洗い出してください。";
     let queryRetryCallCount = 0;
 
-    mocks.client.callTool.mockImplementation(async (_request: {
-      name: string;
-      arguments: Record<string, unknown>;
-    }) => {
+    mocks.client.callTool.mockImplementation(async () => {
       queryRetryCallCount += 1;
       if (queryRetryCallCount === 1) {
         return {
@@ -518,9 +528,8 @@ describe("TableauMcpContextProvider query analysis", () => {
     const firstCallArgs = mocks.client.callTool.mock.calls[0]?.[0].arguments as
       | Record<string, unknown>
       | undefined;
-    const secondCallArgs = mocks.client.callTool.mock.calls[1]?.[0].arguments as
-      | Record<string, unknown>
-      | undefined;
+    const secondCallArgs = mocks.client.callTool.mock.calls[1]?.[0]
+      .arguments as Record<string, unknown> | undefined;
 
     expect(firstCallArgs?.query).toEqual(
       expect.objectContaining({
