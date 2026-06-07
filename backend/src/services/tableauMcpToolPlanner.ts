@@ -6,6 +6,7 @@ import { getConfig } from "../config";
 import { logError, logInfo, logWarn, safeErrorDetails } from "../logging";
 import type {
   DashboardContext,
+  QuestionInterpretation,
   QuestionIntent,
   QuestionRequestType,
 } from "../types/tableau";
@@ -379,6 +380,10 @@ export function classifyQuestionIntent(
   dashboardContext: DashboardContext,
   allowedToolNames: string[] = [],
   requestTypeHint?: QuestionRequestType,
+  questionInterpretation?: Pick<
+    QuestionInterpretation,
+    "metricIntent" | "groupingIntent" | "analysisIntent" | "rankingTarget"
+  >,
 ): ClassifiedQuestionIntent {
   const normalizedQuestion = question
     .normalize("NFKC")
@@ -390,6 +395,52 @@ export function classifyQuestionIntent(
     keywords.some((keyword) =>
       containsNormalizedPlannerKeyword(normalizedQuestion, keyword),
     );
+  const interpretedMetricIntent =
+    questionInterpretation?.metricIntent ?? "unknown";
+  const interpretedGroupingIntent =
+    questionInterpretation?.groupingIntent ?? "unknown";
+  const interpretedAnalysisIntent =
+    questionInterpretation?.analysisIntent ?? "unknown";
+  const hasMetricAndGroupingIntent =
+    interpretedMetricIntent !== "unknown" &&
+    interpretedGroupingIntent !== "unknown";
+  const hasAnalysisIntentHint =
+    interpretedAnalysisIntent === "grouped_trend" || hasMetricAndGroupingIntent;
+  const hasGroupedAnalysisKeywords = containsAny([
+    "\u50be\u5411",
+    "\u6d17\u3044\u51fa\u3057",
+    "\u6bd4\u8f03",
+    "\u30e9\u30f3\u30ad\u30f3\u30b0",
+    "\u4e0a\u4f4d",
+    "\u4e0b\u4f4d",
+    "\u9ad8\u3044",
+    "\u4f4e\u3044",
+    "\u30cf\u30c3\u30b7\u30e5\u30bf\u30b0",
+    "\u3054\u3068",
+    "\u5225",
+    "trend",
+    "trends",
+    "breakdown",
+    "compare",
+    "comparison",
+    "ranking",
+    "rank",
+    "high",
+    "higher",
+    "low",
+    "lower",
+    "top",
+    "bottom",
+    "by",
+    "each",
+    "per",
+    "every",
+    "group",
+    "grouped",
+    "hashtag",
+    "hash tag",
+    "#",
+  ]);
 
   if (requestTypeHint === "datasource_inventory") {
     const policy = QUESTION_INTENT_POLICY.dashboard_explanation;
@@ -472,6 +523,13 @@ export function classifyQuestionIntent(
     "increase",
     "decrease",
     "growth",
+    "\u50be\u5411",
+    "\u6d17\u3044\u51fa\u3057",
+    "\u9ad8\u3044",
+    "\u4f4e\u3044",
+    "\u30cf\u30c3\u30b7\u30e5\u30bf\u30b0",
+    "\u3054\u3068",
+    "\u5225",
     "\u30e9\u30f3\u30ad\u30f3\u30b0",
     "\u63a8\u79fb",
     "\u96c6\u8a08",
@@ -510,6 +568,11 @@ export function classifyQuestionIntent(
     "\u6700\u591a",
     "\u6700\u3082",
     "\u6bd4\u8f03",
+    "\u50be\u5411",
+    "\u6d17\u3044\u51fa\u3057",
+    "\u30cf\u30c3\u30b7\u30e5\u30bf\u30b0",
+    "\u3054\u3068",
+    "\u5225",
   ]);
   const hasContentSearchKeywords = containsAny([
     "search",
@@ -573,6 +636,12 @@ export function classifyQuestionIntent(
   ]);
   const hasSearchTool = allowedToolNames.includes("search-content");
   const hasQueryTool = allowedToolNames.includes("query-datasource");
+  const hasAnalysisOrGroupingSignal =
+    hasAnalysisKeywords ||
+    hasStrongAnalysisKeywords ||
+    hasGroupedAnalysisKeywords ||
+    hasMetricAndGroupingIntent ||
+    hasAnalysisIntentHint;
   const clueCount =
     Number(hasHowToKeywords) +
     Number(hasFilterKeywords) +
@@ -593,6 +662,19 @@ export function classifyQuestionIntent(
       answerableFromDashboardContext: policy.answerableFromDashboardContext,
       needsMcp: false,
       maxToolCalls: 0,
+    };
+  }
+
+  if (hasMetricAndGroupingIntent || hasAnalysisIntentHint) {
+    const policy = QUESTION_INTENT_POLICY.data_analysis;
+    return {
+      intent: "data_analysis",
+      confidence: hasMetricAndGroupingIntent ? 0.96 : 0.9,
+      reasonBrief:
+        "The question combines a metric with a grouping or grouped trend cue, so a datasource aggregate query should be prioritized.",
+      answerableFromDashboardContext: policy.answerableFromDashboardContext,
+      needsMcp: policy.needsMcp,
+      maxToolCalls: policy.maxToolCalls,
     };
   }
 
@@ -659,8 +741,8 @@ export function classifyQuestionIntent(
     confidence = 0.78;
     reasonBrief = "The question asks to locate Tableau Cloud content.";
   } else if (
-    hasDashboardExplanationKeywords ||
-    dashboardContext.worksheets.length > 0
+    !hasAnalysisOrGroupingSignal &&
+    (hasDashboardExplanationKeywords || dashboardContext.worksheets.length > 0)
   ) {
     intent = "dashboard_explanation";
     confidence = hasDashboardExplanationKeywords ? 0.76 : 0.56;

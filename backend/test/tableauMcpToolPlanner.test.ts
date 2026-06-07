@@ -5,6 +5,7 @@ import {
   parseToolPlanResponse,
   resolveAllowedToolNames,
 } from "../src/services/tableauMcpToolPlanner";
+import { interpretQuestion } from "../src/services/questionInterpretation";
 
 describe("tableauMcpToolPlanner", () => {
   it("parses planned MCP tool calls from fenced JSON", () => {
@@ -155,6 +156,37 @@ describe("tableauMcpToolPlanner", () => {
       ["list-datasources", "get-datasource-metadata", "query-datasource"],
     );
 
+    expect(intent.intent).toBe("data_analysis");
+    expect(intent.needsMcp).toBe(true);
+  });
+
+  it("prioritizes grouped hashtag trend analysis as data analysis", () => {
+    const question =
+      "エンゲージメント率が高い傾向にある投稿について、ハッシュタグごとに傾向を洗い出してください。";
+    const dashboardContext = {
+      dashboardName: "X Dashboard",
+      workbookName: "X Workbook",
+      worksheets: [{ name: "Posts" }],
+      filters: [],
+      parameters: [],
+      dataSources: [{ name: "X Account Analytics Contents" }],
+      capturedAt: "2026-06-07T00:00:00.000Z",
+    };
+    const interpretation = interpretQuestion({
+      question,
+      dashboardContext,
+    });
+
+    const intent = classifyQuestionIntent(
+      question,
+      dashboardContext,
+      ["list-datasources", "get-datasource-metadata", "query-datasource"],
+      undefined,
+      interpretation,
+    );
+
+    expect(interpretation.analysisIntent).toBe("grouped_trend");
+    expect(interpretation.groupingIntent).toBe("hashtag");
     expect(intent.intent).toBe("data_analysis");
     expect(intent.needsMcp).toBe(true);
   });

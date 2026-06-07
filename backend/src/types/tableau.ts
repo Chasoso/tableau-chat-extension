@@ -69,6 +69,14 @@ export type QuestionIntent =
   | "how_to_use_tableau"
   | "unsupported";
 
+export type QuestionAnalysisIntent =
+  | "grouped_trend"
+  | "ranking"
+  | "comparison"
+  | "metadata_lookup"
+  | "dashboard_explanation"
+  | "unknown";
+
 export type McpObservation = {
   tool: string;
   purpose: string;
@@ -150,6 +158,7 @@ export type DatasourceFieldDetail = {
 export type QueryDatasourceInsightRow = {
   label?: string;
   value: number | null;
+  raw?: Record<string, unknown>;
 };
 
 export type QuestionMetricIntent =
@@ -179,6 +188,7 @@ export type QuestionGroupingIntent =
   | "author"
   | "datasource"
   | "dashboard"
+  | "hashtag"
   | "unknown";
 
 export type QuestionRequestType =
@@ -194,12 +204,15 @@ export type QuestionInterpretation = {
   requestType: QuestionRequestType;
   requestTypeConfidence?: number;
   requestTypeSignals?: string[];
+  analysisIntent: QuestionAnalysisIntent;
   metricIntent: QuestionMetricIntent;
   requestedMetricText?: string;
   asksForRanking: boolean;
   topN: number;
   rankingTarget?: QuestionRankingTarget;
   groupingIntent?: QuestionGroupingIntent;
+  groupingFieldHint?: string[];
+  derivedMetricFormula?: string;
   topNExplicitlyRequested?: boolean;
   period?: QuestionPeriod;
 };
@@ -209,6 +222,12 @@ export type QueryDatasourceInsight = {
   datasourceLuid?: string;
   dimensionField?: string;
   metricField: string;
+  queryFields?: Array<{
+    fieldCaption?: string;
+    fieldAlias?: string;
+    function?: string;
+    calculation?: string;
+  }>;
   requestedMetricIntent?: QuestionMetricIntent;
   requestedMetricText?: string;
   rankingTarget?: QuestionRankingTarget;

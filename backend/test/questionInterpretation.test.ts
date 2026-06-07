@@ -139,6 +139,29 @@ describe("questionInterpretation", () => {
     expect(interpretation.rankingTarget).toBe("post");
   });
 
+  it("detects hashtag grouped trend analysis and derived engagement rate formula", () => {
+    const interpretation = interpretQuestion({
+      question:
+        "エンゲージメント率が高い傾向にある投稿について、ハッシュタグごとに傾向を洗い出してください。",
+      dashboardContext: {
+        ...dashboardContext,
+        dataSources: [{ name: "X Account Analytics Contents" }],
+      },
+    });
+
+    expect(interpretation.metricIntent).toBe("engagement_rate");
+    expect(interpretation.groupingIntent).toBe("hashtag");
+    expect(interpretation.analysisIntent).toBe("grouped_trend");
+    expect(interpretation.groupingFieldHint).toEqual([
+      "Hashtag Normalized",
+      "Hashtag",
+    ]);
+    expect(interpretation.derivedMetricFormula).toBe(
+      "SUM([エンゲージメント]) / SUM([インプレッション数])",
+    );
+    expect(interpretation.asksForRanking).toBe(true);
+  });
+
   it("classifies datasource inventory questions as a lightweight request type", () => {
     const interpretation = interpretQuestion({
       question: datasourceInventoryQuestion,

@@ -338,9 +338,12 @@ export class ChatService {
       rankingTarget:
         additionalContext.questionInterpretation?.rankingTarget ?? "unknown",
       selectedDimensionField: finalAnswer.selectedDimensionField ?? null,
+      selectedGroupingField: finalAnswer.selectedDimensionField ?? null,
       dimensionMatchConfidence: finalAnswer.dimensionMatchConfidence ?? null,
       queryInsightUsedForFinalAnswer:
         finalAnswer.queryInsightUsedForFinalAnswer,
+      answerHasActualQueryResult:
+        finalAnswer.finalAnswerSource === "query_insight_template",
       finalAnswerSource: finalAnswer.finalAnswerSource,
       markdownValidationPassed: finalAnswer.markdownValidationPassed,
     });
@@ -842,6 +845,18 @@ function resolveFinalUserFacingAnswer(
     });
   }
 
+  const groupedTrendFallback = buildGroupedTrendAnalysisFallback(
+    request,
+    additionalContext,
+  );
+  if (groupedTrendFallback) {
+    return finalizeMarkdownAnswer({
+      answer: groupedTrendFallback,
+      finalAnswerSource: "fallback",
+      queryInsightUsedForFinalAnswer: false,
+    });
+  }
+
   const noValidatedRankingFallback = buildNoValidatedRankingFallback(
     request,
     additionalContext,
@@ -1119,6 +1134,15 @@ export function buildStructuredDataAnalysisAnswer(
     return undefined;
   }
 
+  if (isGroupedTrendAnalysis(interpretation, request.question)) {
+    return buildGroupedTrendAnswer({
+      request,
+      interpretation,
+      insight,
+      rows,
+    });
+  }
+
   const periodLabel = interpretation?.period?.label;
   const metricLabel =
     interpretation && interpretation.metricIntent !== "unknown"
@@ -1172,6 +1196,251 @@ export function buildStructuredDataAnalysisAnswer(
     `- データソース: \`${insight.datasourceName}\``,
     periodLabel ? `- 期間: \`${periodLabel}\`` : undefined,
     `- 指標: \`${metricLabel}\``,
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+function extractStringFromRawRow(
+  raw: Record<string, unknown>,
+  candidates: Array<string | undefined>,
+): string | undefined {
+  for (const candidate of candidates) {
+    const normalizedCandidate = candidate?.trim();
+    if (!normalizedCandidate) {
+      continue;
+    }
+    const value = raw[normalizedCandidate];
+    if (typeof value === "string" && value.trim()) {
+      return value.trim();
+    }
+    if (typeof value === "number" && Number.isFinite(value)) {
+      return String(value);
+    }
+  }
+  return undefined;
+}
+
+function extractNumericFromRawRow(
+  raw: Record<string, unknown>,
+  candidates: Array<string | undefined>,
+): number | null | undefined {
+  for (const candidate of candidates) {
+    const normalizedCandidate = candidate?.trim();
+    if (!normalizedCandidate) {
+      continue;
+    }
+    const value = raw[normalizedCandidate];
+    if (typeof value === "number" && Number.isFinite(value)) {
+      return value;
+    }
+    if (typeof value === "string") {
+      const parsed = Number(value.replace(/,/g, ""));
+      if (Number.isFinite(parsed)) {
+        return parsed;
+      }
+    }
+  }
+  return undefined;
+}
+
+function formatPercentageValue(value: number | null | undefined): string {
+  if (value === null || value === undefined || !Number.isFinite(value)) {
+    return "値なし";
+  }
+
+  const ratio = value <= 1 ? value * 100 : value;
+  return `${ratio.toFixed(ratio < 10 ? 2 : 1)}%`;
+}
+
+function buildGroupedTrendAnalysisFallback(
+  request: ChatRequest,
+  additionalContext: Awaited<
+    ReturnType<TableauContextProvider["getAdditionalContext"]>
+  >,
+): string | undefined {
+  const interpretation = additionalContext.questionInterpretation;
+  if (!isGroupedTrendAnalysis(interpretation, request.question)) {
+    return undefined;
+  }
+
+  const selectedInsight = selectBestQueryInsight(
+    additionalContext.queryInsights ?? [],
+    interpretation,
+    request.question,
+  );
+  const queryExecuted = hasSuccessfulDatasourceQuery(additionalContext);
+  if (
+    selectedInsight &&
+    selectedInsight.rows.some((row) => isMeaningfulInsightLabel(row.label))
+  ) {
+    return undefined;
+  }
+
+  const datasourceNames =
+    additionalContext.normalizedContext?.datasources
+      ?.map((datasource) => datasource.name)
+      .filter(Boolean) ??
+    request.dashboardContext.dataSources
+      ?.map((datasource) => datasource.name)
+      .filter(Boolean) ??
+    [];
+  const datasourceText = datasourceNames.length
+    ? datasourceNames.join("、")
+    : "対象データソース";
+  const metricLabel =
+    interpretation && interpretation.metricIntent !== "unknown"
+      ? metricIntentLabel(interpretation.metricIntent)
+      : "指標";
+  const groupingLabel =
+    interpretation?.groupingFieldHint?.[0] ?? "Hashtag Normalized";
+
+  return [
+    "## 回答できなかった理由",
+    "",
+    `ハッシュタグ別の${metricLabel}傾向を出すには、\`${groupingLabel}\` と \`${metricLabel}\` の集計が必要ですが、今回は query-datasource の実行結果を有効な形で取得できませんでした。`,
+    "",
+    "## 確認できたこと",
+    "",
+    `- データソース候補: \`${datasourceText}\``,
+    `- 必要なフィールド候補: \`${groupingLabel}\`, \`エンゲージメント\`, \`インプレッション数\``,
+    queryExecuted
+      ? "- 集計クエリは実行されましたが、ハッシュタグ別の明確な行ラベルを確認できませんでした。"
+      : "- 集計クエリまで到達できませんでした。",
+  ].join("\n");
+}
+
+function isGroupedTrendAnalysis(
+  interpretation: QuestionInterpretation | undefined,
+  question: string,
+): boolean {
+  if (!interpretation) {
+    return false;
+  }
+
+  if (interpretation.analysisIntent === "grouped_trend") {
+    return true;
+  }
+
+  return Boolean(
+    interpretation.groupingIntent === "hashtag" &&
+    /傾向|洗い出し|比較|ランキング|高い|低い|ごと|別|hashtag|hash tag|#/i.test(
+      question,
+    ),
+  );
+}
+
+function buildGroupedTrendAnswer(input: {
+  request: ChatRequest;
+  interpretation: QuestionInterpretation | undefined;
+  insight: QueryDatasourceInsight;
+  rows: Array<{
+    label?: string;
+    value: number | null;
+    raw?: Record<string, unknown>;
+  }>;
+}): string {
+  const { request, interpretation, insight, rows } = input;
+  const periodLabel = interpretation?.period?.label;
+  const datasourceName = insight.datasourceName;
+  const metricLabel =
+    interpretation && interpretation.metricIntent !== "unknown"
+      ? metricIntentLabel(interpretation.metricIntent)
+      : describeMetricField(insight.metricField);
+  const conclusionMetricLabel = metricLabel;
+  const visibleRows = rows.slice(0, Math.min(rows.length, 10));
+  const summaryRows = visibleRows.slice(0, 3);
+  const queryFieldSpecs = insight.queryFields ?? [];
+  const queryFieldCandidates = queryFieldSpecs
+    .flatMap((spec) => [spec.fieldAlias, spec.fieldCaption, spec.function])
+    .filter((value): value is string => Boolean(value && value.trim()));
+  const rowLabelCandidates = [
+    insight.dimensionField,
+    "rank_label",
+    "Hashtag Normalized",
+    "Hashtag",
+    "rank_label",
+    ...queryFieldCandidates,
+  ];
+  const postCountCandidates = ["post_count", "Post Count", "投稿数", "COUNT"];
+  const engagementCandidates = [
+    "engagement_total",
+    "エンゲージメント",
+    "Engagement",
+    "engagement",
+    "SUM(エンゲージメント)",
+  ];
+  const impressionCandidates = [
+    "impression_total",
+    "インプレッション数",
+    "Impressions",
+    "impressions",
+    "SUM(インプレッション数)",
+  ];
+  const rateCandidates = [
+    "engagement_rate",
+    "rank_metric",
+    "エンゲージメント率",
+    metricLabel,
+    ...queryFieldCandidates,
+  ];
+
+  const tableRows = visibleRows.map((row) => {
+    const raw = row.raw ?? {};
+    const hashtag =
+      extractStringFromRawRow(raw, rowLabelCandidates) ?? row.label;
+    const postCount = extractNumericFromRawRow(raw, postCountCandidates);
+    const engagementTotal = extractNumericFromRawRow(raw, engagementCandidates);
+    const impressionTotal = extractNumericFromRawRow(raw, impressionCandidates);
+    const engagementRate = extractNumericFromRawRow(raw, rateCandidates);
+    return {
+      hashtag: hashtag ?? "名称不明",
+      postCount: formatMetricValue(postCount ?? null),
+      engagementTotal: formatMetricValue(engagementTotal ?? null),
+      impressionTotal: formatMetricValue(impressionTotal ?? null),
+      engagementRate: formatPercentageValue(engagementRate),
+    };
+  });
+
+  const trendBullets = summaryRows.map((row, index) => {
+    const raw = row.raw ?? {};
+    const hashtag =
+      extractStringFromRawRow(raw, rowLabelCandidates) ??
+      row.label ??
+      "名称不明";
+    const rate = extractNumericFromRawRow(raw, rateCandidates);
+    return `- ${index + 1}位は \`${escapeMarkdownTableCell(hashtag)}\` で、${formatPercentageValue(rate)} でした。`;
+  });
+
+  return [
+    "## 結論",
+    "",
+    `${conclusionMetricLabel}が高い傾向にあるハッシュタグは、主に以下です。`,
+    "",
+    "| ハッシュタグ | 投稿数 | 合計エンゲージメント | 合計インプレッション | エンゲージメント率 |",
+    "|---|---:|---:|---:|---:|",
+    ...tableRows.map(
+      (row) =>
+        `| ${escapeMarkdownTableCell(row.hashtag)} | ${row.postCount} | ${row.engagementTotal} | ${row.impressionTotal} | ${row.engagementRate} |`,
+    ),
+    "",
+    "## 傾向",
+    "",
+    ...(trendBullets.length
+      ? trendBullets
+      : [
+          "- 集計結果が取得できた範囲では、ハッシュタグ別の差分を確認できました。",
+        ]),
+    "",
+    "## 集計条件",
+    "",
+    `- データソース: \`${datasourceName}\``,
+    `- グループ: \`${interpretation?.groupingFieldHint?.[0] ?? "Hashtag Normalized"}\``,
+    `- 指標: \`${interpretation?.derivedMetricFormula ?? "SUM([エンゲージメント]) / SUM([インプレッション数])"}\``,
+    periodLabel ? `- 期間: \`${periodLabel}\`` : undefined,
+    request.dashboardContext.workbookName
+      ? `- ワークブック: \`${request.dashboardContext.workbookName}\``
+      : undefined,
   ]
     .filter(Boolean)
     .join("\n");
@@ -1634,6 +1903,7 @@ function selectBestValidatedQueryInsight(
       requestType: interpretation.requestType,
       selectedMetricField: undefined,
       selectedDimensionField: undefined,
+      selectedGroupingField: undefined,
       selectedDatasourceName: undefined,
       selectedRowCount: 0,
       selectedScore: undefined,
@@ -1670,6 +1940,7 @@ function selectBestValidatedQueryInsight(
   logDebug("chat.query_insight.selected", {
     selectedMetricField: selected?.insight.metricField,
     selectedDimensionField: selected?.insight.dimensionField,
+    selectedGroupingField: selected?.insight.dimensionField,
     selectedDatasourceName: selected?.insight.datasourceName,
     selectedRowCount: selected?.insight.rows.length,
     selectedScore: selected?.evaluation.score,
@@ -1681,6 +1952,7 @@ function selectBestValidatedQueryInsight(
     dimensionMatchConfidence: selected?.evaluation.dimensionMatchConfidence,
     queryInsightUsedForFinalAnswer: Boolean(selected),
     candidateCount: candidates.length,
+    queryInsightCandidateCount: candidates.length,
   });
   if (candidates.length) {
     logDebug("chat.query_insight.rejected", {
