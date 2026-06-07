@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { sendChatQuestion } from "./chatApi";
+import { createChatJob, getChatJob, sendChatQuestion } from "./chatApi";
 
 const fetchMock = vi.fn();
 
@@ -98,5 +98,73 @@ describe("chatApi", () => {
     await expect(
       sendChatQuestion({ question: "hello" } as never),
     ).rejects.toThrow("backend failed");
+  });
+
+  it("creates chat jobs with the owner token header", async () => {
+    fetchMock.mockResolvedValue(
+      jsonResponse({
+        jobId: "job-1",
+        status: "queued",
+        stage: "queued",
+        pollUrl: "/chat-jobs/job-1",
+        retryAfterMs: 1500,
+        ownerToken: "owner-token-1",
+      }),
+    );
+
+    await expect(
+      createChatJob({ question: "hello" } as never, "token-1", "owner-1"),
+    ).resolves.toEqual({
+      jobId: "job-1",
+      status: "queued",
+      stage: "queued",
+      pollUrl: "/chat-jobs/job-1",
+      retryAfterMs: 1500,
+      ownerToken: "owner-token-1",
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/chat-jobs",
+      expect.objectContaining({
+        method: "POST",
+        headers: expect.objectContaining({
+          Authorization: "Bearer token-1",
+          "X-Chat-Owner-Token": "owner-1",
+        }),
+      }),
+    );
+  });
+
+  it("polls chat jobs with the owner token header", async () => {
+    fetchMock.mockResolvedValue(
+      jsonResponse({
+        jobId: "job-1",
+        status: "running",
+        stage: "planning",
+        progressMessages: [],
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        expiresAt: Math.floor(Date.now() / 1000) + 60,
+        ownerType: "anonymous",
+      }),
+    );
+
+    await expect(getChatJob("job-1", undefined, "owner-1")).resolves.toEqual(
+      expect.objectContaining({
+        jobId: "job-1",
+        status: "running",
+        stage: "planning",
+      }),
+    );
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/chat-jobs/job-1",
+      expect.objectContaining({
+        method: "GET",
+        headers: expect.objectContaining({
+          "X-Chat-Owner-Token": "owner-1",
+        }),
+      }),
+    );
   });
 });

@@ -40,6 +40,10 @@ import {
   runLightweightAgentLoop,
   type ChatAgent,
 } from "./chatAgent";
+import {
+  createNoopChatProgressReporter,
+  type ChatProgressReporter,
+} from "./chatProgress";
 import { buildPrompt } from "./promptBuilder";
 
 export class ChatService {
@@ -55,17 +59,30 @@ export class ChatService {
     authenticatedUser?: AuthenticatedUser,
     options: {
       getRemainingTimeInMillis?: () => number;
+      progressReporter?: ChatProgressReporter;
+      conversationOwnerKey?: string;
     } = {},
   ): Promise<ChatResponse> {
     const config = getConfig();
     const sessionId = request.sessionId || randomUUID();
     const messageId = randomUUID();
+    const progressReporter =
+      options.progressReporter ?? createNoopChatProgressReporter();
     const requestInterpretation = interpretQuestion({
       question: request.question,
       dashboardContext: request.dashboardContext,
     });
     const tableauSubject = resolveTableauSubject(authenticatedUser);
-    const ownerUserId = authenticatedUser?.userId;
+    const ownerUserId =
+      options.conversationOwnerKey ?? authenticatedUser?.userId;
+    await progressReporter.report({
+      stage: "loading_history",
+      message: "会話履歴を確認中...",
+      debug: {
+        sessionId,
+        messageId,
+      },
+    });
     const recentHistory = await this.repository.listRecentBySession({
       sessionId,
       ownerUserId,
@@ -103,6 +120,15 @@ export class ChatService {
         requestTypeConfidence: requestInterpretation.requestTypeConfidence,
         requestTypeSignals: requestInterpretation.requestTypeSignals,
       });
+      await progressReporter.report({
+        stage: "finalizing",
+        message: "回答を保存中...",
+        debug: {
+          sessionId,
+          messageId,
+          path: "fast_path",
+        },
+      });
       return this.persistAndBuildResponse({
         sessionId,
         messageId,
@@ -120,6 +146,23 @@ export class ChatService {
         ),
       });
     }
+    await progressReporter.report({
+      stage: "loading_dashboard_context",
+      message: "ダッシュボード情報を取得中...",
+      debug: {
+        sessionId,
+        messageId,
+      },
+    });
+    await progressReporter.report({
+      stage: "planning",
+      message: "分析計画を作成中...",
+      debug: {
+        requestType: requestInterpretation.requestType,
+        requestTypeConfidence: requestInterpretation.requestTypeConfidence,
+        metricIntent: requestInterpretation.metricIntent,
+      },
+    });
     const agentLoopResult = await runLightweightAgentLoop({
       agent: this.chatAgent,
       contextProvider: this.contextProvider,
@@ -131,6 +174,22 @@ export class ChatService {
       getRemainingTimeInMillis: options.getRemainingTimeInMillis,
     });
     const additionalContext = agentLoopResult.additionalContext;
+    await progressReporter.report({
+      stage: "running_mcp_tools",
+      message: "MCP ツールを実行中...",
+      toolName:
+        additionalContext.mcpExecutionDebug?.executedTools?.at(-1) ??
+        additionalContext.mcpExecutionDebug?.plannedTools?.at(0),
+      debug: {
+        provider: additionalContext.provider,
+        toolCallCount: additionalContext.mcpExecutionDebug?.toolCallCount,
+        plannedTools: additionalContext.mcpExecutionDebug?.plannedTools,
+        executedTools: additionalContext.mcpExecutionDebug?.executedTools,
+        replanUsed: additionalContext.mcpExecutionDebug?.replanUsed,
+        fallbackReason: additionalContext.mcpExecutionDebug?.fallbackReason,
+        passCount: agentLoopResult.debug?.passCount,
+      },
+    });
     logInfo("chat.service.context_lookup.completed", {
       provider: additionalContext.provider,
       sessionId,
@@ -152,6 +211,15 @@ export class ChatService {
         requestType: additionalContext.questionInterpretation?.requestType,
         fieldProfileCount:
           additionalContext.datasourceFieldProfiles?.length ?? 0,
+      });
+      await progressReporter.report({
+        stage: "finalizing",
+        message: "最終結果を保存中...",
+        debug: {
+          sessionId,
+          messageId,
+          path: "metadata_fast_path",
+        },
       });
       return this.persistAndBuildResponse({
         sessionId,
@@ -195,6 +263,15 @@ export class ChatService {
         remainingTimeMs: remainingTimeBeforeAnswer,
         provider: additionalContext.provider,
       });
+      await progressReporter.report({
+        stage: "finalizing",
+        message: "最終結果を保存中...",
+        debug: {
+          sessionId,
+          messageId,
+          path: "deadline_fallback",
+        },
+      });
       return this.persistAndBuildResponse({
         sessionId,
         messageId,
@@ -224,6 +301,14 @@ export class ChatService {
         },
       });
     }
+    await progressReporter.report({
+      stage: "generating_answer",
+      message: "回答を生成中...",
+      debug: {
+        sessionId,
+        messageId,
+      },
+    });
     const prompt = buildPrompt(
       request,
       additionalContext,
@@ -266,6 +351,14 @@ export class ChatService {
       request,
       additionalContext,
     );
+    await progressReporter.report({
+      stage: "finalizing",
+      message: "最終結果を保存中...",
+      debug: {
+        sessionId,
+        messageId,
+      },
+    });
     if (dashboardContextPatch?.workbookName) {
       logInfo("chat.service.dashboard_context_patch.created", {
         provider: additionalContext.provider,

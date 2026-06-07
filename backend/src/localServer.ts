@@ -35,6 +35,7 @@ const server = createServer(async (request, response) => {
       ? await healthHandler()
       : requestUrl.pathname.startsWith("/chat") ||
           requestUrl.pathname.startsWith("/context") ||
+          requestUrl.pathname.startsWith("/chat-jobs") ||
           requestUrl.pathname.startsWith("/notion") ||
           requestUrl.pathname.startsWith("/auth")
         ? await chatHandler(event)

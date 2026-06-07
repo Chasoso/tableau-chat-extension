@@ -56,10 +56,18 @@ Useful local defaults:
 
 - Frontend: `http://localhost:5173`
 - Backend: `http://localhost:3001`
-- Chat API: `POST http://localhost:3001/chat`
+- Chat job API: `POST http://localhost:3001/chat-jobs`
+- Chat job poll API: `GET http://localhost:3001/chat-jobs/{jobId}`
+- Legacy chat API: `POST http://localhost:3001/chat` (kept for compatibility while migrating)
 - Health API: `GET http://localhost:3001/health`
 - `LOG_LEVEL=info`: backend log threshold (`debug`, `info`, `warn`, `error`)
 - `CHAT_DEBUG_MAX_CHARS=12000`: max characters for debug-level chat input/output message logs.
+
+The recommended path for long-running analysis is the async chat job flow:
+
+1. `POST /chat-jobs` to create a job and get `jobId` immediately.
+2. Poll `GET /chat-jobs/{jobId}` until the status becomes `completed` or `failed`.
+3. Use the returned `X-Chat-Owner-Token` for anonymous polling so a user only sees their own jobs.
 
 For browser-only mock development outside Tableau:
 
@@ -195,9 +203,19 @@ For Lambda-local Tableau MCP:
 - `TABLEAU_MCP_ARG_MAX_DEPTH=5`, `TABLEAU_MCP_ARG_MAX_ARRAY=50`, `TABLEAU_MCP_ARG_MAX_OBJECT_KEYS=30`: JSON argument safety caps for planner output.
 - `TABLEAU_MCP_METADATA_CACHE_ENABLED=true`: enables short-lived in-memory metadata caching per user boundary.
 - `TABLEAU_MCP_METADATA_CACHE_TTL_MS=30000`: metadata cache TTL in milliseconds.
+- `TABLEAU_MCP_METADATA_CACHE_TABLE_NAME=<dynamodb table name>`: optional DynamoDB-backed metadata cache for cold-start and cross-invocation reuse.
 - `TABLEAU_MCP_QUERY_MAX_LIMIT=50`: hard cap for `query-datasource` limit.
 - `TABLEAU_MCP_QUERY_MAX_FIELDS=6`: hard cap for `query-datasource` field count.
 - `TABLEAU_MCP_COMMAND` and `TABLEAU_MCP_ARGS`: optional override. If omitted, Lambda runs the installed `@tableau/mcp-server` package with Node.js.
+
+Async chat job settings:
+
+- `CHAT_JOBS_TABLE_NAME=<dynamodb table name>`: job state table used by `POST /chat-jobs` and `GET /chat-jobs/{jobId}`.
+- `CHAT_JOB_WORKER_FUNCTION_NAME=<lambda function name>`: async worker Lambda name for job execution.
+- `CHAT_JOB_TTL_SECONDS=86400`: TTL for completed / failed jobs.
+- `CHAT_JOB_LEASE_SECONDS=120`: worker lease duration for claim / retry protection.
+- `CHAT_JOB_PROGRESS_MESSAGE_LIMIT=12`: max progress messages retained per job record.
+- `CHAT_JOB_OWNER_TOKEN_HEADER_NAME=x-chat-owner-token`: anonymous job ownership header used for polling and history continuity.
 
 Recommended limited-agent settings:
 
@@ -408,6 +426,7 @@ See [docs/github-actions-deployment.md](docs/github-actions-deployment.md).
 
 - Tableau Dashboard Extension UI with mock fallback.
 - Cognito-protected chat API.
+- Async chat jobs with polling, per-job progress updates, and owner-based isolation.
 - Per-user Tableau subject derived from verified Cognito email.
 - Direct Tableau REST / Metadata context lookup.
 - Lambda-local Tableau MCP stdio provider.
@@ -417,6 +436,7 @@ See [docs/github-actions-deployment.md](docs/github-actions-deployment.md).
 
 ### Not Production Ready Yet
 
+- The legacy synchronous `POST /chat` endpoint still exists for compatibility, but long-running analysis should use the async job flow.
 - MCP tool selection can use all MCP-advertised tools when no explicit allowlist is set; production should still harden this with an explicit tool allowlist.
 - Screenshot analysis is not wired into the prompt yet.
 - Cognito email equals Tableau username is a PoC assumption.

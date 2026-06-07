@@ -27,7 +27,7 @@ async function mockAssistantApis(page: Page) {
     });
   });
 
-  await page.route("**/api/chat", async (route) => {
+  await page.route("**/api/chat-jobs", async (route) => {
     const requestBody = route.request().postDataJSON() as {
       question?: string;
       dashboardContext?: unknown;
@@ -39,20 +39,51 @@ async function mockAssistantApis(page: Page) {
     await route.fulfill({
       contentType: "application/json",
       body: JSON.stringify({
-        answer: [
-          "## Summary",
-          "",
-          "This is a mocked assistant response for UI verification.",
-          "",
-          "- Uses dashboard context",
-          "- Returns concise recommendations",
-        ].join("\n"),
-        sessionId: "test-session",
-        messageId: "test-message",
-        debug: {
-          usedMock: true,
-          tableauContextProvider: "mock",
+        jobId: "job-1",
+        status: "queued",
+        stage: "queued",
+        pollUrl: "/chat-jobs/job-1",
+        retryAfterMs: 1500,
+        ownerToken: "owner-token-1",
+      }),
+    });
+  });
+
+  await page.route("**/api/chat-jobs/*", async (route) => {
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        jobId: "job-1",
+        status: "completed",
+        stage: "completed",
+        progressMessages: [
+          {
+            at: new Date().toISOString(),
+            stage: "running_mcp_tools",
+            message: "Tableau MCP で必要な情報を収集中です。",
+            debug: {
+              provider: "tableau-mcp",
+              toolCallCount: 2,
+              passCount: 1,
+            },
+          },
+        ],
+        result: {
+          answer: [
+            "## Summary",
+            "",
+            "This is a mocked assistant response for UI verification.",
+            "",
+            "- Uses dashboard context",
+            "- Returns concise recommendations",
+          ].join("\n"),
+          sessionId: "test-session",
+          messageId: "test-message",
         },
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        expiresAt: 1_999_999_999,
+        ownerType: "anonymous",
       }),
     });
   });
@@ -154,7 +185,7 @@ test.describe("chat panel", () => {
         }),
       });
     });
-    await page.route("**/api/chat", async (route) => {
+    await page.route("**/api/chat-jobs", async (route) => {
       await route.fulfill({
         status: 500,
         contentType: "application/json",

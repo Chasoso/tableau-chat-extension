@@ -1,5 +1,9 @@
-﻿import { useEffect, useMemo, useRef, useState } from "react";
-import { sendChatQuestion } from "../api/chatApi";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { createChatJob, getChatJob } from "../api/chatApi";
+import {
+  loadChatJobOwnerToken,
+  storeChatJobOwnerToken,
+} from "../api/chatJobOwnerToken";
 import { enrichDashboardContext } from "../api/contextApi";
 import {
   getNotionStatus,
@@ -9,7 +13,12 @@ import {
   type NotionStatusResponse,
 } from "../api/notionApi";
 import { env } from "../env";
-import type { ChatMessage } from "../types/chat";
+import type {
+  ChatJobDisplayState,
+  ChatJobGetResponse,
+  ChatJobProgressMessage,
+  ChatMessage,
+} from "../types/chat";
 import type { DashboardContext } from "../types/tableau";
 import MessageInput from "./MessageInput";
 import MessageList, { type NotionCompletion } from "./MessageList";
@@ -30,11 +39,18 @@ type Props = {
   ) => void;
 };
 
+type ActiveChatJob = {
+  jobId: string;
+  ownerToken?: string;
+};
+
 const exampleQuestions = [
   "このダッシュボードのポイントを教えてください",
   "フィルター状態を要約してください",
   "使われているデータソースを教えてください",
 ];
+
+const DEFAULT_JOB_POLL_DELAY_MS = 1500;
 
 export default function ChatPanel({
   dashboardContext,
@@ -49,11 +65,18 @@ export default function ChatPanel({
   const notionPopupRef = useRef<Window | null>(null);
   const notionPopupPollerRef = useRef<number | undefined>(undefined);
   const actionMenuRef = useRef<HTMLDivElement | null>(null);
+  const jobPollTimerRef = useRef<number | undefined>(undefined);
+  const jobPollGenerationRef = useRef(0);
 
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [sessionId, setSessionId] = useState<string | undefined>();
   const [isAnswerLoading, setIsAnswerLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [activeJob, setActiveJob] = useState<ActiveChatJob | null>(null);
+  const [jobView, setJobView] = useState<ChatJobDisplayState | null>(null);
+  const [chatJobOwnerToken, setChatJobOwnerToken] = useState<string | null>(
+    () => loadChatJobOwnerToken(),
+  );
 
   const [notionStatus, setNotionStatus] = useState<NotionStatusResponse | null>(
     null,
@@ -198,6 +221,91 @@ export default function ChatPanel({
     };
   }, []);
 
+  useEffect(() => {
+    if (!activeJob) {
+      if (jobPollTimerRef.current) {
+        window.clearTimeout(jobPollTimerRef.current);
+      }
+      jobPollTimerRef.current = undefined;
+      return;
+    }
+
+    const pollGeneration = ++jobPollGenerationRef.current;
+    let cancelled = false;
+
+    const ownerToken = activeJob.ownerToken ?? chatJobOwnerToken ?? undefined;
+
+    const pollJob = async () => {
+      try {
+        const response = await getChatJob(
+          activeJob.jobId,
+          authToken,
+          ownerToken,
+        );
+
+        if (cancelled || pollGeneration !== jobPollGenerationRef.current) {
+          return;
+        }
+
+        setJobView(mapJobResponseToDisplayState(response));
+
+        if (response.status === "completed" && response.result) {
+          await handleCompletedJob(response);
+          return;
+        }
+
+        if (response.status === "failed") {
+          setError(response.error?.message ?? "回答の生成に失敗しました。");
+          setIsAnswerLoading(false);
+          setActiveJob(null);
+          return;
+        }
+
+        const delayMs = DEFAULT_JOB_POLL_DELAY_MS;
+
+        if (jobPollTimerRef.current) {
+          window.clearTimeout(jobPollTimerRef.current);
+        }
+        jobPollTimerRef.current = window.setTimeout(() => {
+          void pollJob();
+        }, delayMs);
+      } catch (unknownError) {
+        if (cancelled || pollGeneration !== jobPollGenerationRef.current) {
+          return;
+        }
+
+        const message =
+          unknownError instanceof Error
+            ? unknownError.message
+            : "ジョブの進捗取得に失敗しました。";
+        setError(message);
+
+        if (/not found|access|unauthorized|forbidden/i.test(message)) {
+          setIsAnswerLoading(false);
+          setActiveJob(null);
+          return;
+        }
+
+        if (jobPollTimerRef.current) {
+          window.clearTimeout(jobPollTimerRef.current);
+        }
+        jobPollTimerRef.current = window.setTimeout(() => {
+          void pollJob();
+        }, DEFAULT_JOB_POLL_DELAY_MS * 2);
+      }
+    };
+
+    void pollJob();
+
+    return () => {
+      cancelled = true;
+      if (jobPollTimerRef.current) {
+        window.clearTimeout(jobPollTimerRef.current);
+      }
+      jobPollTimerRef.current = undefined;
+    };
+  }, [activeJob, authToken, chatJobOwnerToken]);
+
   async function handleSend(question: string) {
     const trimmedQuestion = question.trim();
     if (!trimmedQuestion || isSendLocked) {
@@ -214,9 +322,12 @@ export default function ChatPanel({
     setMessages((current) => [...current, userMessage]);
     setIsAnswerLoading(true);
     setError(null);
+    setNotionDraft(null);
+    setActiveJob(null);
+    setJobView(null);
 
     try {
-      const response = await sendChatQuestion(
+      const response = await createChatJob(
         {
           question: trimmedQuestion,
           dashboardContext,
@@ -227,37 +338,68 @@ export default function ChatPanel({
           sessionId,
         },
         authToken,
+        chatJobOwnerToken ?? undefined,
       );
 
-      setSessionId(response.sessionId);
-      if (response.dashboardContextPatch) {
-        onDashboardContextPatch?.(response.dashboardContextPatch);
+      if (response.ownerToken) {
+        storeChatJobOwnerToken(response.ownerToken);
+        setChatJobOwnerToken(response.ownerToken);
+      } else if (!authToken) {
+        const storedOwnerToken = loadChatJobOwnerToken();
+        if (storedOwnerToken) {
+          setChatJobOwnerToken(storedOwnerToken);
+        }
       }
 
-      setMessages((current) => [
-        ...current,
-        {
-          id: response.messageId,
-          role: "assistant",
-          content: response.answer,
-          createdAt: new Date().toISOString(),
-        },
-      ]);
-
-      if (response.notionPostIdeaDraft) {
-        setNotionDraft(response.notionPostIdeaDraft);
-      } else {
-        setNotionDraft(null);
-      }
+      const createdAt = new Date().toISOString();
+      const progressMessages = buildPendingProgressMessages(createdAt);
+      setActiveJob({
+        jobId: response.jobId,
+        ownerToken: response.ownerToken ?? chatJobOwnerToken ?? undefined,
+      });
+      setJobView({
+        status: response.status,
+        stage: response.stage,
+        progressMessages,
+      });
+      setError(null);
     } catch (unknownError) {
-      setError(
+      setIsAnswerLoading(false);
+      const message =
         unknownError instanceof Error
           ? unknownError.message
-          : "回答の生成に失敗しました。",
-      );
-    } finally {
-      setIsAnswerLoading(false);
+          : "回答ジョブの作成に失敗しました。";
+      setError(message);
     }
+  }
+
+  async function handleCompletedJob(response: ChatJobGetResponse) {
+    setError(null);
+    setSessionId(response.result?.sessionId);
+
+    if (response.result?.dashboardContextPatch) {
+      onDashboardContextPatch?.(response.result.dashboardContextPatch);
+    }
+
+    if (response.result?.notionPostIdeaDraft) {
+      setNotionDraft(response.result.notionPostIdeaDraft);
+    } else {
+      setNotionDraft(null);
+    }
+
+    setMessages((current) => [
+      ...current,
+      {
+        id: response.result?.messageId ?? crypto.randomUUID(),
+        role: "assistant",
+        content: response.result?.answer ?? "",
+        createdAt: new Date().toISOString(),
+      },
+    ]);
+
+    setIsAnswerLoading(false);
+    setActiveJob(null);
+    setJobView(null);
   }
 
   async function handleConnectNotion() {
@@ -433,6 +575,7 @@ export default function ChatPanel({
           messages={messages}
           isLoading={isAnswerLoading}
           loadingText="Tableau MCPでデータを確認しています…"
+          job={jobView}
           notionCompletion={notionCompletion}
           onToggleNotionCompletion={() =>
             setNotionCompletion((current) =>
@@ -556,6 +699,32 @@ export default function ChatPanel({
       ) : null}
     </section>
   );
+}
+
+function mapJobResponseToDisplayState(
+  response: ChatJobGetResponse,
+): ChatJobDisplayState {
+  return {
+    status: response.status,
+    stage: response.stage,
+    progressMessages: response.progressMessages,
+    error: response.error,
+  };
+}
+
+function buildPendingProgressMessages(
+  createdAt: string,
+): ChatJobProgressMessage[] {
+  return [
+    {
+      at: createdAt,
+      stage: "queued",
+      message: "分析を開始しました。バックグラウンドで処理しています。",
+      debug: {
+        provider: "chat-job",
+      },
+    },
+  ];
 }
 
 function buildDraftSummary(draft: NotionPostIdeaDraft): string {

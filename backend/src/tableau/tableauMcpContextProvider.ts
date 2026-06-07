@@ -11,6 +11,7 @@ import {
   safeErrorDetails,
   safeHash,
 } from "../logging";
+import { TableauMcpMetadataCacheRepository } from "../repositories/tableauMcpMetadataCacheRepository";
 import {
   classifyQuestionIntent,
   resolveAllowedToolNames,
@@ -65,6 +66,7 @@ const TOOL_RESULT_PREVIEW_LIMIT = 360;
 const TOOL_CACHE_KEY_MAX_LENGTH = 1200;
 const QUERY_DIMENSION_ALIAS = "rank_label";
 const QUERY_METRIC_ALIAS = "rank_metric";
+const metadataCacheRepository = new TableauMcpMetadataCacheRepository();
 
 type CacheEntry = {
   expiresAt: number;
@@ -314,6 +316,58 @@ export class TableauMcpContextProvider implements TableauContextProvider {
           break;
         }
 
+        const parallelBatch = collectParallelizableToolBatch(
+          toolQueue,
+          calledToolNames,
+        );
+        if (parallelBatch.length > 1) {
+          toolQueue.splice(0, parallelBatch.length);
+          const executions = parallelBatch.map((selection) => ({
+            selection,
+            startedAt: Date.now(),
+            promise: executeToolWithCache({
+              client: client!,
+              toolName: selection.tool.name,
+              args: selection.arguments,
+              tableauSubject: input.tableauSubject,
+              timeoutMs: mcpConfig.timeoutMs,
+            }),
+          }));
+          const settledExecutions = await Promise.allSettled(
+            executions.map((execution) => execution.promise),
+          );
+          for (let index = 0; index < executions.length; index += 1) {
+            const execution = executions[index];
+            const settled = settledExecutions[index];
+            const outcome = await processSelectionOutcome({
+              selection: execution.selection,
+              startedAt: execution.startedAt,
+              resolved:
+                settled.status === "fulfilled" ? settled.value : undefined,
+              error: settled.status === "rejected" ? settled.reason : undefined,
+              tools,
+              loopInput: planningInput,
+              intent,
+              calledToolNames,
+              toolResults,
+              rawToolResults,
+              observations,
+              recoverablePreconditionSuggestions,
+              setRecoverablePreconditionFailure(value) {
+                hasRecoverablePreconditionFailure = value;
+              },
+              debugLogResults: mcpConfig.debugLogResults,
+            });
+            if (outcome.countedExecution) {
+              executedToolCallCount += 1;
+            }
+            if (outcome.followUp) {
+              toolQueue.unshift(outcome.followUp);
+            }
+          }
+          continue;
+        }
+
         const selection = toolQueue.shift();
         if (!selection) {
           break;
@@ -381,148 +435,58 @@ export class TableauMcpContextProvider implements TableauContextProvider {
         const toolStartedAt = Date.now();
         try {
           const execution = await executeToolWithCache({
-            client,
+            client: client!,
             toolName: selection.tool.name,
             args: selection.arguments,
             tableauSubject: input.tableauSubject,
             timeoutMs: mcpConfig.timeoutMs,
           });
-          const result = execution.result;
-          if (isMcpErrorResult(result)) {
-            const errorCategory = classifyMcpErrorCategory(result);
-            const errorMessage = buildMcpErrorMessage(result, errorCategory);
-            toolResults.push({
-              toolName: selection.tool.name,
-              status: "failed",
-              warning: errorMessage,
-            });
-            rawToolResults.push({
-              toolName: selection.tool.name,
-              result,
-            });
-            observations.push({
-              tool: selection.tool.name,
-              purpose: selection.reason ?? "Collect Tableau Cloud context",
-              argsSummary: summarizeToolArguments(selection.arguments),
-              success: false,
-              resultSummary: errorCategory,
-              errorMessage,
-              rawResultPreview: summarizeToolResultPreview(result),
-            });
-            calledToolNames.add(selection.tool.name);
-            executedToolCallCount += 1;
-            const errorText = extractTextFromToolResult(result);
-            if (selection.tool.name === "query-datasource") {
-              logDebug("tableau.mcp.query.execution_failed", {
-                toolName: selection.tool.name,
-                durationMs: Date.now() - toolStartedAt,
-                errorCategory,
-                errorPreview: errorText.slice(0, 220),
-                queryArgsSummary: summarizeQueryDatasourceArgs(
-                  selection.arguments,
-                ),
-              });
-            }
-            logWarn("tableau.mcp.tool.error_result", {
-              toolName: selection.tool.name,
-              durationMs: Date.now() - toolStartedAt,
-              errorCategory,
-              textLength: errorText.length,
-              textHash: safeHash(errorText),
-            });
-            if (
-              intent.intent === "metadata_lookup" &&
-              selection.tool.name === "get-datasource-metadata"
-            ) {
-              hasRecoverablePreconditionFailure = true;
-              for (const toolName of [
-                "list-datasources",
-                "search-content",
-                "list-views",
-                "get-workbook",
-                "list-workbooks",
-              ]) {
-                recoverablePreconditionSuggestions.add(toolName);
-              }
-            }
-            continue;
-          }
-          const resultSummary = summarizeToolResult(result);
-          toolResults.push({
-            toolName: selection.tool.name,
-            status: "success",
-            summary: resultSummary,
-          });
-          rawToolResults.push({
-            toolName: selection.tool.name,
-            result,
-            args: selection.arguments,
-          });
-          observations.push({
-            tool: selection.tool.name,
-            purpose: selection.reason ?? "Collect Tableau Cloud context",
-            argsSummary: summarizeToolArguments(selection.arguments),
-            success: true,
-            resultSummary,
-            rawResultPreview: summarizeToolResultPreview(result),
-          });
-          logMcpToolResultDebug(
-            selection.tool.name,
-            result,
-            mcpConfig.debugLogResults,
-          );
-          calledToolNames.add(selection.tool.name);
-          executedToolCallCount += 1;
-          logInfo("tableau.mcp.tool.completed", {
-            toolName: selection.tool.name,
-            durationMs: Date.now() - toolStartedAt,
-            cacheHit: execution.cacheHit,
-          });
-
-          const followUp = buildFollowUpToolSelection(
-            selection.tool.name,
-            result,
+          const outcome = await processSelectionOutcome({
+            selection,
+            startedAt: toolStartedAt,
+            resolved: execution,
             tools,
+            loopInput: planningInput,
+            intent,
             calledToolNames,
-            planningInput,
-          );
-          if (followUp) {
-            toolQueue.unshift(followUp);
+            toolResults,
+            rawToolResults,
+            observations,
+            recoverablePreconditionSuggestions,
+            setRecoverablePreconditionFailure(value) {
+              hasRecoverablePreconditionFailure = value;
+            },
+            debugLogResults: mcpConfig.debugLogResults,
+          });
+          if (outcome.countedExecution) {
+            executedToolCallCount += 1;
+          }
+          if (outcome.followUp) {
+            toolQueue.unshift(outcome.followUp);
           }
         } catch (error) {
-          const errorMessage = summarizeErrorMessage(error);
-          logWarn("tableau.mcp.tool.failed", {
-            toolName: selection.tool.name,
-            ...safeErrorDetails(error),
+          const outcome = await processSelectionOutcome({
+            selection,
+            startedAt: toolStartedAt,
+            error,
+            tools,
+            loopInput: planningInput,
+            intent,
+            calledToolNames,
+            toolResults,
+            rawToolResults,
+            observations,
+            recoverablePreconditionSuggestions,
+            setRecoverablePreconditionFailure(value) {
+              hasRecoverablePreconditionFailure = value;
+            },
+            debugLogResults: mcpConfig.debugLogResults,
           });
-          toolResults.push({
-            toolName: selection.tool.name,
-            status: "failed",
-            warning: errorMessage,
-          });
-          executedToolCallCount += 1;
-          observations.push({
-            tool: selection.tool.name,
-            purpose: selection.reason ?? "Collect Tableau Cloud context",
-            argsSummary: summarizeToolArguments(selection.arguments),
-            success: false,
-            resultSummary: "",
-            errorMessage,
-          });
-          if (
-            intent.intent === "metadata_lookup" &&
-            selection.tool.name === "get-datasource-metadata"
-          ) {
-            hasRecoverablePreconditionFailure = true;
-            for (const toolName of [
-              "list-datasources",
-              "search-content",
-              "list-views",
-              "get-workbook",
-              "list-workbooks",
-            ]) {
-              recoverablePreconditionSuggestions.add(toolName);
-            }
+          if (outcome.countedExecution) {
+            executedToolCallCount += 1;
+          }
+          if (outcome.followUp) {
+            toolQueue.unshift(outcome.followUp);
           }
         }
       }
@@ -804,6 +768,7 @@ export type SelectedTool =
       tool: McpTool;
       arguments: Record<string, unknown>;
       reason?: string;
+      dependsOnTool?: string;
     }
   | {
       status: "skipped";
@@ -1092,7 +1057,11 @@ async function selectPlannedTools(
   reasonBrief?: string;
 }> {
   const config = getConfig();
-  if (!config.tableau.mcp.toolPlanningEnabled || maxToolCalls <= 0) {
+  if (
+    !config.tableau.mcp.toolPlanningEnabled ||
+    maxToolCalls <= 0 ||
+    !intent.needsMcp
+  ) {
     return { selections: [], blockedTools: [], plannedTools: [] };
   }
 
@@ -1245,6 +1214,7 @@ function buildSelectionFromPlannedCall(
     tool,
     arguments: args,
     reason: call.purpose ?? call.reason,
+    dependsOnTool: call.dependsOnTool,
   };
 }
 
@@ -1252,6 +1222,222 @@ function getSelectionToolName(selection: SelectedTool): string {
   return selection.status === "ready"
     ? selection.tool.name
     : selection.toolName;
+}
+
+const PARALLEL_SAFE_TOOL_NAMES = new Set([
+  "list-workbooks",
+  "list-views",
+  "list-datasources",
+  "search-content",
+  "get-workbook",
+  "get-datasource-metadata",
+]);
+
+function collectParallelizableToolBatch(
+  toolQueue: SelectedTool[],
+  calledToolNames: Set<string>,
+): Extract<SelectedTool, { status: "ready" }>[] {
+  const scheduledToolNames = new Set(calledToolNames);
+  const batch: Extract<SelectedTool, { status: "ready" }>[] = [];
+
+  for (const selection of toolQueue) {
+    if (selection.status !== "ready") {
+      break;
+    }
+
+    if (selection.dependsOnTool) {
+      break;
+    }
+
+    if (!PARALLEL_SAFE_TOOL_NAMES.has(selection.tool.name)) {
+      break;
+    }
+
+    if (scheduledToolNames.has(selection.tool.name)) {
+      break;
+    }
+
+    batch.push(selection);
+    scheduledToolNames.add(selection.tool.name);
+
+    if (batch.length >= 3) {
+      break;
+    }
+  }
+
+  return batch;
+}
+
+async function processSelectionOutcome(params: {
+  selection: Extract<SelectedTool, { status: "ready" }>;
+  startedAt: number;
+  resolved?: { result: unknown; cacheHit: boolean };
+  error?: unknown;
+  tools: McpTool[];
+  loopInput: GetAdditionalContextInput;
+  intent: ClassifiedQuestionIntent;
+  calledToolNames: Set<string>;
+  toolResults: TableauMcpToolResultSummary[];
+  rawToolResults: RawMcpToolResult[];
+  observations: McpObservation[];
+  recoverablePreconditionSuggestions: Set<string>;
+  setRecoverablePreconditionFailure: (value: boolean) => void;
+  debugLogResults: boolean;
+}): Promise<{ followUp?: SelectedTool; countedExecution: boolean }> {
+  const {
+    selection,
+    startedAt,
+    resolved,
+    error,
+    tools,
+    loopInput,
+    intent,
+    calledToolNames,
+    toolResults,
+    rawToolResults,
+    observations,
+    recoverablePreconditionSuggestions,
+    setRecoverablePreconditionFailure,
+    debugLogResults,
+  } = params;
+
+  if (error) {
+    const errorMessage = summarizeErrorMessage(error);
+    logWarn("tableau.mcp.tool.failed", {
+      toolName: selection.tool.name,
+      ...safeErrorDetails(error),
+    });
+    toolResults.push({
+      toolName: selection.tool.name,
+      status: "failed",
+      warning: errorMessage,
+    });
+    observations.push({
+      tool: selection.tool.name,
+      purpose: selection.reason ?? "Collect Tableau Cloud context",
+      argsSummary: summarizeToolArguments(selection.arguments),
+      success: false,
+      resultSummary: "",
+      errorMessage,
+    });
+    if (
+      intent.intent === "metadata_lookup" &&
+      selection.tool.name === "get-datasource-metadata"
+    ) {
+      setRecoverablePreconditionFailure(true);
+      for (const toolName of [
+        "list-datasources",
+        "search-content",
+        "list-views",
+        "get-workbook",
+        "list-workbooks",
+      ]) {
+        recoverablePreconditionSuggestions.add(toolName);
+      }
+    }
+    return { countedExecution: false };
+  }
+
+  if (!resolved) {
+    throw new Error("Tool execution outcome was not resolved.");
+  }
+
+  const result = resolved.result;
+  if (isMcpErrorResult(result)) {
+    const errorCategory = classifyMcpErrorCategory(result);
+    const errorMessage = buildMcpErrorMessage(result, errorCategory);
+    toolResults.push({
+      toolName: selection.tool.name,
+      status: "failed",
+      warning: errorMessage,
+    });
+    rawToolResults.push({
+      toolName: selection.tool.name,
+      result,
+    });
+    observations.push({
+      tool: selection.tool.name,
+      purpose: selection.reason ?? "Collect Tableau Cloud context",
+      argsSummary: summarizeToolArguments(selection.arguments),
+      success: false,
+      resultSummary: errorCategory,
+      errorMessage,
+      rawResultPreview: summarizeToolResultPreview(result),
+    });
+    calledToolNames.add(selection.tool.name);
+    const errorText = extractTextFromToolResult(result);
+    if (selection.tool.name === "query-datasource") {
+      logDebug("tableau.mcp.query.execution_failed", {
+        toolName: selection.tool.name,
+        durationMs: Date.now() - startedAt,
+        errorCategory,
+        errorPreview: errorText.slice(0, 220),
+        queryArgsSummary: summarizeQueryDatasourceArgs(selection.arguments),
+      });
+    }
+    logWarn("tableau.mcp.tool.error_result", {
+      toolName: selection.tool.name,
+      durationMs: Date.now() - startedAt,
+      errorCategory,
+      textLength: errorText.length,
+      textHash: safeHash(errorText),
+    });
+    if (
+      intent.intent === "metadata_lookup" &&
+      selection.tool.name === "get-datasource-metadata"
+    ) {
+      setRecoverablePreconditionFailure(true);
+      for (const toolName of [
+        "list-datasources",
+        "search-content",
+        "list-views",
+        "get-workbook",
+        "list-workbooks",
+      ]) {
+        recoverablePreconditionSuggestions.add(toolName);
+      }
+    }
+    return { countedExecution: true };
+  }
+
+  const resultSummary = summarizeToolResult(result);
+  toolResults.push({
+    toolName: selection.tool.name,
+    status: "success",
+    summary: resultSummary,
+  });
+  rawToolResults.push({
+    toolName: selection.tool.name,
+    result,
+    args: selection.arguments,
+  });
+  observations.push({
+    tool: selection.tool.name,
+    purpose: selection.reason ?? "Collect Tableau Cloud context",
+    argsSummary: summarizeToolArguments(selection.arguments),
+    success: true,
+    resultSummary,
+    rawResultPreview: summarizeToolResultPreview(result),
+  });
+  logMcpToolResultDebug(selection.tool.name, result, debugLogResults);
+  calledToolNames.add(selection.tool.name);
+  logInfo("tableau.mcp.tool.completed", {
+    toolName: selection.tool.name,
+    durationMs: Date.now() - startedAt,
+    cacheHit: resolved.cacheHit,
+  });
+
+  const followUp = buildFollowUpToolSelection(
+    selection.tool.name,
+    result,
+    tools,
+    calledToolNames,
+    loopInput,
+  );
+  return {
+    countedExecution: true,
+    followUp,
+  };
 }
 
 export function inferPlannedToolArguments(
@@ -2020,7 +2206,31 @@ async function executeToolWithCache(input: {
   );
   const cached = metadataToolCache.get(cacheKey);
   if (cached && cached.expiresAt > Date.now()) {
+    logDebug("tableau.mcp.metadata_cache.hit", {
+      toolName: input.toolName,
+      cacheSource: "memory",
+    });
     return { result: cached.result, cacheHit: true };
+  }
+
+  try {
+    const persisted = await metadataCacheRepository.get(cacheKey);
+    if (persisted !== null) {
+      metadataToolCache.set(cacheKey, {
+        result: persisted,
+        expiresAt: Date.now() + Math.max(config.metadataCacheTtlMs, 1000),
+      });
+      logDebug("tableau.mcp.metadata_cache.hit", {
+        toolName: input.toolName,
+        cacheSource: "dynamo",
+      });
+      return { result: persisted, cacheHit: true };
+    }
+  } catch (error) {
+    logWarn("tableau.mcp.metadata_cache.read_failed", {
+      toolName: input.toolName,
+      ...safeErrorDetails(error),
+    });
   }
 
   const result = await input.client.callTool(
@@ -2035,6 +2245,31 @@ async function executeToolWithCache(input: {
     result,
     expiresAt: Date.now() + Math.max(config.metadataCacheTtlMs, 1000),
   });
+  try {
+    await metadataCacheRepository.put({
+      cacheKey,
+      subjectHash: safeHash(input.tableauSubject) ?? "anonymous",
+      toolName: input.toolName,
+      argsHash: safeHash(stableStringify(input.args)) ?? "unknown",
+      result,
+      createdAt: new Date().toISOString(),
+      expiresAt:
+        Math.floor(Date.now() / 1000) +
+        Math.max(
+          1,
+          Math.floor(Math.max(config.metadataCacheTtlMs, 1000) / 1000),
+        ),
+    });
+    logDebug("tableau.mcp.metadata_cache.stored", {
+      toolName: input.toolName,
+      cacheSource: "dynamo",
+    });
+  } catch (error) {
+    logWarn("tableau.mcp.metadata_cache.write_failed", {
+      toolName: input.toolName,
+      ...safeErrorDetails(error),
+    });
+  }
   return { result, cacheHit: false };
 }
 
@@ -2062,7 +2297,7 @@ function buildCacheKey(
   toolName: string,
   args: Record<string, unknown>,
 ): string {
-  const raw = `${subject ?? "anonymous"}|${toolName}|${stableStringify(args)}`;
+  const raw = `${safeHash(subject) ?? "anonymous"}|${toolName}|${safeHash(stableStringify(args)) ?? "noargs"}`;
   return raw.length > TOOL_CACHE_KEY_MAX_LENGTH
     ? raw.slice(0, TOOL_CACHE_KEY_MAX_LENGTH)
     : raw;
