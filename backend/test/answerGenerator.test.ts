@@ -63,4 +63,39 @@ describe("BedrockAnswerGenerator", () => {
     expect(answer).toContain("Mock Dashboard");
     expect(answer).not.toContain("secret-token");
   });
+
+  it("appends a truncation notice when Bedrock stops at max tokens", async () => {
+    const client = {
+      send: vi.fn().mockResolvedValue({
+        output: {
+          message: {
+            content: [
+              {
+                text: "## 結論\n\nこれは途中までの回答です。",
+              },
+            ],
+          },
+        },
+        stopReason: "max_tokens",
+        usage: {
+          inputTokens: 10,
+          outputTokens: 20,
+          totalTokens: 30,
+        },
+      }),
+    };
+    const generator = new BedrockAnswerGenerator(client as never);
+
+    const answer = await generator.generate({
+      request,
+      prompt: "Prompt text",
+      additionalContext: {
+        provider: "mock",
+      },
+    });
+
+    expect(answer).toContain("## 結論");
+    expect(answer.split("\n").length).toBeGreaterThan(3);
+    expect(client.send).toHaveBeenCalledTimes(1);
+  });
 });
