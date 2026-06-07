@@ -73,6 +73,10 @@ function setMcpEnv(values: Record<string, string>): void {
     values.TABLEAU_MCP_TOOL_PLANNING_ENABLED;
   process.env.TABLEAU_MCP_METADATA_CACHE_ENABLED =
     values.TABLEAU_MCP_METADATA_CACHE_ENABLED;
+  process.env.TABLEAU_SERVER_URL =
+    process.env.TABLEAU_SERVER_URL ?? "https://tableau.example.com";
+  process.env.TABLEAU_SITE_CONTENT_URL =
+    process.env.TABLEAU_SITE_CONTENT_URL ?? "site";
 }
 
 afterEach(() => {
@@ -87,6 +91,8 @@ afterEach(() => {
   delete process.env.TABLEAU_MCP_ARGS;
   delete process.env.TABLEAU_MCP_TOOL_PLANNING_ENABLED;
   delete process.env.TABLEAU_MCP_METADATA_CACHE_ENABLED;
+  delete process.env.TABLEAU_SERVER_URL;
+  delete process.env.TABLEAU_SITE_CONTENT_URL;
 });
 
 describe("TableauMcpContextProvider", () => {

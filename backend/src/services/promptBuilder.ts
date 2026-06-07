@@ -43,6 +43,7 @@ export function buildPrompt(
     "Avoid generic Tableau theory unless the user explicitly asks how-to guidance.",
     "Do not provide long HTTP status explanations, internal stack-like diagnostics, or 'contact support' unless the user explicitly asks for troubleshooting steps.",
     "If MCP metadata lookup failed, explain what identifier or context was missing in plain user language.",
+    "If MCP lookup failed before usable observations were collected, do not fabricate rankings, totals, or datasource-wide conclusions from the current dashboard scope.",
     "Do not ask the user to run MCP tools or CLI commands such as query-datasource. Describe what the app could not resolve instead.",
     "Never mention internal MCP tool names such as get-datasource-metadata, query-datasource, list-datasources, or search-content in the user-facing answer.",
     "Do not tell the user to execute internal MCP tools.",
@@ -66,7 +67,9 @@ export function buildPrompt(
     "When answering, clarify scope with phrases like 'In this dashboard context' or 'From retrieved Tableau Cloud information'.",
     observationCount
       ? "You received MCP observations. Prioritize them as evidence over assumptions."
-      : "No MCP observations were collected. Rely only on dashboard context and clearly mention limitations.",
+      : additionalContext.mcpConnectionFailed
+        ? "MCP lookup failed before usable observations were collected. Rely only on dashboard context, clearly mention the limitation, and avoid treating the current filter scope as evidence that the entire datasource is empty."
+        : "No MCP observations were collected. Rely only on dashboard context and clearly mention limitations.",
     observationDigest ? `MCP evidence summary: ${observationDigest}` : "",
     "Respond in the same language as the user's question when practical.",
     executionDebug

@@ -55,7 +55,7 @@ export class ChatJobService {
         {
           at: createdAt,
           stage: "queued",
-          message: "分析を開始しました。",
+          message: "分析を開始しました",
         },
       ],
       request: input.request,

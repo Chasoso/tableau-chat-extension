@@ -97,7 +97,7 @@ describe("runLightweightAgentLoop", () => {
     expect(inputs[0]?.question).toBe(request.question);
     expect(inputs[0]?.planningQuestion).toBe(plan.normalizedQuestion);
     expect(inputs[0]?.questionInterpretation?.metricIntent).toBe("favorites");
-    expect(inputs[0]?.questionInterpretation?.topN).toBe(10);
+    expect(inputs[0]?.questionInterpretation?.topN).toBe(1);
     expect(inputs[0]?.questionInterpretation?.period?.label).toBe(
       "2026\u5e745\u6708",
     );
@@ -221,7 +221,7 @@ describe("runLightweightAgentLoop", () => {
     expect(inputs).toHaveLength(2);
     expect(inputs[1]?.planningQuestion).toContain("Favorite");
     expect(inputs[1]?.questionInterpretation?.metricIntent).toBe("favorites");
-    expect(inputs[1]?.questionInterpretation?.topN).toBe(10);
+    expect(inputs[1]?.questionInterpretation?.topN).toBe(1);
     expect(result.additionalContext.queryInsights?.[0]?.rows[0]?.label).toBe(
       "Viz A",
     );

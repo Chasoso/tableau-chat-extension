@@ -136,11 +136,48 @@ export class TableauMcpContextProvider implements TableauContextProvider {
       };
     }
 
+    const startupValidation = validateMcpStartupConfiguration(config.tableau);
+    if (!startupValidation.ok) {
+      logWarn("tableau.mcp.preflight_failed", {
+        reason: startupValidation.reason,
+        dashboardName: input.dashboardContext.dashboardName,
+        questionRewritten: effectiveQuestion !== input.question,
+      });
+      return {
+        provider: this.name,
+        mcpConnectionFailed: true,
+        mcpFailureStage: "startup",
+        mcpFailureReason: startupValidation.reason,
+        warnings: [startupValidation.reason],
+      };
+    }
+
     let client: Client | undefined;
     let transport: StdioClientTransport | undefined;
+    let mcpStderrTail = "";
 
     try {
       const connectedApp = await getTableauConnectedAppSecrets();
+      if (
+        !connectedApp.clientId.trim() ||
+        !connectedApp.secretId.trim() ||
+        !connectedApp.secretValue.trim()
+      ) {
+        const reason =
+          "Tableau Connected App secrets are missing required values.";
+        logWarn("tableau.mcp.preflight_failed", {
+          reason,
+          dashboardName: input.dashboardContext.dashboardName,
+          questionRewritten: effectiveQuestion !== input.question,
+        });
+        return {
+          provider: this.name,
+          mcpConnectionFailed: true,
+          mcpFailureStage: "startup",
+          mcpFailureReason: reason,
+          warnings: [reason],
+        };
+      }
       const command = resolveMcpCommand(mcpConfig.command);
       const args = resolveMcpArgs(command, mcpConfig.args);
       const env = buildMcpEnvironment({
@@ -163,8 +200,9 @@ export class TableauMcpContextProvider implements TableauContextProvider {
         env,
         stderr: "pipe",
       });
-      transport.stderr?.on("data", () => {
-        // Drain stderr so the child process cannot block. Do not log MCP stderr because it may include environment details.
+      transport.stderr?.on("data", (chunk: Buffer | string) => {
+        // Keep a short sanitized tail so startup failures can be diagnosed without leaking secrets.
+        mcpStderrTail = appendSanitizedStderrTail(mcpStderrTail, chunk);
       });
       client = new Client({
         name: "tableau-chat-extension-backend",
@@ -632,10 +670,24 @@ export class TableauMcpContextProvider implements TableauContextProvider {
         warnings: derivedWarnings,
       };
     } catch (error) {
-      logError("tableau.mcp.lookup.failed", safeErrorDetails(error));
+      const safeDetails = safeErrorDetails(error);
+      logError("tableau.mcp.lookup.failed", {
+        ...safeDetails,
+        stderrTail: mcpStderrTail || undefined,
+      });
+      if (mcpStderrTail) {
+        logWarn("tableau.mcp.stderr.tail", {
+          stderrTail: mcpStderrTail,
+        });
+      }
       return {
         provider: this.name,
-        warnings: ["Tableau MCP lookup failed. Using dashboard context only."],
+        mcpConnectionFailed: true,
+        mcpFailureStage: "startup",
+        mcpFailureReason: summarizeMcpFailureReason(error, mcpStderrTail),
+        warnings: [
+          "Tableau MCP lookup failed before usable observations were collected.",
+        ],
       };
     } finally {
       await transport?.close().catch((error) => {
@@ -653,6 +705,9 @@ async function callHttpMcpStub(
   if (!config.serverUrl) {
     return {
       provider: "tableau-mcp",
+      mcpConnectionFailed: true,
+      mcpFailureStage: "http",
+      mcpFailureReason: "Tableau MCP server URL is not configured.",
       warnings: [
         "Tableau MCP server URL is not configured. Using dashboard context only.",
       ],
@@ -677,6 +732,9 @@ async function callHttpMcpStub(
     if (!response.ok) {
       return {
         provider: "tableau-mcp",
+        mcpConnectionFailed: true,
+        mcpFailureStage: "http",
+        mcpFailureReason: `Tableau MCP HTTP lookup failed with status ${response.status}.`,
         warnings: [
           `Tableau MCP HTTP lookup failed with status ${response.status}.`,
         ],
@@ -700,6 +758,9 @@ async function callHttpMcpStub(
   } catch {
     return {
       provider: "tableau-mcp",
+      mcpConnectionFailed: true,
+      mcpFailureStage: "http",
+      mcpFailureReason: "Tableau MCP HTTP lookup failed.",
       warnings: [
         "Tableau MCP HTTP lookup failed. Using dashboard context only.",
       ],
@@ -750,6 +811,91 @@ function buildMcpEnvironment(input: {
     PRODUCT_TELEMETRY_ENABLED: "false",
     TELEMETRY_PROVIDER: "noop",
   });
+}
+
+type McpStartupValidation =
+  | {
+      ok: true;
+    }
+  | {
+      ok: false;
+      reason: string;
+    };
+
+function validateMcpStartupConfiguration(
+  tableauConfig: ReturnType<typeof getConfig>["tableau"],
+): McpStartupValidation {
+  const serverUrl = tableauConfig.serverUrl?.trim();
+  if (!serverUrl) {
+    return {
+      ok: false,
+      reason: "Tableau MCP server URL is not configured.",
+    };
+  }
+
+  try {
+    const parsed = new URL(trimTrailingSlash(serverUrl));
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+      return {
+        ok: false,
+        reason: "Tableau MCP server URL must use http or https.",
+      };
+    }
+  } catch {
+    return {
+      ok: false,
+      reason: "Tableau MCP server URL is invalid.",
+    };
+  }
+
+  if (!tableauConfig.siteContentUrl?.trim()) {
+    return {
+      ok: false,
+      reason: "Tableau site content URL is not configured.",
+    };
+  }
+
+  return { ok: true };
+}
+
+function appendSanitizedStderrTail(
+  currentTail: string,
+  chunk: Buffer | string,
+): string {
+  const chunkText = Buffer.isBuffer(chunk)
+    ? chunk.toString("utf8")
+    : String(chunk);
+  const merged = sanitizeMcpStderr(`${currentTail}${chunkText}`);
+  return merged.slice(-4_096);
+}
+
+function sanitizeMcpStderr(text: string): string {
+  return text
+    .replace(/\b\d{12}\b/g, "<account-id>")
+    .replace(/arn:aws[a-zA-Z-]*:[^\s]+/g, "<aws-arn>")
+    .replace(/https?:\/\/[^\s]+/g, "<url>")
+    .replace(/s3:\/\/[^\s]+/g, "s3://<bucket-or-key>")
+    .replace(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g, "<email>")
+    .replace(/[A-Za-z0-9+/=_-]{80,}/g, "<redacted-token>");
+}
+
+function summarizeMcpFailureReason(error: unknown, stderrTail: string): string {
+  const safeDetails = safeErrorDetails(error);
+  const errorMessage =
+    typeof safeDetails.errorMessage === "string" && safeDetails.errorMessage
+      ? safeDetails.errorMessage
+      : undefined;
+  const baseReason =
+    errorMessage ??
+    (typeof safeDetails.errorName === "string"
+      ? safeDetails.errorName
+      : "UnknownError");
+
+  if (!stderrTail) {
+    return `Tableau MCP child process failed to start: ${baseReason}`;
+  }
+
+  return `Tableau MCP child process failed to start: ${baseReason}. Stderr tail: ${stderrTail}`;
 }
 
 function compactEnv(
