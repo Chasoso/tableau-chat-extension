@@ -1880,6 +1880,227 @@ describe("TableauMcpContextProvider extraction helpers", () => {
     }
   });
 
+  it("dedupes grouped trend query fields and keeps engagement_rate out of query-datasource fields", () => {
+    const question =
+      "インプレッション数が高い傾向にある投稿について、ハッシュタグごとに傾向を洗い出してください。";
+    const interpretation = interpretQuestion({
+      question,
+      dashboardContext: {
+        ...baseInput.dashboardContext,
+        dataSources: [{ name: "X Account Analytics Contents" }],
+      },
+    });
+    const selection = buildDataAnalysisQueryRecoverySelection({
+      tools: [
+        {
+          name: "query-datasource",
+          inputSchema: {
+            type: "object",
+            required: ["datasourceLuid", "query"],
+            properties: {
+              datasourceLuid: { type: "string" },
+              query: { type: "object" },
+              limit: { type: "number" },
+            },
+          },
+        },
+      ],
+      allowedToolNames: ["query-datasource"],
+      input: {
+        ...baseInput,
+        question,
+        questionInterpretation: interpretation,
+        dashboardContext: {
+          ...baseInput.dashboardContext,
+          dataSources: [{ name: "X Account Analytics Contents" }],
+          capturedAt: "2026-06-04T00:00:00.000Z",
+        },
+      },
+      intent: {
+        intent: "data_analysis",
+        confidence: 0.92,
+        reasonBrief: "Need grouped trend analysis.",
+        answerableFromDashboardContext: false,
+        needsMcp: true,
+        maxToolCalls: 2,
+      },
+      calledToolNames: new Set(["list-datasources", "get-datasource-metadata"]),
+      rawToolResults: [
+        {
+          toolName: "list-datasources",
+          result: {
+            content: [
+              {
+                text: JSON.stringify([
+                  {
+                    name: "X Account Analytics Contents",
+                    id: "ds-123",
+                    project: { name: "Sandbox" },
+                  },
+                ]),
+              },
+            ],
+          },
+        },
+        {
+          toolName: "get-datasource-metadata",
+          result: {
+            content: [
+              {
+                text: JSON.stringify({
+                  datasourceModel: {
+                    name: "X Account Analytics Contents",
+                    fields: [
+                      { name: "Hashtag Normalized" },
+                      { name: "ポストid" },
+                      { name: "エンゲージメント" },
+                      { name: "インプレッション数" },
+                    ],
+                  },
+                }),
+              },
+            ],
+          },
+        },
+      ],
+      observations: [],
+      remainingToolBudget: 1,
+    });
+
+    expect(selection?.status).toBe("ready");
+    if (selection?.status !== "ready") {
+      throw new Error("Expected a ready query selection.");
+    }
+
+    const query = selection.arguments.query as Record<string, unknown>;
+    const fields = Array.isArray(query.fields) ? query.fields : [];
+    const keySet = new Set(
+      fields.map((field) => {
+        if (!field || typeof field !== "object" || Array.isArray(field)) {
+          return "invalid";
+        }
+        const record = field as Record<string, unknown>;
+        return `${record.fieldCaption ?? ""}|${String(record.function ?? "")}`;
+      }),
+    );
+
+    expect(keySet.size).toBe(fields.length);
+    expect(fields).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          fieldCaption: "Hashtag Normalized",
+          fieldAlias: "rank_label",
+        }),
+        expect.objectContaining({
+          fieldCaption: "ポストid",
+          fieldAlias: "post_count",
+          function: "COUNT",
+        }),
+        expect.objectContaining({
+          fieldCaption: "エンゲージメント",
+          fieldAlias: "engagement_total",
+          function: "SUM",
+        }),
+        expect.objectContaining({
+          fieldCaption: "インプレッション数",
+          fieldAlias: "impression_total",
+          function: "SUM",
+        }),
+      ]),
+    );
+    expect(
+      fields.some((field) => {
+        if (!field || typeof field !== "object" || Array.isArray(field)) {
+          return false;
+        }
+        return (
+          String((field as Record<string, unknown>).fieldAlias ?? "") ===
+          "engagement_rate"
+        );
+      }),
+    ).toBe(false);
+  });
+
+  it("treats engagement_rate as an in-app derived metric for grouped trend query insights", () => {
+    const interpretation = interpretQuestion({
+      question:
+        "エンゲージメント率が高い傾向にある投稿について、ハッシュタグごとに傾向を洗い出してください。",
+      dashboardContext: {
+        ...baseInput.dashboardContext,
+        dataSources: [{ name: "X Account Analytics Contents" }],
+      },
+    });
+
+    const insights = extractQueryDatasourceInsightsFromRawToolResults(
+      [
+        {
+          toolName: "query-datasource",
+          args: {
+            datasourceLuid: "ds-123",
+            query: {
+              fields: [
+                {
+                  fieldCaption: "Hashtag Normalized",
+                  fieldAlias: "rank_label",
+                },
+                {
+                  fieldCaption: "ポストid",
+                  function: "COUNT",
+                  fieldAlias: "post_count",
+                },
+                {
+                  fieldCaption: "エンゲージメント",
+                  function: "SUM",
+                  fieldAlias: "engagement_total",
+                },
+                {
+                  fieldCaption: "インプレッション数",
+                  function: "SUM",
+                  fieldAlias: "impression_total",
+                },
+              ],
+            },
+          },
+          result: {
+            content: [
+              {
+                text: JSON.stringify({
+                  data: [
+                    {
+                      rank_label: "#codex",
+                      post_count: 4,
+                      engagement_total: 8,
+                      impression_total: 100,
+                    },
+                  ],
+                }),
+              },
+            ],
+          },
+          debug: {
+            derivedMetricsComputedInApp: ["engagement_rate"],
+          },
+        },
+      ],
+      [
+        {
+          type: "datasource",
+          name: "X Account Analytics Contents",
+          id: "ds-123",
+          luid: "ds-123",
+        },
+      ],
+      interpretation,
+    );
+
+    expect(insights).toHaveLength(1);
+    expect(insights[0]?.queryDebug?.derivedMetricsComputedInApp).toContain(
+      "engagement_rate",
+    );
+    expect(insights[0]?.metricMatchConfidence).toBe(1);
+    expect(insights[0]?.fulfillsMetricRequest).toBe(true);
+  });
+
   it("drops query insights that do not match the requested metric intent", () => {
     const insights = extractQueryDatasourceInsightsFromRawToolResults(
       [

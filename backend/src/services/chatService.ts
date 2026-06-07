@@ -1348,8 +1348,7 @@ function buildGroupedTrendAnswer(input: {
       ? metricIntentLabel(interpretation.metricIntent)
       : describeMetricField(insight.metricField);
   const conclusionMetricLabel = metricLabel;
-  const visibleRows = rows.slice(0, Math.min(rows.length, 10));
-  const summaryRows = visibleRows.slice(0, 3);
+  const visibleRows = [...rows];
   const queryFieldSpecs = insight.queryFields ?? [];
   const queryFieldCandidates = queryFieldSpecs
     .flatMap((spec) => [spec.fieldAlias, spec.fieldCaption, spec.function])
@@ -1377,30 +1376,64 @@ function buildGroupedTrendAnswer(input: {
     "impressions",
     "SUM(インプレッション数)",
   ];
-  const rateCandidates = [
-    "engagement_rate",
-    "rank_metric",
-    "エンゲージメント率",
-    metricLabel,
-    ...queryFieldCandidates,
-  ];
+  const sortedRows =
+    interpretation?.metricIntent === "engagement_rate"
+      ? [...visibleRows].sort((left, right) => {
+          const leftRaw = left.raw ?? {};
+          const rightRaw = right.raw ?? {};
+          const leftEngagement =
+            extractNumericFromRawRow(leftRaw, engagementCandidates) ?? null;
+          const leftImpression =
+            extractNumericFromRawRow(leftRaw, impressionCandidates) ?? null;
+          const rightEngagement =
+            extractNumericFromRawRow(rightRaw, engagementCandidates) ?? null;
+          const rightImpression =
+            extractNumericFromRawRow(rightRaw, impressionCandidates) ?? null;
+          const leftRate =
+            leftEngagement !== null &&
+            leftImpression !== null &&
+            leftImpression !== 0
+              ? leftEngagement / leftImpression
+              : -1;
+          const rightRate =
+            rightEngagement !== null &&
+            rightImpression !== null &&
+            rightImpression !== 0
+              ? rightEngagement / rightImpression
+              : -1;
+          if (rightRate !== leftRate) {
+            return rightRate - leftRate;
+          }
+          return (right.value ?? -1) - (left.value ?? -1);
+        })
+      : visibleRows;
+  const summaryRows = sortedRows.slice(0, 3);
 
-  const tableRows = visibleRows.map((row) => {
-    const raw = row.raw ?? {};
-    const hashtag =
-      extractStringFromRawRow(raw, rowLabelCandidates) ?? row.label;
-    const postCount = extractNumericFromRawRow(raw, postCountCandidates);
-    const engagementTotal = extractNumericFromRawRow(raw, engagementCandidates);
-    const impressionTotal = extractNumericFromRawRow(raw, impressionCandidates);
-    const engagementRate = extractNumericFromRawRow(raw, rateCandidates);
-    return {
-      hashtag: hashtag ?? "名称不明",
-      postCount: formatMetricValue(postCount ?? null),
-      engagementTotal: formatMetricValue(engagementTotal ?? null),
-      impressionTotal: formatMetricValue(impressionTotal ?? null),
-      engagementRate: formatPercentageValue(engagementRate),
-    };
-  });
+  const tableRows = sortedRows
+    .slice(0, Math.min(sortedRows.length, 10))
+    .map((row) => {
+      const raw = row.raw ?? {};
+      const hashtag =
+        extractStringFromRawRow(raw, rowLabelCandidates) ?? row.label;
+      const postCount = extractNumericFromRawRow(raw, postCountCandidates);
+      const engagementTotal =
+        extractNumericFromRawRow(raw, engagementCandidates) ?? null;
+      const impressionTotal =
+        extractNumericFromRawRow(raw, impressionCandidates) ?? null;
+      const engagementRate =
+        engagementTotal !== null &&
+        impressionTotal !== null &&
+        impressionTotal !== 0
+          ? engagementTotal / impressionTotal
+          : null;
+      return {
+        hashtag: hashtag ?? "名称不明",
+        postCount: formatMetricValue(postCount ?? null),
+        engagementTotal: formatMetricValue(engagementTotal ?? null),
+        impressionTotal: formatMetricValue(impressionTotal ?? null),
+        engagementRate: formatPercentageValue(engagementRate),
+      };
+    });
 
   const trendBullets = summaryRows.map((row, index) => {
     const raw = row.raw ?? {};
@@ -1408,7 +1441,16 @@ function buildGroupedTrendAnswer(input: {
       extractStringFromRawRow(raw, rowLabelCandidates) ??
       row.label ??
       "名称不明";
-    const rate = extractNumericFromRawRow(raw, rateCandidates);
+    const engagementTotal = extractNumericFromRawRow(raw, engagementCandidates);
+    const impressionTotal =
+      extractNumericFromRawRow(raw, impressionCandidates) ?? null;
+    const engagementTotalValue = engagementTotal ?? null;
+    const rate =
+      engagementTotalValue !== null &&
+      impressionTotal !== null &&
+      impressionTotal !== 0
+        ? engagementTotalValue / impressionTotal
+        : null;
     return `- ${index + 1}位は \`${escapeMarkdownTableCell(hashtag)}\` で、${formatPercentageValue(rate)} でした。`;
   });
 
@@ -2004,6 +2046,12 @@ function assessQueryInsight(
   let score = index;
   const reasons: string[] = ["later_pass_preference"];
   const validationReasons: string[] = [];
+  const derivedMetricSatisfied = Boolean(
+    interpretation?.metricIntent === "engagement_rate" &&
+    insight.queryDebug?.derivedMetricsComputedInApp?.includes(
+      "engagement_rate",
+    ),
+  );
 
   if (insight.rows.length > 0) {
     score += 10;
@@ -2048,6 +2096,9 @@ function assessQueryInsight(
     if (insight.requestedMetricIntent === interpretation.metricIntent) {
       score += 120;
       reasons.push("requested_metric_exact_match");
+    } else if (derivedMetricSatisfied) {
+      score += 90;
+      reasons.push("derived_metric_computed_in_app");
     } else if (
       matchesMetricFieldIntent(insight.metricField, interpretation.metricIntent)
     ) {
@@ -2107,6 +2158,7 @@ function assessQueryInsight(
   const fulfillsMetricRequest =
     interpretation?.metricIntent && interpretation.metricIntent !== "unknown"
       ? insight.requestedMetricIntent === interpretation.metricIntent ||
+        derivedMetricSatisfied ||
         matchesMetricFieldIntent(
           insight.metricField,
           interpretation.metricIntent,
