@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   buildDataAnalysisQueryRecoverySelection,
   buildMetadataIdentifierRecoverySelection,
@@ -16,6 +16,7 @@ import {
   normalizeTableauContext,
   resolveDatasourceIdentifier,
   selectAggregateMetricField,
+  TableauMcpContextProvider,
 } from "../src/tableau/tableauMcpContextProvider";
 import { interpretQuestion } from "../src/services/questionInterpretation";
 import type { ClassifiedQuestionIntent } from "../src/services/tableauMcpToolPlanner";
@@ -34,7 +35,28 @@ const baseInput: GetAdditionalContextInput = {
   tableauSubject: "user@example.com",
 };
 
+afterEach(() => {
+  vi.unstubAllEnvs();
+});
+
 describe("TableauMcpContextProvider extraction helpers", () => {
+  it("fails fast when the Tableau server URL is invalid", async () => {
+    vi.stubEnv("TABLEAU_CONTEXT_PROVIDER", "mcp");
+    vi.stubEnv("TABLEAU_MCP_TRANSPORT", "stdio");
+    vi.stubEnv("TABLEAU_SERVER_URL", "not-a-url");
+    vi.stubEnv("TABLEAU_SITE_CONTENT_URL", "site");
+
+    const provider = new TableauMcpContextProvider();
+    const additionalContext = await provider.getAdditionalContext(baseInput);
+
+    expect(additionalContext.provider).toBe("tableau-mcp");
+    expect(additionalContext.mcpConnectionFailed).toBe(true);
+    expect(additionalContext.mcpFailureStage).toBe("startup");
+    expect(additionalContext.mcpFailureReason).toContain(
+      "Tableau MCP server URL is invalid",
+    );
+  });
+
   it("extracts workbook name from search-content parentWorkbookName", () => {
     const toolResults: TableauMcpToolResultSummary[] = [
       {
@@ -1166,7 +1188,7 @@ describe("TableauMcpContextProvider extraction helpers", () => {
     if (selection?.status === "ready") {
       expect(selection.tool.name).toBe("query-datasource");
       expect(selection.arguments.datasourceLuid).toBe("ds-123");
-      expect(selection.arguments.limit).toBe(10);
+      expect(selection.arguments.limit).toBe(1);
       expect(selection.arguments.query).toEqual({
         fields: [
           { fieldCaption: "workbook_title", fieldAlias: "rank_label" },

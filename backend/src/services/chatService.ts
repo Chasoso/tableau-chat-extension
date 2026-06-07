@@ -754,6 +754,14 @@ export function finalizeUserFacingAnswer(
     return fieldInventoryAnswer;
   }
 
+  const mcpFailureAnswer = buildMcpConnectionFailureAnswer(
+    request,
+    additionalContext,
+  );
+  if (mcpFailureAnswer) {
+    return mcpFailureAnswer;
+  }
+
   const structuredAnswer = buildStructuredDataAnalysisAnswer(
     request,
     additionalContext,
@@ -999,7 +1007,7 @@ export function buildStructuredDataAnalysisAnswer(
 
   return [
     `${intro}`,
-    `このダッシュボードで参照しているデータソース「${insight.datasourceName}」から集計しています。`,
+    `このダッシュボードの現在のフィルター範囲で参照されているデータソース「${insight.datasourceName}」から集計しています。`,
     ...(isRankingQuestion && rows.length < requestedTopN
       ? [`取得できたランキング件数は ${rows.length} 件です。`]
       : []),
@@ -1050,8 +1058,8 @@ function buildSafeDataAnalysisFallback(
     `${
       periodLabel ? `${periodLabel}の` : ""
     }${metricLabel}を安全に確定できませんでした。`,
-    `データソース「${datasourceText}」に対する集計クエリ自体は実行しましたが、返却結果が要求した期間や指標と一致していることを確認できなかったため、誤ったランキングは返さないようにしています。`,
-    "次は、要求した指標名に対応するフィールドの有無と、query-datasource の返却列名を確認するのがよいです。",
+    `このダッシュボードの現在のフィルター範囲でのデータソース「${datasourceText}」に対する集計クエリ自体は実行しましたが、返却結果が要求した期間や指標と一致していることを確認できなかったため、誤ったランキングは返さないようにしています。`,
+    "これはデータソース全体にデータがないことを意味しません。次は、要求した指標名に対応するフィールドの有無と、query-datasource の返却列名を確認するのがよいです。",
   ].join("\n");
 }
 
@@ -1106,14 +1114,53 @@ function buildNoValidatedRankingFallback(
   return queryExecuted
     ? [
         `${periodLabel ? `${periodLabel}の` : ""}${metricLabel}ランキングを安全に確定できませんでした。`,
-        `データソース「${datasourceText}」への集計クエリは実行しましたが、返却結果が要求した指標・件数と一致していることを確認できませんでした。`,
-        "誤ったランキングを返さないため、結果の提示は保留しています。次は query-datasource の返却行数と列名を確認するのがよいです。",
+        `このダッシュボードの現在のフィルター範囲でのデータソース「${datasourceText}」への集計クエリは実行しましたが、返却結果が要求した指標・件数と一致していることを確認できませんでした。`,
+        "誤ったランキングを返さないため、結果の提示は保留しています。これはデータソース全体が空という意味ではありません。次は query-datasource の返却行数と列名を確認するのがよいです。",
       ].join("\n")
     : [
         `${periodLabel ? `${periodLabel}の` : ""}${metricLabel}ランキングをまだ確定できませんでした。`,
-        `データソース「${datasourceText}」に対して、要求した指標に一致する集計クエリまで到達できていません。`,
-        "誤ったランキング表を返さないため、結果の提示は保留しています。次は要求した指標に対応する集計フィールドを確認するのがよいです。",
+        `このダッシュボードの現在のフィルター範囲でのデータソース「${datasourceText}」に対して、要求した指標に一致する集計クエリまで到達できていません。`,
+        "誤ったランキング表を返さないため、結果の提示は保留しています。これはデータソース全体が空という意味ではありません。次は要求した指標に対応する集計フィールドを確認するのがよいです。",
       ].join("\n");
+}
+
+function buildMcpConnectionFailureAnswer(
+  request: ChatRequest,
+  additionalContext: Awaited<
+    ReturnType<TableauContextProvider["getAdditionalContext"]>
+  >,
+): string | undefined {
+  if (
+    additionalContext.provider !== "tableau-mcp" ||
+    !additionalContext.mcpConnectionFailed ||
+    additionalContext.mcpExecutionDebug?.intent !== "data_analysis"
+  ) {
+    return undefined;
+  }
+
+  const interpretation = additionalContext.questionInterpretation;
+  const periodLabel = interpretation?.period?.label;
+  const metricLabel =
+    interpretation && interpretation.metricIntent !== "unknown"
+      ? metricIntentLabel(interpretation.metricIntent)
+      : "集計値";
+  const datasourceNames =
+    additionalContext.normalizedContext?.datasources
+      ?.map((datasource) => datasource.name)
+      .filter(Boolean) ??
+    request.dashboardContext.dataSources
+      ?.map((datasource) => datasource.name)
+      .filter(Boolean) ??
+    [];
+  const datasourceText = datasourceNames.length
+    ? datasourceNames.join("、")
+    : "対象データソース";
+
+  return [
+    `Tableau MCP への接続に失敗したため、${periodLabel ? `${periodLabel}の` : ""}${metricLabel}について実データに基づく分析結果を確定できませんでした。`,
+    `現在のダッシュボードのフィルター範囲で対象だったデータソースは「${datasourceText}」ですが、MCP が起動段階で失敗しており、ランキングや合計値を裏付ける観測値は取得できていません。`,
+    "これはデータソース全体にデータがないことを意味しません。接続が回復したら再実行すると、実データに基づく分析ができます。",
+  ].join("\n");
 }
 
 function buildDatasourceInventoryFastPathAnswer(

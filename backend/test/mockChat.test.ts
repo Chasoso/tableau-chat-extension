@@ -468,7 +468,7 @@ describe("ChatService with mock provider", () => {
 
     expect(formatted).toContain("2026年5月のFavorite数ランキング");
     expect(formatted).toContain("1. Viz A: 120");
-    expect(formatted).toContain("2. Viz B: 88");
+    expect(formatted).not.toContain("2. Viz B: 88");
     expect(formatted).toContain("Tableau Public Per Day(2025/04-)");
   });
 
@@ -848,6 +848,65 @@ describe("ChatService with mock provider", () => {
     );
     expect(finalized).not.toContain("2025年4月のFavorite数ランキング");
     expect(finalized).not.toContain("値なし");
+  });
+
+  it("returns a connection-failure explanation instead of an invented analysis when MCP fails", () => {
+    const finalized = finalizeUserFacingAnswer(
+      "1. Viz A: 120\n2. Viz B: 80",
+      {
+        question:
+          "Tableau Public Per Day(2025/04-)を使って、2026年5月に最もView数を集めたVizをランキング形式で教えてください。",
+        dashboardContext: {
+          dashboardName: "Statistics",
+          worksheets: [{ name: "Views" }],
+          filters: [],
+          parameters: [],
+          dataSources: [{ name: "Tableau Public Per Day(2025/04-)" }],
+          capturedAt: "2026-06-04T00:00:00.000Z",
+        },
+      },
+      {
+        provider: "tableau-mcp",
+        questionInterpretation: interpretQuestion({
+          question:
+            "Tableau Public Per Day(2025/04-)を使って、2026年5月に最もView数を集めたVizをランキング形式で教えてください。",
+          dashboardContext: {
+            dashboardName: "Statistics",
+            worksheets: [{ name: "Views" }],
+            filters: [],
+            parameters: [],
+            dataSources: [{ name: "Tableau Public Per Day(2025/04-)" }],
+            capturedAt: "2026-06-04T00:00:00.000Z",
+          },
+        }),
+        mcpConnectionFailed: true,
+        mcpFailureStage: "startup",
+        mcpFailureReason: "Connection closed",
+        mcpExecutionDebug: {
+          intent: "data_analysis",
+          intentConfidence: 0.95,
+          answerableFromDashboardContext: false,
+          needsMcp: true,
+          maxToolCalls: 8,
+          plannedTools: ["list-datasources", "get-datasource-metadata"],
+          blockedTools: [],
+          executedTools: [],
+          skippedTools: [],
+          toolCallCount: 0,
+          replanUsed: false,
+          timingMs: { planning: 0, execution: 0 },
+        },
+      },
+    );
+
+    expect(finalized).toContain(
+      "実データに基づく分析結果を確定できませんでした",
+    );
+    expect(finalized).toContain(
+      "これはデータソース全体にデータがないことを意味しません",
+    );
+    expect(finalized).not.toContain("Viz A: 120");
+    expect(finalized).not.toContain("Viz B: 80");
   });
 
   it("does not fabricate a ranking table when no validated query insight exists", () => {

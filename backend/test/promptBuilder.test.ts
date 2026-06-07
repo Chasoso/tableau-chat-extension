@@ -149,4 +149,22 @@ describe("buildPrompt", () => {
     expect(prompt).toContain("list-workbooks:ok:Found 2 workbooks");
     expect(prompt).toContain("get-workbook:fail:No workbook id available");
   });
+
+  it("adds a strong no-fabrication instruction when MCP connection fails", () => {
+    const prompt = buildPrompt(request, {
+      provider: "tableau-mcp",
+      mcpConnectionFailed: true,
+      mcpFailureStage: "startup",
+      warnings: [
+        "Tableau MCP lookup failed before usable observations were collected.",
+      ],
+    });
+
+    expect(prompt).toContain(
+      "do not fabricate rankings, totals, or datasource-wide conclusions",
+    );
+    expect(prompt).toContain(
+      "avoid treating the current filter scope as evidence that the entire datasource is empty",
+    );
+  });
 });

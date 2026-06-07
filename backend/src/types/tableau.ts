@@ -249,6 +249,9 @@ export type TableauAdditionalContext = {
   mcpToolResults?: TableauMcpToolResultSummary[];
   mcpObservations?: McpObservation[];
   mcpExecutionDebug?: McpExecutionDebug;
+  mcpConnectionFailed?: boolean;
+  mcpFailureStage?: "startup" | "http" | "transport" | "unknown";
+  mcpFailureReason?: string;
   warnings?: string[];
 };
 

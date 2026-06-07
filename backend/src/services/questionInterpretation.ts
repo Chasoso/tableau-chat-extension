@@ -76,6 +76,39 @@ const RANKING_KEYWORDS = [
   "ranking",
   "most",
   "highest",
+  "highest-ranked",
+  "best",
+  "lowest",
+  "least",
+  "largest",
+  "smallest",
+  "leading",
+  "first",
+  "1st",
+];
+
+const SINGLE_BEST_RANKING_KEYWORDS = [
+  JAPANESE_MOST,
+  JAPANESE_MOST_COUNT,
+  "most",
+  "highest",
+  "best",
+  "lowest",
+  "least",
+  "largest",
+  "smallest",
+  "leading",
+  "first",
+  "1st",
+  "\u4e00\u756a",
+  "\u6700\u4e0a\u4f4d",
+  "\u6700\u9ad8",
+  "\u6700\u4f4e",
+  "\u6700\u5927",
+  "\u6700\u5c0f",
+  "\u6700\u591a",
+  "\u6700\u5c11",
+  "\u9996\u4f4d",
 ];
 
 const GROUPING_KEYWORDS: Record<QuestionGroupingIntent, string[]> = {
@@ -112,8 +145,12 @@ const METRIC_INTENT_KEYWORDS: Record<
     JAPANESE_VIEW,
     JAPANESE_VIEW_COUNT,
     JAPANESE_BROWSE,
+    "\u95b2\u89a7",
+    "\u95b2\u89a7\u6570",
     `${JAPANESE_BROWSE}\u6570`,
     JAPANESE_PLAY,
+    "view count",
+    "viewed",
   ],
   favorites: [
     "favorite",
@@ -122,20 +159,27 @@ const METRIC_INTENT_KEYWORDS: Record<
     JAPANESE_FAVORITE_ALT,
     `${JAPANESE_FAVORITE}\u6570`,
     "favorite count",
+    "like",
+    "likes",
+    "liked",
   ],
   bookmarks: [
     "bookmark",
     "bookmarks",
     JAPANESE_BOOKMARK,
     `${JAPANESE_BOOKMARK}\u6570`,
+    "saved",
+    "save",
   ],
   reactions: [
     "reaction",
     "reactions",
     JAPANESE_REACTION,
     `${JAPANESE_REACTION}\u6570`,
+    "react",
+    "emoji reaction",
   ],
-  love: ["love", "likes", JAPANESE_LOVE, `${JAPANESE_LOVE}\u6570`],
+  love: ["love", "loves", JAPANESE_LOVE, `${JAPANESE_LOVE}\u6570`],
 };
 
 export function interpretQuestion(input: {
@@ -161,6 +205,9 @@ export function interpretQuestion(input: {
     sanitizedQuestion.trim() || input.question.trim();
   const explicitTopN =
     readExplicitTopN(input.question) ?? readExplicitTopN(investigationQuestion);
+  const prefersSingleBestRanking =
+    detectSingleBestRankingIntent(input.question) ||
+    detectSingleBestRankingIntent(investigationQuestion);
   const period =
     parseQuestionPeriod(investigationQuestion, {
       referenceDate: input.dashboardContext.capturedAt,
@@ -176,7 +223,11 @@ export function interpretQuestion(input: {
     detectRankingIntent(input.question) ||
     detectRankingIntent(investigationQuestion) ||
     typeof explicitTopN === "number";
-  const topN = inferRequestedTopN(explicitTopN, asksForRanking);
+  const topN = inferRequestedTopN(
+    explicitTopN,
+    asksForRanking,
+    prefersSingleBestRanking,
+  );
   const groupingIntent = chooseKnownGroupingIntent(
     detectGroupingIntent(input.question),
     detectGroupingIntent(investigationQuestion),
@@ -232,15 +283,31 @@ export function detectRankingIntent(question: string): boolean {
   );
 }
 
+export function detectSingleBestRankingIntent(question: string): boolean {
+  const normalized = normalizeQuestionForIntent(question);
+  return SINGLE_BEST_RANKING_KEYWORDS.some((keyword) =>
+    containsNormalizedKeyword(normalized, keyword),
+  );
+}
+
 export function inferRequestedTopN(
   questionOrExplicitTopN: string | number | undefined,
   asksForRanking: boolean,
+  preferSingleBestRanking = false,
 ): number {
   const explicitTopN =
     typeof questionOrExplicitTopN === "number"
       ? questionOrExplicitTopN
       : readExplicitTopN(questionOrExplicitTopN);
-  return explicitTopN ?? (asksForRanking ? 10 : 1);
+  if (explicitTopN) {
+    return explicitTopN;
+  }
+
+  if (!asksForRanking) {
+    return 1;
+  }
+
+  return preferSingleBestRanking ? 1 : 10;
 }
 
 export function detectGroupingIntent(question: string): QuestionGroupingIntent {
