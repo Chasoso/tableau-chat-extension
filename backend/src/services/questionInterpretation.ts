@@ -25,6 +25,12 @@ const JAPANESE_LIST = "\u4e00\u89a7";
 const JAPANESE_TELL_ME = "\u6559\u3048\u3066";
 const JAPANESE_WHAT = "\u4f55";
 const JAPANESE_WHICH = "\u3069\u306e";
+const JAPANESE_USED = "\u4f7f\u308f\u308c\u3066\u3044\u308b";
+const JAPANESE_USING = "\u4f7f\u3063\u3066\u3044\u308b";
+const JAPANESE_IN_USE = "\u4f7f\u7528\u3057\u3066\u3044\u308b";
+const JAPANESE_SCHEMA = "\u30b9\u30ad\u30fc\u30de";
+const JAPANESE_COLUMN = "\u5217";
+const JAPANESE_METADATA = "\u30e1\u30bf\u30c7\u30fc\u30bf";
 const JAPANESE_VIEW = "\u30d3\u30e5\u30fc";
 const JAPANESE_VIEW_COUNT = "\u30d3\u30e5\u30fc\u6570";
 const JAPANESE_BROWSE = "\u95b2\u89a7";
@@ -34,6 +40,17 @@ const JAPANESE_FAVORITE_ALT = "\u304a\u6c17\u306b\u5165\u308a";
 const JAPANESE_BOOKMARK = "\u30d6\u30c3\u30af\u30de\u30fc\u30af";
 const JAPANESE_REACTION = "\u30ea\u30a2\u30af\u30b7\u30e7\u30f3";
 const JAPANESE_LOVE = "\u3044\u3044\u306d";
+const JAPANESE_COUNT = "\u6570";
+const JAPANESE_ITEM_COUNT = "\u4ef6\u6570";
+const JAPANESE_RATE = "\u7387";
+const JAPANESE_TRANSITION = "\u63a8\u79fb";
+const JAPANESE_TOTAL = "\u5408\u8a08";
+const JAPANESE_AVERAGE = "\u5e73\u5747";
+const JAPANESE_MANY = "\u591a\u3044";
+const JAPANESE_FEW = "\u5c11\u306a\u3044";
+const JAPANESE_EXISTS = "\u3042\u308a\u307e\u3059\u304b";
+const JAPANESE_COMPARISON = "\u6bd4\u8f03";
+const JAPANESE_INCREASE_DECREASE = "\u5897\u6e1b";
 
 const EXPLICIT_TOP_N_PATTERNS = [
   /top\s*(\d{1,2})/i,
@@ -169,6 +186,7 @@ export function interpretQuestion(input: {
     sanitizedQuestion: investigationQuestion,
     metricIntent,
     asksForRanking,
+    hasPeriod: Boolean(period),
   });
 
   return {
@@ -176,7 +194,13 @@ export function interpretQuestion(input: {
     investigationQuestion,
     ...(datasourceName ? { datasourceName } : {}),
     datasourceMentions,
-    requestType,
+    requestType: requestType.requestType,
+    ...(typeof requestType.confidence === "number"
+      ? { requestTypeConfidence: requestType.confidence }
+      : {}),
+    ...(requestType.signals.length
+      ? { requestTypeSignals: requestType.signals }
+      : {}),
     metricIntent,
     asksForRanking,
     topN,
@@ -403,9 +427,22 @@ function detectQuestionRequestType(input: {
   sanitizedQuestion: string;
   metricIntent: QuestionMetricIntent;
   asksForRanking: boolean;
-}): QuestionRequestType {
+  hasPeriod: boolean;
+}): {
+  requestType: QuestionRequestType;
+  confidence: number;
+  signals: string[];
+} {
+  const signals: string[] = [];
+
   if (input.metricIntent !== "unknown" || input.asksForRanking) {
-    return "general";
+    if (input.metricIntent !== "unknown") {
+      signals.push("metric_intent_detected");
+    }
+    if (input.asksForRanking) {
+      signals.push("ranking_detected");
+    }
+    return { requestType: "general", confidence: 0.98, signals };
   }
 
   const normalized = normalizeQuestionForIntent(input.originalQuestion);
@@ -414,25 +451,47 @@ function detectQuestionRequestType(input: {
 
   const datasourceInventoryKeywords = [
     JAPANESE_DATASOURCE,
-    JAPANESE_LIST,
-    JAPANESE_TELL_ME,
-    JAPANESE_WHAT,
-    JAPANESE_WHICH,
     "datasource",
     "data source",
-    "what datasource",
-    "which datasource",
-    "show datasource",
-    "list datasource",
   ];
   const fieldInventoryKeywords = [
     JAPANESE_FIELDS,
+    JAPANESE_SCHEMA,
+    JAPANESE_COLUMN,
+    JAPANESE_METADATA,
     "field",
     "fields",
     "column",
     "columns",
     "schema",
     "metadata",
+  ];
+  const analysisLikeKeywords = [
+    JAPANESE_COUNT,
+    JAPANESE_ITEM_COUNT,
+    JAPANESE_RATE,
+    JAPANESE_TRANSITION,
+    JAPANESE_TOTAL,
+    JAPANESE_AVERAGE,
+    JAPANESE_MANY,
+    JAPANESE_FEW,
+    JAPANESE_EXISTS,
+    JAPANESE_COMPARISON,
+    JAPANESE_INCREASE_DECREASE,
+    "count",
+    "counts",
+    "rate",
+    "rates",
+    "trend",
+    "total",
+    "sum",
+    "average",
+    "avg",
+    "compare",
+    "growth",
+    "increase",
+    "decrease",
+    "how many",
   ];
 
   const hasDatasourceKeyword = datasourceInventoryKeywords.some((keyword) =>
@@ -452,12 +511,64 @@ function detectQuestionRequestType(input: {
     "which",
     "list",
   ].some((keyword) => containsNormalizedKeyword(combined, keyword));
+  const hasAnalysisLikeSignal =
+    input.hasPeriod ||
+    analysisLikeKeywords.some((keyword) =>
+      containsNormalizedKeyword(combined, keyword),
+    );
+  const hasExplicitDatasourceInventoryPhrase = [
+    `${JAPANESE_USED}${JAPANESE_DATASOURCE}`,
+    `${JAPANESE_USING}${JAPANESE_DATASOURCE}`,
+    `${JAPANESE_IN_USE}${JAPANESE_DATASOURCE}`,
+    `${JAPANESE_DATASOURCE}${JAPANESE_LIST}`,
+    `${JAPANESE_DATASOURCE}\u3092${JAPANESE_TELL_ME}`,
+    `${JAPANESE_WHICH}${JAPANESE_DATASOURCE}`,
+    `${JAPANESE_WHAT}${JAPANESE_DATASOURCE}`,
+    "which datasource",
+    "which data source",
+    "what datasource",
+    "what data source",
+    "datasource used",
+    "data source used",
+    "used datasource",
+    "used data source",
+    "show datasource",
+    "list datasource",
+    "list data source",
+  ].some((keyword) => containsNormalizedKeyword(combined, keyword));
+
+  if (input.hasPeriod) {
+    signals.push("period_detected");
+  }
+  if (hasAnalysisLikeSignal) {
+    signals.push("analysis_like_signal");
+  }
+  if (hasDatasourceKeyword) {
+    signals.push("datasource_keyword");
+  }
+  if (hasExplicitDatasourceInventoryPhrase) {
+    signals.push("explicit_datasource_inventory_phrase");
+  }
+  if (hasFieldKeyword) {
+    signals.push("field_keyword");
+  }
+  if (hasPromptingKeyword) {
+    signals.push("prompting_keyword");
+  }
+
+  if (hasAnalysisLikeSignal) {
+    return { requestType: "general", confidence: 0.9, signals };
+  }
 
   const mentionsDatasourceInventory =
-    hasDatasourceKeyword && hasPromptingKeyword && !hasFieldKeyword;
+    hasExplicitDatasourceInventoryPhrase ||
+    (hasDatasourceKeyword &&
+      hasPromptingKeyword &&
+      !hasFieldKeyword &&
+      !hasAnalysisLikeSignal);
 
   if (mentionsDatasourceInventory) {
-    return "datasource_inventory";
+    return { requestType: "datasource_inventory", confidence: 0.96, signals };
   }
 
   const mentionsFieldInventory =
@@ -466,8 +577,8 @@ function detectQuestionRequestType(input: {
       hasPromptingKeyword ||
       /schema|metadata/.test(combined));
   if (mentionsFieldInventory) {
-    return "field_inventory";
+    return { requestType: "field_inventory", confidence: 0.95, signals };
   }
 
-  return "general";
+  return { requestType: "general", confidence: 0.6, signals };
 }

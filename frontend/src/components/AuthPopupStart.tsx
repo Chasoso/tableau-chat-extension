@@ -1,24 +1,25 @@
-import { useEffect, useState } from "react";
+﻿import { useEffect, useState } from "react";
 import { startLogin } from "../auth/cognitoAuth";
 
 export default function AuthPopupStart() {
-  const [message, setMessage] = useState(
-    "Cognito サインイン画面を開いています…",
-  );
+  const [message, setMessage] = useState("サインイン画面を開いています。");
 
   useEffect(() => {
     startLogin().catch(() => {
       setMessage(
-        "Cognito サインイン画面を開けませんでした。このウィンドウを閉じて、もう一度お試しください。",
+        "サインイン画面を開けませんでした。このウィンドウを閉じて、もう一度お試しください。",
       );
     });
   }, []);
 
   return (
-    <div className="app-shell auth-state">
-      <section className="auth-card">
+    <div className="app-shell auth-state auth-popup-state">
+      <section className="auth-card auth-popup-card">
         <h1>Tableau Assistant</h1>
-        <p>{message}</p>
+        <p className="auth-popup-message">{message}</p>
+        <p className="auth-popup-caption">
+          数秒後に自動で認証画面へ切り替わります。
+        </p>
       </section>
     </div>
   );

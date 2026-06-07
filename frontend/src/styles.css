@@ -75,6 +75,41 @@ button {
   cursor: pointer;
 }
 
+.auth-popup-state {
+  background: #f7f8fa;
+}
+
+.auth-popup-card {
+  justify-items: center;
+  text-align: center;
+  width: min(320px, calc(100% - 32px));
+  gap: 10px;
+  padding: 18px 18px 16px;
+  border: 1px solid #d2d7dc;
+  border-radius: 14px;
+  color: #666e77;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.12);
+}
+
+.auth-popup-card h1 {
+  color: #2f353b;
+  font-size: 18px;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+}
+
+.auth-popup-message {
+  color: #4f565e;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.auth-popup-caption {
+  color: #8a9199;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
 .chat-panel {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto;

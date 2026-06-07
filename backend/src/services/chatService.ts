@@ -100,6 +100,8 @@ export class ChatService {
         sessionId,
         messageId,
         requestType: requestInterpretation.requestType,
+        requestTypeConfidence: requestInterpretation.requestTypeConfidence,
+        requestTypeSignals: requestInterpretation.requestTypeSignals,
       });
       return this.persistAndBuildResponse({
         sessionId,
@@ -1025,7 +1027,7 @@ function buildDatasourceInventoryFastPathAnswer(
   request: ChatRequest,
   interpretation: QuestionInterpretation,
 ): string | undefined {
-  if (interpretation.requestType !== "datasource_inventory") {
+  if (!isStrongDatasourceInventoryRequest(interpretation)) {
     return undefined;
   }
 
@@ -1117,7 +1119,7 @@ function buildDatasourceInventoryAnswerFromContext(
   >,
 ): string | undefined {
   const interpretation = additionalContext.questionInterpretation;
-  if (interpretation?.requestType !== "datasource_inventory") {
+  if (!interpretation || !isStrongDatasourceInventoryRequest(interpretation)) {
     return undefined;
   }
 
@@ -1150,7 +1152,7 @@ function buildFieldInventoryAnswerFromContext(
   >,
 ): string | undefined {
   const interpretation = additionalContext.questionInterpretation;
-  if (interpretation?.requestType !== "field_inventory") {
+  if (!interpretation || !isStrongFieldInventoryRequest(interpretation)) {
     return undefined;
   }
 
@@ -1409,6 +1411,34 @@ function isRankingLikeRequest(
     interpretation?.asksForRanking ||
     (interpretation?.topN ?? 1) > 1 ||
     detectRankingIntent(question),
+  );
+}
+
+function isStrongDatasourceInventoryRequest(
+  interpretation: QuestionInterpretation,
+): boolean {
+  return (
+    interpretation.requestType === "datasource_inventory" &&
+    (interpretation.requestTypeConfidence ?? 0) >= 0.9 &&
+    interpretation.metricIntent === "unknown" &&
+    !interpretation.asksForRanking &&
+    interpretation.topN <= 1 &&
+    !interpretation.period &&
+    !interpretation.requestTypeSignals?.includes("analysis_like_signal")
+  );
+}
+
+function isStrongFieldInventoryRequest(
+  interpretation: QuestionInterpretation,
+): boolean {
+  return (
+    interpretation.requestType === "field_inventory" &&
+    (interpretation.requestTypeConfidence ?? 0) >= 0.9 &&
+    interpretation.metricIntent === "unknown" &&
+    !interpretation.asksForRanking &&
+    interpretation.topN <= 1 &&
+    !interpretation.period &&
+    !interpretation.requestTypeSignals?.includes("analysis_like_signal")
   );
 }
 

@@ -178,6 +178,8 @@ export type QuestionInterpretation = {
   datasourceName?: string;
   datasourceMentions: string[];
   requestType: QuestionRequestType;
+  requestTypeConfidence?: number;
+  requestTypeSignals?: string[];
   metricIntent: QuestionMetricIntent;
   asksForRanking: boolean;
   topN: number;
