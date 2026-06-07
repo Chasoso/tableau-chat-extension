@@ -30,6 +30,7 @@ import type {
   McpExecutionDebug,
   McpObservation,
   QuestionInterpretation,
+  QueryDatasourceExecutionDebug,
   QueryDatasourceInsight,
   ResolvedDatasourceRef,
   NormalizedTableauContext,
@@ -61,6 +62,7 @@ export type RawMcpToolResult = {
   toolName: string;
   result: unknown;
   args?: Record<string, unknown>;
+  debug?: QueryDatasourceExecutionDebug;
 };
 
 const TOOL_RESULT_SUMMARY_LIMIT = 1_800;
@@ -75,6 +77,19 @@ type QueryFieldSpec = {
   fieldAlias: string | undefined;
   function: string | undefined;
   calculation: string | undefined;
+};
+
+type QueryFieldSummary = {
+  fieldCaption?: string;
+  fieldAlias?: string;
+  function?: string;
+  calculation?: string;
+};
+
+type GroupedTrendFieldPlan = {
+  fields: Record<string, unknown>[];
+  derivedMetricsComputedInApp: string[];
+  selectedMetricFieldCaption?: string;
 };
 
 type CacheEntry = {
@@ -1617,7 +1632,11 @@ function collectParallelizableToolBatch(
 async function processSelectionOutcome(params: {
   selection: Extract<SelectedTool, { status: "ready" }>;
   startedAt: number;
-  resolved?: { result: unknown; cacheHit: boolean };
+  resolved?: {
+    result: unknown;
+    cacheHit: boolean;
+    queryDebug?: QueryDatasourceExecutionDebug;
+  };
   error?: unknown;
   tools: McpTool[];
   loopInput: GetAdditionalContextInput;
@@ -1700,6 +1719,7 @@ async function processSelectionOutcome(params: {
     rawToolResults.push({
       toolName: selection.tool.name,
       result,
+      ...(resolved?.queryDebug ? { debug: resolved.queryDebug } : {}),
     });
     observations.push({
       tool: selection.tool.name,
@@ -1756,6 +1776,7 @@ async function processSelectionOutcome(params: {
     toolName: selection.tool.name,
     result,
     args: selection.arguments,
+    ...(resolved?.queryDebug ? { debug: resolved.queryDebug } : {}),
   });
   observations.push({
     tool: selection.tool.name,
@@ -2034,37 +2055,55 @@ function validateQueryDatasourceArguments(
   }
 
   const queryRecord = query as Record<string, unknown>;
-  const fields = Array.isArray(queryRecord.fields)
-    ? queryRecord.fields
+  const fieldsBeforeDedupe = Array.isArray(queryRecord.fields)
+    ? queryRecord.fields.filter(
+        (field): field is Record<string, unknown> =>
+          Boolean(field) && typeof field === "object" && !Array.isArray(field),
+      )
+    : undefined;
+  const dedupedFields = fieldsBeforeDedupe
+    ? dedupeQueryDatasourceFields(fieldsBeforeDedupe)
     : undefined;
   if (
-    !fields ||
-    fields.length === 0 ||
-    fields.length > Math.max(config.queryDatasourceMaxFields, 1)
+    !dedupedFields ||
+    dedupedFields.length === 0 ||
+    dedupedFields.length > Math.max(config.queryDatasourceMaxFields, 1)
   ) {
     logDebug("tableau.mcp.query.validation_rejected", {
       reason: "field_count_out_of_bounds",
       queryArgsSummary: summarizeQueryDatasourceArgs(args),
+      queryFieldsBeforeDedupe: summarizeQueryFieldSpecs(
+        fieldsBeforeDedupe ?? [],
+      ),
+      queryFieldsAfterDedupe: summarizeQueryFieldSpecs(dedupedFields ?? []),
       maxFields: Math.max(config.queryDatasourceMaxFields, 1),
     });
     return undefined;
   }
 
-  if (!containsAggregateField(fields)) {
+  if (!containsAggregateField(dedupedFields)) {
     logDebug("tableau.mcp.query.validation_rejected", {
       reason: "missing_aggregate_field",
       queryArgsSummary: summarizeQueryDatasourceArgs(args),
+      queryFieldsBeforeDedupe: summarizeQueryFieldSpecs(
+        fieldsBeforeDedupe ?? [],
+      ),
+      queryFieldsAfterDedupe: summarizeQueryFieldSpecs(dedupedFields ?? []),
     });
     return undefined;
   }
 
   if (
-    containsSensitiveFieldName(fields) ||
+    containsSensitiveFieldName(dedupedFields) ||
     containsSensitiveFieldNameFromFilters(queryRecord.filters)
   ) {
     logDebug("tableau.mcp.query.validation_rejected", {
       reason: "sensitive_field_detected",
       queryArgsSummary: summarizeQueryDatasourceArgs(args),
+      queryFieldsBeforeDedupe: summarizeQueryFieldSpecs(
+        fieldsBeforeDedupe ?? [],
+      ),
+      queryFieldsAfterDedupe: summarizeQueryFieldSpecs(dedupedFields ?? []),
     });
     return undefined;
   }
@@ -2084,7 +2123,10 @@ function validateQueryDatasourceArguments(
 
   return {
     datasourceLuid,
-    query: queryRecord,
+    query: {
+      ...queryRecord,
+      fields: dedupedFields,
+    },
     limit: Math.min(limit, config.queryDatasourceMaxLimit),
   };
 }
@@ -2530,31 +2572,48 @@ async function executeToolWithCache(input: {
   args: Record<string, unknown>;
   tableauSubject: string | undefined;
   timeoutMs: number;
-}): Promise<{ result: unknown; cacheHit: boolean }> {
+}): Promise<{
+  result: unknown;
+  cacheHit: boolean;
+  queryDebug?: QueryDatasourceExecutionDebug;
+}> {
   const config = getConfig().tableau.mcp;
+  const queryNormalization =
+    input.toolName === "query-datasource"
+      ? normalizeQueryDatasourceArguments(input.args)
+      : undefined;
+  const executionArgs = queryNormalization?.normalizedArgs ?? input.args;
   if (!config.metadataCacheEnabled || !isCacheableToolName(input.toolName)) {
     if (input.toolName === "query-datasource") {
       logInfo("tableau.mcp.query.execution_started", {
         queryDatasourceCalled: true,
-        queryArgsSummary: summarizeQueryDatasourceArgs(input.args),
+        queryFieldsBeforeDedupe:
+          queryNormalization?.queryFieldsBeforeDedupe ?? [],
+        queryFieldsAfterDedupe:
+          queryNormalization?.queryFieldsAfterDedupe ?? [],
+        dedupedFieldCount: queryNormalization?.dedupedFieldCount ?? 0,
+        queryArgsSummary: summarizeQueryDatasourceArgs(executionArgs),
       });
     }
-    const result = await input.client.callTool(
-      {
-        name: input.toolName,
-        arguments: input.args,
-      },
-      undefined,
-      { timeout: input.timeoutMs },
-    );
-    return { result, cacheHit: false };
+    const result = await callMcpToolWithQueryRetry({
+      client: input.client,
+      toolName: input.toolName,
+      args: executionArgs,
+      timeoutMs: input.timeoutMs,
+      queryNormalization,
+    });
+    return {
+      result: result.result,
+      cacheHit: false,
+      ...(result.queryDebug ? { queryDebug: result.queryDebug } : {}),
+    };
   }
 
   pruneMetadataToolCache();
   const cacheKey = buildCacheKey(
     input.tableauSubject,
     input.toolName,
-    input.args,
+    executionArgs,
   );
   const cached = metadataToolCache.get(cacheKey);
   if (cached && cached.expiresAt > Date.now()) {
@@ -2588,19 +2647,22 @@ async function executeToolWithCache(input: {
   if (input.toolName === "query-datasource") {
     logInfo("tableau.mcp.query.execution_started", {
       queryDatasourceCalled: true,
-      queryArgsSummary: summarizeQueryDatasourceArgs(input.args),
+      queryFieldsBeforeDedupe:
+        queryNormalization?.queryFieldsBeforeDedupe ?? [],
+      queryFieldsAfterDedupe: queryNormalization?.queryFieldsAfterDedupe ?? [],
+      dedupedFieldCount: queryNormalization?.dedupedFieldCount ?? 0,
+      queryArgsSummary: summarizeQueryDatasourceArgs(executionArgs),
     });
   }
-  const result = await input.client.callTool(
-    {
-      name: input.toolName,
-      arguments: input.args,
-    },
-    undefined,
-    { timeout: input.timeoutMs },
-  );
+  const result = await callMcpToolWithQueryRetry({
+    client: input.client,
+    toolName: input.toolName,
+    args: executionArgs,
+    timeoutMs: input.timeoutMs,
+    queryNormalization,
+  });
   metadataToolCache.set(cacheKey, {
-    result,
+    result: result.result,
     expiresAt: Date.now() + Math.max(config.metadataCacheTtlMs, 1000),
   });
   try {
@@ -2608,8 +2670,8 @@ async function executeToolWithCache(input: {
       cacheKey,
       subjectHash: safeHash(input.tableauSubject) ?? "anonymous",
       toolName: input.toolName,
-      argsHash: safeHash(stableStringify(input.args)) ?? "unknown",
-      result,
+      argsHash: safeHash(stableStringify(executionArgs)) ?? "unknown",
+      result: result.result,
       createdAt: new Date().toISOString(),
       expiresAt:
         Math.floor(Date.now() / 1000) +
@@ -2628,7 +2690,96 @@ async function executeToolWithCache(input: {
       ...safeErrorDetails(error),
     });
   }
-  return { result, cacheHit: false };
+  return {
+    result: result.result,
+    cacheHit: false,
+    ...(result.queryDebug ? { queryDebug: result.queryDebug } : {}),
+  };
+}
+
+async function callMcpToolWithQueryRetry(input: {
+  client: Client;
+  toolName: string;
+  args: Record<string, unknown>;
+  timeoutMs: number;
+  queryNormalization?: {
+    normalizedArgs: Record<string, unknown>;
+    queryFieldsBeforeDedupe: QueryFieldSummary[];
+    queryFieldsAfterDedupe: QueryFieldSummary[];
+    dedupedFieldCount: number;
+  };
+}): Promise<{
+  result: unknown;
+  queryDebug?: QueryDatasourceExecutionDebug;
+}> {
+  const result = await input.client.callTool(
+    {
+      name: input.toolName,
+      arguments: input.args,
+    },
+    undefined,
+    { timeout: input.timeoutMs },
+  );
+  if (
+    input.toolName === "query-datasource" &&
+    isMcpErrorResult(result) &&
+    isRecoverableQueryUniquenessError(result)
+  ) {
+    const queryDebugBase = {
+      recoverableQueryErrorDetected: true,
+      queryRetryAttempt: 1,
+      queryRetrySucceeded: false,
+      failedQueryArgs: input.args,
+      errorPreview: summarizeQueryErrorPreview(result),
+      errorCategory: classifyMcpErrorCategory(result),
+    } satisfies QueryDatasourceExecutionDebug;
+    logWarn("tableau.mcp.query.recoverable_error_detected", {
+      queryDatasourceCalled: true,
+      ...queryDebugBase,
+      failedQueryArgsPreserved: Boolean(queryDebugBase.failedQueryArgs),
+      queryArgsSummary: summarizeQueryDatasourceArgs(input.args),
+      queryFieldsBeforeDedupe:
+        input.queryNormalization?.queryFieldsBeforeDedupe ?? [],
+      queryFieldsAfterDedupe:
+        input.queryNormalization?.queryFieldsAfterDedupe ?? [],
+      dedupedFieldCount: input.queryNormalization?.dedupedFieldCount ?? 0,
+    });
+    logInfo("tableau.mcp.query.retry_attempt", {
+      queryDatasourceCalled: true,
+      queryRetryAttempt: 1,
+      failedQueryArgsPreserved: Boolean(queryDebugBase.failedQueryArgs),
+      queryArgsSummary: summarizeQueryDatasourceArgs(
+        input.queryNormalization?.normalizedArgs ?? input.args,
+      ),
+    });
+    const retryResult = await input.client.callTool(
+      {
+        name: input.toolName,
+        arguments: input.queryNormalization?.normalizedArgs ?? input.args,
+      },
+      undefined,
+      { timeout: input.timeoutMs },
+    );
+    const succeeded = !isMcpErrorResult(retryResult);
+    logInfo("tableau.mcp.query.retry_succeeded", {
+      queryDatasourceCalled: true,
+      queryRetryAttempt: 1,
+      queryRetrySucceeded: succeeded,
+      failedQueryArgsPreserved: Boolean(queryDebugBase.failedQueryArgs),
+      queryArgsSummary: summarizeQueryDatasourceArgs(
+        input.queryNormalization?.normalizedArgs ?? input.args,
+      ),
+    });
+    return {
+      result: retryResult,
+      queryDebug: {
+        ...queryDebugBase,
+        queryRetrySucceeded: succeeded,
+      },
+    };
+  }
+
+  return { result };
 }
 
 function isCacheableToolName(toolName: string): boolean {
@@ -2762,6 +2913,108 @@ function summarizeQueryDatasourceArgs(
   };
 }
 
+function summarizeQueryFieldSpecs(
+  fields: Array<Record<string, unknown>>,
+): QueryFieldSummary[] {
+  return fields.slice(0, 12).map((field) => ({
+    fieldCaption: readString(field.fieldCaption),
+    fieldAlias: readString(field.fieldAlias),
+    function: readString(field.function),
+    calculation: readString(field.calculation),
+  }));
+}
+
+function inferDerivedMetricsComputedInApp(
+  queryFieldSpecs: QueryFieldSpec[],
+  questionInterpretation: QuestionInterpretation | undefined,
+): string[] {
+  const computed: string[] = [];
+  const metricIntent = questionInterpretation?.metricIntent;
+  const fieldCaptions = queryFieldSpecs
+    .map((field) => field.fieldCaption ?? "")
+    .filter(Boolean);
+
+  const hasEngagementField = fieldCaptions.some((fieldCaption) =>
+    /engagement|エンゲージメント/i.test(fieldCaption),
+  );
+  const hasImpressionField = fieldCaptions.some((fieldCaption) =>
+    /impression|インプレッション/i.test(fieldCaption),
+  );
+
+  if (
+    metricIntent === "engagement_rate" &&
+    hasEngagementField &&
+    hasImpressionField
+  ) {
+    computed.push("engagement_rate");
+  }
+
+  return computed;
+}
+
+function dedupeQueryDatasourceFields(
+  fields: Array<Record<string, unknown>>,
+): Array<Record<string, unknown>> {
+  const seen = new Set<string>();
+  const deduped: Array<Record<string, unknown>> = [];
+
+  for (const field of fields) {
+    if (!field || typeof field !== "object" || Array.isArray(field)) {
+      continue;
+    }
+
+    const record = field as Record<string, unknown>;
+    const fieldCaption = readString(record.fieldCaption)?.trim() ?? "";
+    const fn = readString(record.function)?.trim().toUpperCase() ?? "";
+    const key = `${fieldCaption}|${fn}`;
+    if (seen.has(key)) {
+      continue;
+    }
+
+    seen.add(key);
+    deduped.push(record);
+  }
+
+  return deduped;
+}
+
+function normalizeQueryDatasourceArguments(args: Record<string, unknown>):
+  | {
+      normalizedArgs: Record<string, unknown>;
+      queryFieldsBeforeDedupe: QueryFieldSummary[];
+      queryFieldsAfterDedupe: QueryFieldSummary[];
+      dedupedFieldCount: number;
+    }
+  | undefined {
+  const query =
+    args.query && typeof args.query === "object" && !Array.isArray(args.query)
+      ? (args.query as Record<string, unknown>)
+      : undefined;
+  if (!query) {
+    return undefined;
+  }
+
+  const fieldsBeforeDedupe = Array.isArray(query.fields)
+    ? query.fields.filter(
+        (field): field is Record<string, unknown> =>
+          Boolean(field) && typeof field === "object" && !Array.isArray(field),
+      )
+    : [];
+  const fieldsAfterDedupe = dedupeQueryDatasourceFields(fieldsBeforeDedupe);
+  return {
+    normalizedArgs: {
+      ...args,
+      query: {
+        ...query,
+        fields: fieldsAfterDedupe,
+      },
+    },
+    queryFieldsBeforeDedupe: summarizeQueryFieldSpecs(fieldsBeforeDedupe),
+    queryFieldsAfterDedupe: summarizeQueryFieldSpecs(fieldsAfterDedupe),
+    dedupedFieldCount: fieldsBeforeDedupe.length - fieldsAfterDedupe.length,
+  };
+}
+
 function summarizeToolResultPreview(result: unknown): string {
   const text =
     extractTextFromToolResult(result) ||
@@ -2790,6 +3043,9 @@ export function isMcpErrorResult(result: unknown): boolean {
 
 export function classifyMcpErrorCategory(result: unknown): string {
   const text = extractTextFromToolResult(result).toLowerCase();
+  if (isRecoverableQueryUniquenessError(result)) {
+    return "field_not_unique";
+  }
   if (
     text.includes("status code 400") ||
     text.includes("invalid") ||
@@ -2811,10 +3067,27 @@ export function classifyMcpErrorCategory(result: unknown): string {
   return "tool_error";
 }
 
+function isRecoverableQueryUniquenessError(result: unknown): boolean {
+  const text = extractTextFromToolResult(result).toLowerCase();
+  return /field\s+.+isn['’]?t unique/.test(text);
+}
+
+function summarizeQueryErrorPreview(result: unknown): string {
+  const text = extractTextFromToolResult(result).trim();
+  if (!text) {
+    return "Query returned an error result.";
+  }
+
+  return text.length > 220 ? `${text.slice(0, 220)}...` : text;
+}
+
 export function buildMcpErrorMessage(
   result: unknown,
   category: string,
 ): string {
+  if (category === "field_not_unique") {
+    return "Query datasource fields were not unique; duplicate field/function pairs must be removed before retrying.";
+  }
   if (category === "request_invalid_or_identifier_missing") {
     return "Datasource metadata request was invalid, often because datasource identifier was missing.";
   }
@@ -3485,6 +3758,11 @@ export function extractQueryDatasourceInsightsFromRawToolResults(
           : undefined,
       )
       .filter((field): field is QueryFieldSpec => Boolean(field));
+    const queryDebug = toolResult.debug;
+    const derivedMetricsComputedInApp = inferDerivedMetricsComputedInApp(
+      queryFieldSpecs,
+      questionInterpretation,
+    );
     const dimensionField =
       readString(dimensionFieldRecord?.fieldCaption) ??
       readString(dimensionFieldRecord?.fieldAlias);
@@ -3502,6 +3780,10 @@ export function extractQueryDatasourceInsightsFromRawToolResults(
       QUERY_METRIC_ALIAS,
       "Aggregated Value",
     ].filter((value): value is string => Boolean(value));
+    const queryComputesRequestedMetric = Boolean(
+      questionInterpretation?.metricIntent === "engagement_rate" &&
+      derivedMetricsComputedInApp.includes("engagement_rate"),
+    );
 
     const rows = extractQueryDatasourceRows(toolResult.result)
       .map((row) =>
@@ -3522,10 +3804,9 @@ export function extractQueryDatasourceInsightsFromRawToolResults(
       );
     const requestedMetricText = questionInterpretation?.requestedMetricText;
     const rankingTarget = questionInterpretation?.rankingTarget ?? "unknown";
-    const metricMatchConfidence = computeMetricMatchConfidence(
-      metricField,
-      questionInterpretation,
-    );
+    const metricMatchConfidence = queryComputesRequestedMetric
+      ? 1
+      : computeMetricMatchConfidence(metricField, questionInterpretation);
     const dimensionMatchConfidence = computeDimensionMatchConfidence(
       dimensionField,
       questionInterpretation,
@@ -3544,7 +3825,7 @@ export function extractQueryDatasourceInsightsFromRawToolResults(
       (questionInterpretation?.topN ?? 1) > 1,
     );
     const fulfillsMetricRequest = hasExplicitMetricRequest
-      ? metricMatchConfidence >= 0.8
+      ? metricMatchConfidence >= 0.8 || queryComputesRequestedMetric
       : Boolean(
           !questionInterpretation?.metricIntent ||
           questionInterpretation.metricIntent === "unknown" ||
@@ -3570,6 +3851,7 @@ export function extractQueryDatasourceInsightsFromRawToolResults(
       selectedMetricField: metricField,
       queryDatasourceCalled: true,
       queryDatasourceRowCount: rows.length,
+      derivedMetricsComputedInApp,
     };
 
     if (!rows.length) {
@@ -3589,6 +3871,7 @@ export function extractQueryDatasourceInsightsFromRawToolResults(
         requestedTopN: questionInterpretation?.topN,
         actualRowCount: 0,
         sampleLabels: [],
+        derivedMetricsComputedInApp,
         rejectedReason: "no_rows",
       });
       continue;
@@ -3611,6 +3894,7 @@ export function extractQueryDatasourceInsightsFromRawToolResults(
         requestedTopN: questionInterpretation?.topN,
         actualRowCount: rows.length,
         sampleLabels: rows.slice(0, 5).map((row) => row.label ?? "(value)"),
+        derivedMetricsComputedInApp,
         rejectedReason: "metric_mismatch",
       });
       continue;
@@ -3632,6 +3916,7 @@ export function extractQueryDatasourceInsightsFromRawToolResults(
         requestedTopN: questionInterpretation?.topN,
         actualRowCount: rows.length,
         sampleLabels: rows.slice(0, 5).map((row) => row.label ?? "(value)"),
+        derivedMetricsComputedInApp,
         rejectedReason: "all_values_null",
       });
       continue;
@@ -3655,6 +3940,7 @@ export function extractQueryDatasourceInsightsFromRawToolResults(
       fulfillsMetricRequest,
       fulfillsRankingRequest,
       fulfillsPeriodRequest,
+      derivedMetricsComputedInApp,
     });
 
     insights.push({
@@ -3679,6 +3965,15 @@ export function extractQueryDatasourceInsightsFromRawToolResults(
       fulfillsMetricRequest,
       fulfillsRankingRequest,
       fulfillsPeriodRequest,
+      queryDebug: {
+        ...queryDebug,
+        derivedMetricsComputedInApp,
+        selectedDatasourceName: datasourceName,
+        selectedGroupingField: dimensionField,
+        selectedMetricField: metricField,
+        metricIntent: questionInterpretation?.metricIntent,
+        groupingIntent: questionInterpretation?.groupingIntent,
+      },
     });
   }
 
@@ -4961,41 +5256,42 @@ function buildAggregateQueryDatasourceArgs(
   const topN = isGroupedTrend
     ? Math.max(questionInterpretation.topN, 10)
     : questionInterpretation.topN;
-  const queryFields: Array<Record<string, unknown>> = [];
-  if (dimensionField) {
-    queryFields.push({
-      fieldCaption: dimensionField,
-      fieldAlias: QUERY_DIMENSION_ALIAS,
-    });
-  }
-
-  const groupedTrendFields = isGroupedTrend
+  const groupedTrendPlan = isGroupedTrend
     ? buildGroupedTrendQueryFieldSpecs({
         fieldDetails,
         questionInterpretation,
         metricSelection,
       })
     : undefined;
-  const fields = groupedTrendFields?.length
-    ? [
-        ...(dimensionField
-          ? [
-              {
-                fieldCaption: dimensionField,
-                fieldAlias: QUERY_DIMENSION_ALIAS,
-              },
-            ]
-          : []),
-        ...groupedTrendFields,
-      ]
-    : undefined;
-  if (!fields?.length) {
-    if (!metricSelection.fieldSpec) {
-      return undefined;
-    }
-    queryFields.push(metricSelection.fieldSpec);
+  const queryFieldsBeforeDedupe: Array<Record<string, unknown>> = [];
+  if (dimensionField) {
+    queryFieldsBeforeDedupe.push({
+      fieldCaption: dimensionField,
+      fieldAlias: QUERY_DIMENSION_ALIAS,
+    });
   }
-  const effectiveFields = fields?.length ? fields : queryFields;
+
+  if (groupedTrendPlan?.fields.length) {
+    queryFieldsBeforeDedupe.push(...groupedTrendPlan.fields);
+  } else if (metricSelection.fieldSpec) {
+    queryFieldsBeforeDedupe.push(metricSelection.fieldSpec);
+  }
+
+  const queryFieldsAfterDedupe = dedupeQueryDatasourceFields(
+    queryFieldsBeforeDedupe,
+  );
+  if (!queryFieldsAfterDedupe.length) {
+    return undefined;
+  }
+
+  const derivedMetricsComputedInApp =
+    groupedTrendPlan?.derivedMetricsComputedInApp ?? [];
+  const selectedMetricFieldForQuery =
+    groupedTrendPlan?.selectedMetricFieldCaption ?? metricField;
+  const queryLimit =
+    isGroupedTrend && questionInterpretation.metricIntent === "engagement_rate"
+      ? Math.max(topN * 5, 20)
+      : topN;
 
   const filters =
     dateField && period
@@ -5016,10 +5312,10 @@ function buildAggregateQueryDatasourceArgs(
   const queryArgs = {
     datasourceLuid,
     query: {
-      fields: effectiveFields,
+      fields: queryFieldsAfterDedupe,
       ...(filters ? { filters } : {}),
     },
-    limit: topN,
+    limit: queryLimit,
   };
 
   logDebug("tableau.mcp.query.aggregate_args_built", {
@@ -5034,23 +5330,29 @@ function buildAggregateQueryDatasourceArgs(
     selectedGroupingField: dimensionField,
     rankingTarget: questionInterpretation.rankingTarget ?? "unknown",
     metricField,
-    selectedMetricField: metricField,
+    selectedMetricField: selectedMetricFieldForQuery,
     derivedMetricFormula: questionInterpretation.derivedMetricFormula ?? null,
     dimensionField,
     dateField,
     periodStart: period?.startDate,
     periodEnd: period?.endDate,
     topN,
+    queryLimit,
     fieldNameCount: fieldNames.length,
     componentFieldCount: metricSelection.componentFields?.length ?? 0,
     hasFilters: Boolean(filters?.length),
+    queryFieldsBeforeDedupe: summarizeQueryFieldSpecs(queryFieldsBeforeDedupe),
+    queryFieldsAfterDedupe: summarizeQueryFieldSpecs(queryFieldsAfterDedupe),
+    dedupedFieldCount:
+      queryFieldsBeforeDedupe.length - queryFieldsAfterDedupe.length,
+    derivedMetricsComputedInApp,
     queryArgsSummary: summarizeQueryDatasourceArgs(queryArgs),
   });
   logDebug("tableau.mcp.query.metric_candidates_scored", {
     datasourceNameHash: safeHash(datasourceRef.name),
     metricIntent: questionInterpretation.metricIntent,
     requestedMetricText: questionInterpretation.requestedMetricText ?? null,
-    selectedMetricField: metricField,
+    selectedMetricField: selectedMetricFieldForQuery,
     componentFields: metricSelection.componentFields,
     candidates: metricSelection.candidates.slice(0, 8),
   });
@@ -5493,7 +5795,7 @@ function buildGroupedTrendQueryFieldSpecs(input: {
   fieldDetails: DatasourceFieldDetail[];
   questionInterpretation: QuestionInterpretation;
   metricSelection: AggregateMetricSelection;
-}): Record<string, unknown>[] {
+}): GroupedTrendFieldPlan {
   const fieldNames = input.fieldDetails
     .map((fieldDetail) => fieldDetail.name.trim())
     .filter(Boolean);
@@ -5512,6 +5814,37 @@ function buildGroupedTrendQueryFieldSpecs(input: {
       ),
     ) ?? undefined;
   const fields: Record<string, unknown>[] = [];
+  const derivedMetricsComputedInApp: string[] = [];
+  const metricIntent = input.questionInterpretation.metricIntent;
+  const pushMetricField = (
+    fieldCaption: string | undefined,
+    fieldAlias: string,
+    sortPriority: number,
+  ): void => {
+    if (!fieldCaption) {
+      return;
+    }
+    fields.push({
+      fieldCaption,
+      function: "SUM",
+      fieldAlias,
+      sortDirection: "DESC",
+      sortPriority,
+    });
+  };
+
+  const selectedMetricFieldCaption = (() => {
+    if (metricIntent === "impressions" || metricIntent === "views") {
+      return impressionField ?? input.metricSelection.fieldName;
+    }
+    if (metricIntent === "engagements" || metricIntent === "engagement_rate") {
+      return engagementField ?? input.metricSelection.fieldName;
+    }
+    if (metricIntent === "post_count") {
+      return postIdField ?? input.metricSelection.fieldName;
+    }
+    return input.metricSelection.fieldName;
+  })();
 
   if (postIdField) {
     fields.push({
@@ -5519,57 +5852,54 @@ function buildGroupedTrendQueryFieldSpecs(input: {
       function: "COUNT",
       fieldAlias: "post_count",
       sortDirection: "DESC",
-      sortPriority: 2,
+      sortPriority: 3,
     });
   } else {
     fields.push({
       fieldCaption:
-        postIdField ??
         input.fieldDetails[0]?.name ??
         input.questionInterpretation.groupingFieldHint?.[0] ??
         "post_count",
       function: "COUNT",
       fieldAlias: "post_count",
       sortDirection: "DESC",
-      sortPriority: 2,
-    });
-  }
-
-  if (engagementField) {
-    fields.push({
-      fieldCaption: engagementField,
-      function: "SUM",
-      fieldAlias: "engagement_total",
-      sortDirection: "DESC",
       sortPriority: 3,
     });
   }
 
-  if (impressionField) {
-    fields.push({
-      fieldCaption: impressionField,
-      function: "SUM",
-      fieldAlias: "impression_total",
-      sortDirection: "DESC",
-      sortPriority: 4,
-    });
+  if (metricIntent === "engagement_rate") {
+    if (engagementField) {
+      pushMetricField(engagementField, "engagement_total", 1);
+    }
+    if (impressionField) {
+      pushMetricField(impressionField, "impression_total", 2);
+    }
+    if (engagementField && impressionField) {
+      derivedMetricsComputedInApp.push("engagement_rate");
+    }
+  } else if (metricIntent === "impressions" || metricIntent === "views") {
+    if (impressionField) {
+      pushMetricField(impressionField, "impression_total", 1);
+    }
+    if (engagementField) {
+      pushMetricField(engagementField, "engagement_total", 2);
+    }
+  } else if (metricIntent === "engagements") {
+    if (engagementField) {
+      pushMetricField(engagementField, "engagement_total", 1);
+    }
+    if (impressionField) {
+      pushMetricField(impressionField, "impression_total", 2);
+    }
+  } else if (selectedMetricFieldCaption) {
+    pushMetricField(selectedMetricFieldCaption, QUERY_METRIC_ALIAS, 1);
   }
 
-  const primaryMetricSpec = input.metricSelection.fieldSpec ?? {
-    fieldCaption: input.metricSelection.fieldName ?? "aggregated value",
-    function: "SUM",
-    fieldAlias: QUERY_METRIC_ALIAS,
-    sortDirection: "DESC",
-    sortPriority: 1,
+  return {
+    fields: dedupeQueryDatasourceFields(fields),
+    derivedMetricsComputedInApp,
+    selectedMetricFieldCaption,
   };
-  fields.push({
-    ...primaryMetricSpec,
-    fieldAlias: "engagement_rate",
-    sortDirection: "DESC",
-    sortPriority: 1,
-  });
-
-  return fields;
 }
 
 function chooseAggregateDateField(

@@ -161,6 +161,34 @@ export type QueryDatasourceInsightRow = {
   raw?: Record<string, unknown>;
 };
 
+export type QueryDatasourceExecutionDebug = {
+  queryFieldsBeforeDedupe?: Array<{
+    fieldCaption?: string;
+    fieldAlias?: string;
+    function?: string;
+    calculation?: string;
+  }>;
+  queryFieldsAfterDedupe?: Array<{
+    fieldCaption?: string;
+    fieldAlias?: string;
+    function?: string;
+    calculation?: string;
+  }>;
+  dedupedFieldCount?: number;
+  derivedMetricsComputedInApp?: string[];
+  recoverableQueryErrorDetected?: boolean;
+  queryRetryAttempt?: number;
+  queryRetrySucceeded?: boolean;
+  failedQueryArgs?: Record<string, unknown>;
+  errorPreview?: string;
+  errorCategory?: string;
+  selectedDatasourceName?: string;
+  selectedGroupingField?: string;
+  selectedMetricField?: string;
+  metricIntent?: QuestionMetricIntent;
+  groupingIntent?: QuestionGroupingIntent;
+};
+
 export type QuestionMetricIntent =
   | "views"
   | "favorites"
@@ -234,6 +262,7 @@ export type QueryDatasourceInsight = {
   rowCount: number;
   actualRowCount: number;
   rows: QueryDatasourceInsightRow[];
+  queryDebug?: QueryDatasourceExecutionDebug;
   requestedTopN?: number;
   requestedRanking?: boolean;
   requestedPeriodStart?: string;
