@@ -4,6 +4,7 @@ import type {
   QuestionGroupingIntent,
   QuestionInterpretation,
   QuestionMetricIntent,
+  QuestionRankingTarget,
   QuestionRequestType,
 } from "../types/tableau";
 
@@ -38,6 +39,15 @@ const JAPANESE_PLAY = "\u518d\u751f";
 const JAPANESE_FAVORITE = "Favorite";
 const JAPANESE_FAVORITE_ALT = "\u304a\u6c17\u306b\u5165\u308a";
 const JAPANESE_BOOKMARK = "\u30d6\u30c3\u30af\u30de\u30fc\u30af";
+const JAPANESE_ENGAGEMENT = "\u30a8\u30f3\u30b2\u30fc\u30b8\u30e1\u30f3\u30c8";
+const JAPANESE_ENGAGEMENT_RATE =
+  "\u30a8\u30f3\u30b2\u30fc\u30b8\u30e1\u30f3\u30c8\u7387";
+const JAPANESE_IMPRESSION = "\u30a4\u30f3\u30d7\u30ec\u30c3\u30b7\u30e7\u30f3";
+const JAPANESE_POST = "\u30dd\u30b9\u30c8";
+const JAPANESE_POSTING = "\u6295\u7a3f";
+const JAPANESE_POST_COUNT = "\u30dd\u30b9\u30c8\u6570";
+const JAPANESE_REPOST = "\u30ea\u30dd\u30b9\u30c8";
+const JAPANESE_REPLY = "\u8fd4\u4fe1";
 const JAPANESE_REACTION = "\u30ea\u30a2\u30af\u30b7\u30e7\u30f3";
 const JAPANESE_LOVE = "\u3044\u3044\u306d";
 const JAPANESE_COUNT = "\u6570";
@@ -139,6 +149,83 @@ const METRIC_INTENT_KEYWORDS: Record<
   Exclude<QuestionMetricIntent, "unknown">,
   string[]
 > = {
+  engagement_rate: [
+    "engagement rate",
+    "engagement_rate",
+    "engagement ratio",
+    JAPANESE_ENGAGEMENT_RATE,
+    `${JAPANESE_ENGAGEMENT}率`,
+  ],
+  engagements: [
+    "engagement",
+    "engagements",
+    "engagement count",
+    JAPANESE_ENGAGEMENT,
+    `${JAPANESE_ENGAGEMENT}\u6570`,
+  ],
+  impressions: [
+    "impression",
+    "impressions",
+    "impression count",
+    JAPANESE_IMPRESSION,
+    `${JAPANESE_IMPRESSION}\u6570`,
+  ],
+  likes: [
+    "like",
+    "likes",
+    "liked",
+    "like count",
+    "likes count",
+    "\u3044\u3044\u306d",
+    "\u3044\u3044\u306d\u6570",
+  ],
+  favorites: [
+    "favorite",
+    "favorites",
+    "favourite",
+    JAPANESE_FAVORITE_ALT,
+    `${JAPANESE_FAVORITE}\u6570`,
+  ],
+  bookmarks: [
+    "bookmark",
+    "bookmarks",
+    JAPANESE_BOOKMARK,
+    `${JAPANESE_BOOKMARK}\u6570`,
+    "saved",
+    "save",
+  ],
+  reposts: [
+    "repost",
+    "reposts",
+    "retweet",
+    "retweets",
+    JAPANESE_REPOST,
+    `${JAPANESE_REPOST}\u6570`,
+  ],
+  replies: [
+    "reply",
+    "replies",
+    "reply count",
+    JAPANESE_REPLY,
+    `${JAPANESE_REPLY}\u6570`,
+  ],
+  post_count: [
+    "post count",
+    "posts count",
+    "number of posts",
+    JAPANESE_POST_COUNT,
+    `${JAPANESE_POSTING}\u6570`,
+    "\u4ef6\u6570",
+  ],
+  reactions: [
+    "reaction",
+    "reactions",
+    JAPANESE_REACTION,
+    `${JAPANESE_REACTION}\u6570`,
+    "react",
+    "emoji reaction",
+  ],
+  love: ["love", "loves", JAPANESE_LOVE, `${JAPANESE_LOVE}\u6570`],
   views: [
     "view",
     "views",
@@ -152,34 +239,99 @@ const METRIC_INTENT_KEYWORDS: Record<
     "view count",
     "viewed",
   ],
+};
+
+const EXPLICIT_METRIC_INTENT_KEYWORDS: Record<
+  Exclude<QuestionMetricIntent, "unknown">,
+  string[]
+> = {
+  engagement_rate: [
+    JAPANESE_ENGAGEMENT_RATE,
+    "engagement rate",
+    "engagement_rate",
+    "engagement ratio",
+  ],
+  engagements: [
+    JAPANESE_ENGAGEMENT,
+    `${JAPANESE_ENGAGEMENT}\u6570`,
+    "engagement",
+    "engagements",
+    "engagement count",
+  ],
+  impressions: [
+    `${JAPANESE_IMPRESSION}\u6570`,
+    JAPANESE_IMPRESSION,
+    "impressions",
+    "impression",
+    "impression count",
+  ],
+  likes: [
+    "\u3044\u3044\u306d\u6570",
+    "\u3044\u3044\u306d",
+    "likes",
+    "like",
+    "like count",
+    "likes count",
+  ],
   favorites: [
+    JAPANESE_FAVORITE_ALT,
+    `${JAPANESE_FAVORITE}\u6570`,
     "favorite",
     "favorites",
     "favourite",
-    JAPANESE_FAVORITE_ALT,
-    `${JAPANESE_FAVORITE}\u6570`,
-    "favorite count",
-    "like",
-    "likes",
-    "liked",
   ],
   bookmarks: [
+    `${JAPANESE_BOOKMARK}\u6570`,
+    JAPANESE_BOOKMARK,
     "bookmark",
     "bookmarks",
-    JAPANESE_BOOKMARK,
-    `${JAPANESE_BOOKMARK}\u6570`,
-    "saved",
-    "save",
+    "bookmark count",
+  ],
+  reposts: [
+    `${JAPANESE_REPOST}\u6570`,
+    JAPANESE_REPOST,
+    "repost",
+    "reposts",
+    "retweet",
+    "retweets",
+  ],
+  replies: [
+    `${JAPANESE_REPLY}\u6570`,
+    JAPANESE_REPLY,
+    "reply",
+    "replies",
+    "reply count",
+  ],
+  post_count: [
+    JAPANESE_POST_COUNT,
+    JAPANESE_POSTING,
+    `${JAPANESE_POSTING}\u6570`,
+    "post count",
+    "posts count",
+    "number of posts",
+    "\u4ef6\u6570",
   ],
   reactions: [
+    `${JAPANESE_REACTION}\u6570`,
+    JAPANESE_REACTION,
     "reaction",
     "reactions",
-    JAPANESE_REACTION,
-    `${JAPANESE_REACTION}\u6570`,
     "react",
     "emoji reaction",
   ],
-  love: ["love", "loves", JAPANESE_LOVE, `${JAPANESE_LOVE}\u6570`],
+  love: [JAPANESE_LOVE, `${JAPANESE_LOVE}\u6570`, "love", "loves"],
+  views: [
+    JAPANESE_VIEW_COUNT,
+    `${JAPANESE_VIEW}\u6570`,
+    JAPANESE_VIEW,
+    JAPANESE_BROWSE,
+    `${JAPANESE_BROWSE}\u6570`,
+    JAPANESE_PLAY,
+    "view count",
+    "views",
+    "view",
+    "viewed",
+  ],
 };
 
 export function interpretQuestion(input: {
@@ -215,10 +367,18 @@ export function interpretQuestion(input: {
     parseQuestionPeriod(input.question, {
       referenceDate: input.dashboardContext.capturedAt,
     });
+  const explicitMetricIntent = chooseKnownMetricIntent(
+    detectExplicitMetricIntent(input.question),
+    detectExplicitMetricIntent(investigationQuestion),
+  );
   const metricIntent = chooseKnownMetricIntent(
+    explicitMetricIntent,
     detectMetricIntent(input.question),
     detectMetricIntent(investigationQuestion),
   );
+  const requestedMetricText =
+    detectRequestedMetricText(input.question, metricIntent) ??
+    detectRequestedMetricText(investigationQuestion, metricIntent);
   const asksForRanking =
     detectRankingIntent(input.question) ||
     detectRankingIntent(investigationQuestion) ||
@@ -232,6 +392,10 @@ export function interpretQuestion(input: {
     detectGroupingIntent(input.question),
     detectGroupingIntent(investigationQuestion),
   );
+  const rankingTarget = asksForRanking
+    ? (detectRankingTarget(input.question) ??
+      detectRankingTarget(investigationQuestion))
+    : "unknown";
   const requestType = detectQuestionRequestType({
     originalQuestion: input.question,
     sanitizedQuestion: investigationQuestion,
@@ -253,8 +417,10 @@ export function interpretQuestion(input: {
       ? { requestTypeSignals: requestType.signals }
       : {}),
     metricIntent,
+    ...(requestedMetricText ? { requestedMetricText } : {}),
     asksForRanking,
     topN,
+    ...(rankingTarget !== "unknown" ? { rankingTarget } : {}),
     ...(groupingIntent !== "unknown" ? { groupingIntent } : {}),
     ...(explicitTopN ? { topNExplicitlyRequested: true } : {}),
     ...(period ? { period } : {}),
@@ -276,11 +442,105 @@ export function detectMetricIntent(question: string): QuestionMetricIntent {
   return "unknown";
 }
 
+export function detectExplicitMetricIntent(
+  question: string,
+): QuestionMetricIntent {
+  const normalized = normalizeQuestionForIntent(question);
+  for (const [intent, keywords] of Object.entries(
+    EXPLICIT_METRIC_INTENT_KEYWORDS,
+  ) as Array<[Exclude<QuestionMetricIntent, "unknown">, string[]]>) {
+    if (
+      keywords.some((keyword) => containsNormalizedKeyword(normalized, keyword))
+    ) {
+      return intent;
+    }
+  }
+
+  return "unknown";
+}
+
+export function detectRequestedMetricText(
+  question: string,
+  metricIntent?: QuestionMetricIntent,
+): string | undefined {
+  const explicitIntent = detectExplicitMetricIntent(question);
+  const resolvedIntent =
+    metricIntent && metricIntent !== "unknown" ? metricIntent : explicitIntent;
+  if (resolvedIntent && resolvedIntent !== "unknown") {
+    return metricIntentLabel(resolvedIntent);
+  }
+
+  const normalized = normalizeQuestionForIntent(question);
+  for (const [intent, keywords] of Object.entries(
+    METRIC_INTENT_KEYWORDS,
+  ) as Array<[Exclude<QuestionMetricIntent, "unknown">, string[]]>) {
+    if (
+      keywords.some((keyword) => containsNormalizedKeyword(normalized, keyword))
+    ) {
+      return metricIntentLabel(intent);
+    }
+  }
+
+  return undefined;
+}
+
 export function detectRankingIntent(question: string): boolean {
   const normalized = normalizeQuestionForIntent(question);
   return RANKING_KEYWORDS.some((keyword) =>
     containsNormalizedKeyword(normalized, keyword),
   );
+}
+
+export function detectRankingTarget(question: string): QuestionRankingTarget {
+  const normalized = normalizeQuestionForIntent(question);
+  const targetKeywords: Array<[QuestionRankingTarget, string[]]> = [
+    [
+      "post",
+      [
+        JAPANESE_POST,
+        JAPANESE_POSTING,
+        JAPANESE_POST_COUNT,
+        "post",
+        "posts",
+        "tweet",
+        "tweets",
+      ],
+    ],
+    [
+      "viz",
+      [
+        JAPANESE_VIZ,
+        JAPANESE_WORKBOOK,
+        JAPANESE_DASHBOARD,
+        "viz",
+        "workbook",
+        "dashboard",
+      ],
+    ],
+    [
+      "author",
+      [
+        JAPANESE_AUTHOR,
+        JAPANESE_POSTER,
+        JAPANESE_USER,
+        "author",
+        "creator",
+        "poster",
+        "profile",
+      ],
+    ],
+    ["datasource", [JAPANESE_DATASOURCE, "datasource", "data source"]],
+  ];
+
+  for (const [target, keywords] of targetKeywords) {
+    if (
+      keywords.some((keyword) => containsNormalizedKeyword(normalized, keyword))
+    ) {
+      return target;
+    }
+  }
+
+  return "unknown";
 }
 
 export function detectSingleBestRankingIntent(question: string): boolean {
@@ -332,6 +592,20 @@ export function metricIntentLabel(intent: QuestionMetricIntent): string {
       return `${JAPANESE_VIEW}\u6570`;
     case "favorites":
       return `${JAPANESE_FAVORITE}\u6570`;
+    case "likes":
+      return "\u3044\u3044\u306d\u6570";
+    case "impressions":
+      return `${JAPANESE_IMPRESSION}\u6570`;
+    case "engagements":
+      return `${JAPANESE_ENGAGEMENT}\u6570`;
+    case "engagement_rate":
+      return `${JAPANESE_ENGAGEMENT_RATE}`;
+    case "reposts":
+      return `${JAPANESE_REPOST}\u6570`;
+    case "replies":
+      return `${JAPANESE_REPLY}\u6570`;
+    case "post_count":
+      return `${JAPANESE_POST_COUNT}`;
     case "bookmarks":
       return `${JAPANESE_BOOKMARK}\u6570`;
     case "reactions":

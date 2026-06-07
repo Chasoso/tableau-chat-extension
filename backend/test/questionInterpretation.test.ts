@@ -35,6 +35,8 @@ const fieldInventoryQuestion =
   "X Account Analytics Contents\u306e\u30d5\u30a3\u30fc\u30eb\u30c9\u306b\u3064\u3044\u3066\u6559\u3048\u3066\u304f\u3060\u3055\u3044\u3002";
 const postsCountQuestion =
   "2026\u5e745\u6708\u306e\u30dd\u30b9\u30c8\u6570\u304c\u3042\u308a\u307e\u3059\u304b\uff1f";
+const impressionsPostRankingQuestion =
+  "X Account Overview Analytics \u3092\u4f7f\u3063\u3066\u30012026\u5e745\u6708\u306e\u30a4\u30f3\u30d7\u30ec\u30c3\u30b7\u30e7\u30f3\u6570\u304c\u6700\u3082\u591a\u304b\u3063\u305f\u30dd\u30b9\u30c8\u3092\u6559\u3048\u3066\u304f\u3060\u3055\u3044\u3002";
 const datasourceExplainQuestion =
   "X Account Overview Analytics\u306b\u3064\u3044\u3066\u3001\u8a73\u3057\u304f\u6559\u3048\u3066\u304f\u3060\u3055\u3044\u3002";
 
@@ -121,6 +123,22 @@ describe("questionInterpretation", () => {
     ).toBe("bookmarks");
   });
 
+  it("detects explicit impressions ranking over posts", () => {
+    const interpretation = interpretQuestion({
+      question: impressionsPostRankingQuestion,
+      dashboardContext: {
+        ...dashboardContext,
+        dataSources: [{ name: "X Account Overview Analytics" }],
+      },
+    });
+
+    expect(interpretation.metricIntent).toBe("impressions");
+    expect(interpretation.requestedMetricText).toBe("インプレッション数");
+    expect(interpretation.asksForRanking).toBe(true);
+    expect(interpretation.topN).toBe(1);
+    expect(interpretation.rankingTarget).toBe("post");
+  });
+
   it("classifies datasource inventory questions as a lightweight request type", () => {
     const interpretation = interpretQuestion({
       question: datasourceInventoryQuestion,
@@ -161,8 +179,9 @@ describe("questionInterpretation", () => {
     });
 
     expect(interpretation.requestType).toBe("general");
-    expect(interpretation.requestTypeSignals).toContain("period_detected");
-    expect(interpretation.requestTypeSignals).toContain("analysis_like_signal");
+    expect(interpretation.requestTypeSignals).toContain(
+      "metric_intent_detected",
+    );
   });
 
   it("does not classify generic explain questions with datasource mentions as datasource inventory", () => {
