@@ -108,10 +108,7 @@ export function getConfig(): AppConfig {
         process.env.CHAT_JOB_TTL_SECONDS,
         60 * 60 * 24,
       ),
-      leaseSeconds: parsePositiveInt(
-        process.env.CHAT_JOB_LEASE_SECONDS,
-        120,
-      ),
+      leaseSeconds: parsePositiveInt(process.env.CHAT_JOB_LEASE_SECONDS, 120),
       progressMessageLimit: parsePositiveInt(
         process.env.CHAT_JOB_PROGRESS_MESSAGE_LIMIT,
         12,

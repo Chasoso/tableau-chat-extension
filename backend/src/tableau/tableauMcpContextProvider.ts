@@ -344,8 +344,7 @@ export class TableauMcpContextProvider implements TableauContextProvider {
               startedAt: execution.startedAt,
               resolved:
                 settled.status === "fulfilled" ? settled.value : undefined,
-              error:
-                settled.status === "rejected" ? settled.reason : undefined,
+              error: settled.status === "rejected" ? settled.reason : undefined,
               tools,
               loopInput: planningInput,
               intent,
@@ -353,7 +352,6 @@ export class TableauMcpContextProvider implements TableauContextProvider {
               toolResults,
               rawToolResults,
               observations,
-              blockedToolNames,
               recoverablePreconditionSuggestions,
               setRecoverablePreconditionFailure(value) {
                 hasRecoverablePreconditionFailure = value;
@@ -454,7 +452,6 @@ export class TableauMcpContextProvider implements TableauContextProvider {
             toolResults,
             rawToolResults,
             observations,
-            blockedToolNames,
             recoverablePreconditionSuggestions,
             setRecoverablePreconditionFailure(value) {
               hasRecoverablePreconditionFailure = value;
@@ -479,7 +476,6 @@ export class TableauMcpContextProvider implements TableauContextProvider {
             toolResults,
             rawToolResults,
             observations,
-            blockedToolNames,
             recoverablePreconditionSuggestions,
             setRecoverablePreconditionFailure(value) {
               hasRecoverablePreconditionFailure = value;
@@ -1284,7 +1280,6 @@ async function processSelectionOutcome(params: {
   toolResults: TableauMcpToolResultSummary[];
   rawToolResults: RawMcpToolResult[];
   observations: McpObservation[];
-  blockedToolNames: string[];
   recoverablePreconditionSuggestions: Set<string>;
   setRecoverablePreconditionFailure: (value: boolean) => void;
   debugLogResults: boolean;
@@ -1301,7 +1296,6 @@ async function processSelectionOutcome(params: {
     toolResults,
     rawToolResults,
     observations,
-    blockedToolNames,
     recoverablePreconditionSuggestions,
     setRecoverablePreconditionFailure,
     debugLogResults,
@@ -2261,7 +2255,10 @@ async function executeToolWithCache(input: {
       createdAt: new Date().toISOString(),
       expiresAt:
         Math.floor(Date.now() / 1000) +
-        Math.max(1, Math.floor(Math.max(config.metadataCacheTtlMs, 1000) / 1000)),
+        Math.max(
+          1,
+          Math.floor(Math.max(config.metadataCacheTtlMs, 1000) / 1000),
+        ),
     });
     logDebug("tableau.mcp.metadata_cache.stored", {
       toolName: input.toolName,

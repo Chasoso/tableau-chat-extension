@@ -62,7 +62,9 @@ export default function MessageList({
         >
           <div className="job-progress-header">
             <div>
-              <p className="job-progress-status">{formatStatusLabel(job.status)}</p>
+              <p className="job-progress-status">
+                {formatStatusLabel(job.status)}
+              </p>
               <h2>{formatStageLabel(job.stage)}</h2>
             </div>
             <span className="job-progress-pill">

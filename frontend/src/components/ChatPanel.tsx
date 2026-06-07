@@ -1,8 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import {
-  createChatJob,
-  getChatJob,
-} from "../api/chatApi";
+import { createChatJob, getChatJob } from "../api/chatApi";
 import {
   loadChatJobOwnerToken,
   storeChatJobOwnerToken,
@@ -240,7 +237,11 @@ export default function ChatPanel({
 
     const pollJob = async () => {
       try {
-        const response = await getChatJob(activeJob.jobId, authToken, ownerToken);
+        const response = await getChatJob(
+          activeJob.jobId,
+          authToken,
+          ownerToken,
+        );
 
         if (cancelled || pollGeneration !== jobPollGenerationRef.current) {
           return;

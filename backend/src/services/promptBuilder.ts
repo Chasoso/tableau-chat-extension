@@ -67,9 +67,7 @@ export function buildPrompt(
     observationCount
       ? "You received MCP observations. Prioritize them as evidence over assumptions."
       : "No MCP observations were collected. Rely only on dashboard context and clearly mention limitations.",
-    observationDigest
-      ? `MCP evidence summary: ${observationDigest}`
-      : "",
+    observationDigest ? `MCP evidence summary: ${observationDigest}` : "",
     "Respond in the same language as the user's question when practical.",
     executionDebug
       ? `Execution summary: intent=${executionDebug.intent}, needsMcp=${String(executionDebug.needsMcp)}, toolCalls=${executionDebug.toolCallCount}, replanUsed=${String(executionDebug.replanUsed)}`

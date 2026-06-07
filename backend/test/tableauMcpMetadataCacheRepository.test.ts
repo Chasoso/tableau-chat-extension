@@ -1,7 +1,4 @@
-import {
-  GetItemCommand,
-  PutItemCommand,
-} from "@aws-sdk/client-dynamodb";
+import { GetItemCommand, PutItemCommand } from "@aws-sdk/client-dynamodb";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { TableauMcpMetadataCacheRepository } from "../src/repositories/tableauMcpMetadataCacheRepository";
 
@@ -14,12 +11,12 @@ vi.mock("../src/aws/dynamodb", () => ({
 }));
 
 describe("TableauMcpMetadataCacheRepository", () => {
-  const originalTableName =
-    process.env.TABLEAU_MCP_METADATA_CACHE_TABLE_NAME;
+  const originalTableName = process.env.TABLEAU_MCP_METADATA_CACHE_TABLE_NAME;
 
   beforeEach(() => {
     sendMock.mockReset();
-    process.env.TABLEAU_MCP_METADATA_CACHE_TABLE_NAME = "tableau-mcp-metadata-cache";
+    process.env.TABLEAU_MCP_METADATA_CACHE_TABLE_NAME =
+      "tableau-mcp-metadata-cache";
   });
 
   afterEach(() => {
@@ -46,9 +43,7 @@ describe("TableauMcpMetadataCacheRepository", () => {
 
     expect(sendMock).toHaveBeenCalledTimes(1);
     const command = sendMock.mock.calls[0][0] as PutItemCommand;
-    expect(command.input.TableName).toBe(
-      "tableau-mcp-metadata-cache",
-    );
+    expect(command.input.TableName).toBe("tableau-mcp-metadata-cache");
     expect(command.input.Item).toBeTruthy();
   });
 
@@ -66,14 +61,10 @@ describe("TableauMcpMetadataCacheRepository", () => {
     });
     const repository = new TableauMcpMetadataCacheRepository();
 
-    await expect(repository.get("user:list-workbooks:abc")).resolves.toBe(
-      null,
-    );
+    await expect(repository.get("user:list-workbooks:abc")).resolves.toBe(null);
 
     expect(sendMock).toHaveBeenCalledTimes(1);
     const command = sendMock.mock.calls[0][0] as GetItemCommand;
-    expect(command.input.TableName).toBe(
-      "tableau-mcp-metadata-cache",
-    );
+    expect(command.input.TableName).toBe("tableau-mcp-metadata-cache");
   });
 });

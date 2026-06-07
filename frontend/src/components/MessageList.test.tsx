@@ -53,9 +53,7 @@ describe("MessageList", () => {
     expect(
       screen.getByRole("heading", { name: "MCPツールを実行中" }),
     ).toBeVisible();
-    expect(screen.getAllByText("ダッシュボードを確認中です。")).toHaveLength(
-      2,
-    );
+    expect(screen.getAllByText("ダッシュボードを確認中です。")).toHaveLength(2);
     expect(screen.getByText("pass 2")).toBeVisible();
     expect(screen.getByText("tools 4")).toBeVisible();
     expect(screen.getByText("provider tableau-mcp")).toBeVisible();

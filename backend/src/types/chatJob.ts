@@ -1,5 +1,8 @@
 import type { ChatRequest, ChatResponse } from "./chat";
-import type { ChatJobProgressMessage, ChatJobStage } from "../services/chatProgress";
+import type {
+  ChatJobProgressMessage,
+  ChatJobStage,
+} from "../services/chatProgress";
 
 export type ChatJobStatus =
   | "queued"

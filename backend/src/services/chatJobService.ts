@@ -62,8 +62,7 @@ export class ChatJobService {
       createdAt,
       updatedAt: createdAt,
       expiresAt:
-        Math.floor(Date.now() / 1000) +
-        Math.max(60, config.chatJob.ttlSeconds),
+        Math.floor(Date.now() / 1000) + Math.max(60, config.chatJob.ttlSeconds),
     };
 
     await repository.create(record);
@@ -179,7 +178,7 @@ export class ChatJobService {
     const chatService = createChatService();
     const conversationOwnerKey =
       claimed.ownerType === "authenticated"
-        ? claimed.ownerUserId ?? authenticatedUser?.userId
+        ? (claimed.ownerUserId ?? authenticatedUser?.userId)
         : claimed.ownerKey;
 
     try {
@@ -221,9 +220,7 @@ export class ChatJobService {
         jobId: input.jobId,
         error: {
           code:
-            error instanceof Error && error.name
-              ? error.name
-              : "worker_failed",
+            error instanceof Error && error.name ? error.name : "worker_failed",
           message:
             error instanceof Error
               ? error.message
@@ -299,8 +296,7 @@ function createRepositoryProgressReporter(jobId: string): ChatProgressReporter {
                   : "running",
           maxMessages: getConfig().chatJob.progressMessageLimit,
           leaseExpiresAtIso: new Date(
-            Date.now() +
-              Math.max(30, getConfig().chatJob.leaseSeconds) * 1000,
+            Date.now() + Math.max(30, getConfig().chatJob.leaseSeconds) * 1000,
           ).toISOString(),
         });
       } catch (error) {

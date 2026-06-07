@@ -100,14 +100,12 @@ describe("ChatPanel", () => {
       ownerType: "anonymous",
     });
 
-    render(
-      <ChatPanel
-        dashboardContext={dashboardContext}
-        isAuthenticated
-      />,
-    );
+    render(<ChatPanel dashboardContext={dashboardContext} isAuthenticated />);
 
-    await user.type(screen.getByLabelText("質問"), "このダッシュボードを要約して");
+    await user.type(
+      screen.getByLabelText("質問"),
+      "このダッシュボードを要約して",
+    );
     await user.click(screen.getByRole("button", { name: "送信" }));
 
     await waitFor(() =>
@@ -127,9 +125,7 @@ describe("ChatPanel", () => {
       undefined,
       "owner-token-1",
     );
-    expect(mocks.storeChatJobOwnerToken).toHaveBeenCalledWith(
-      "owner-token-1",
-    );
+    expect(mocks.storeChatJobOwnerToken).toHaveBeenCalledWith("owner-token-1");
   });
 
   it("shows an error and stops polling when the job fails", async () => {
@@ -168,12 +164,7 @@ describe("ChatPanel", () => {
       ownerType: "anonymous",
     });
 
-    render(
-      <ChatPanel
-        dashboardContext={dashboardContext}
-        isAuthenticated
-      />,
-    );
+    render(<ChatPanel dashboardContext={dashboardContext} isAuthenticated />);
 
     await user.type(screen.getByLabelText("質問"), "What changed?");
     await user.click(screen.getByRole("button", { name: "送信" }));

@@ -27,8 +27,7 @@ import { ChatJobService } from "../src/services/chatJobService";
 
 describe("ChatJobService processChatJob", () => {
   const originalLeaseSeconds = process.env.CHAT_JOB_LEASE_SECONDS;
-  const originalProgressLimit =
-    process.env.CHAT_JOB_PROGRESS_MESSAGE_LIMIT;
+  const originalProgressLimit = process.env.CHAT_JOB_PROGRESS_MESSAGE_LIMIT;
 
   beforeEach(() => {
     process.env.CHAT_JOB_LEASE_SECONDS = "120";
@@ -84,20 +83,22 @@ describe("ChatJobService processChatJob", () => {
       expiresAt: 1_999_999_999,
     });
 
-    chatServiceMock.generateAnswer.mockImplementation(async (_request, _user, options) => {
-      await options.progressReporter.report({
-        stage: "planning",
-        message: "Planning the analysis.",
-        toolName: "get-workbook",
-        debug: { toolCallCount: 1 },
-      });
+    chatServiceMock.generateAnswer.mockImplementation(
+      async (_request, _user, options) => {
+        await options.progressReporter.report({
+          stage: "planning",
+          message: "Planning the analysis.",
+          toolName: "get-workbook",
+          debug: { toolCallCount: 1 },
+        });
 
-      return {
-        answer: "Completed answer",
-        sessionId: "session-1",
-        messageId: "message-1",
-      };
-    });
+        return {
+          answer: "Completed answer",
+          sessionId: "session-1",
+          messageId: "message-1",
+        };
+      },
+    );
     repositoryMock.markCompleted.mockResolvedValue(null);
 
     await service.processChatJob(
@@ -169,10 +170,7 @@ describe("ChatJobService processChatJob", () => {
     );
     repositoryMock.markFailed.mockResolvedValue(null);
 
-    await service.processChatJob(
-      { jobId: "job-2" },
-      undefined,
-    );
+    await service.processChatJob({ jobId: "job-2" }, undefined);
 
     expect(repositoryMock.markFailed).toHaveBeenCalledWith({
       jobId: "job-2",

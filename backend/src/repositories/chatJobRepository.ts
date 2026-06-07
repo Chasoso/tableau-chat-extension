@@ -39,11 +39,14 @@ export class ChatJobRepository {
     return unmarshall(response.Item) as ChatJobRecord;
   }
 
-  async claim(jobId: string, input: {
-    workerId: string;
-    nowIso: string;
-    leaseExpiresAtIso: string;
-  }): Promise<ChatJobRecord | null> {
+  async claim(
+    jobId: string,
+    input: {
+      workerId: string;
+      nowIso: string;
+      leaseExpiresAtIso: string;
+    },
+  ): Promise<ChatJobRecord | null> {
     try {
       const response = await getDynamoDbClient().send(
         new UpdateItemCommand({
@@ -123,7 +126,9 @@ export class ChatJobRepository {
       stage: input.stage,
       progressMessages,
       updatedAt: new Date().toISOString(),
-      ...(input.leaseExpiresAtIso ? { leaseExpiresAt: input.leaseExpiresAtIso } : {}),
+      ...(input.leaseExpiresAtIso
+        ? { leaseExpiresAt: input.leaseExpiresAtIso }
+        : {}),
     });
   }
 

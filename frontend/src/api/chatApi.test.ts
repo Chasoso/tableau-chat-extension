@@ -1,9 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import {
-  createChatJob,
-  getChatJob,
-  sendChatQuestion,
-} from "./chatApi";
+import { createChatJob, getChatJob, sendChatQuestion } from "./chatApi";
 
 const fetchMock = vi.fn();
 

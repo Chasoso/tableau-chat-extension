@@ -1,7 +1,4 @@
-import {
-  GetItemCommand,
-  PutItemCommand,
-} from "@aws-sdk/client-dynamodb";
+import { GetItemCommand, PutItemCommand } from "@aws-sdk/client-dynamodb";
 import { marshall, unmarshall } from "@aws-sdk/util-dynamodb";
 import { getDynamoDbClient } from "../aws/dynamodb";
 import { getConfig } from "../config";

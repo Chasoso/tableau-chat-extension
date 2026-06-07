@@ -366,8 +366,7 @@ describe("TableauMcpContextProvider", () => {
       TABLEAU_MCP_TRANSPORT: "stdio",
       TABLEAU_MCP_SERVER_URL: "",
       TABLEAU_MCP_TIMEOUT_MS: "5000",
-      TABLEAU_MCP_ALLOWED_TOOLS:
-        "get-workbook,get-datasource-metadata",
+      TABLEAU_MCP_ALLOWED_TOOLS: "get-workbook,get-datasource-metadata",
       TABLEAU_MCP_MAX_TOOL_CALLS: "2",
       TABLEAU_MCP_COMMAND: "",
       TABLEAU_MCP_ARGS: "",
@@ -378,24 +377,24 @@ describe("TableauMcpContextProvider", () => {
     const planSpy = vi
       .spyOn(TableauMcpToolPlanner.prototype, "plan")
       .mockResolvedValue({
-      intent: "data_analysis",
-      confidence: 0.9,
-      answerableFromDashboardContext: false,
-      needsMcp: true,
-      reasonBrief: "Need two independent lookups.",
-      maxToolCalls: 2,
-      toolCalls: [
-        {
-          toolName: "get-workbook",
-          arguments: { workbookId: "11111111-1111-1111-1111-111111111111" },
-          purpose: "Load workbook metadata.",
-        },
-        {
-          toolName: "get-datasource-metadata",
-          arguments: {
-            datasourceLuid: "22222222-2222-2222-2222-222222222222",
+        intent: "data_analysis",
+        confidence: 0.9,
+        answerableFromDashboardContext: false,
+        needsMcp: true,
+        reasonBrief: "Need two independent lookups.",
+        maxToolCalls: 2,
+        toolCalls: [
+          {
+            toolName: "get-workbook",
+            arguments: { workbookId: "11111111-1111-1111-1111-111111111111" },
+            purpose: "Load workbook metadata.",
           },
-          purpose: "Load datasource metadata.",
+          {
+            toolName: "get-datasource-metadata",
+            arguments: {
+              datasourceLuid: "22222222-2222-2222-2222-222222222222",
+            },
+            purpose: "Load datasource metadata.",
           },
         ],
       });

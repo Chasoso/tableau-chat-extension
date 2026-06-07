@@ -117,9 +117,7 @@ describe("chat job routes", () => {
   });
 
   it("returns 404 when the job is missing", async () => {
-    chatJobMocks.getChatJob.mockRejectedValue(
-      new Error("Chat job not found."),
-    );
+    chatJobMocks.getChatJob.mockRejectedValue(new Error("Chat job not found."));
 
     const response = await handler({
       httpMethod: "GET",
