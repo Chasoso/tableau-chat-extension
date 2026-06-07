@@ -56,6 +56,16 @@ vi.mock("../src/logging", () => ({
 
 const logWarnMock = vi.mocked(logWarn);
 
+type ReadyQuerySelection = {
+  status: "ready";
+  arguments: {
+    datasourceLuid: string;
+    query: {
+      fields: Array<Record<string, unknown>>;
+    };
+  };
+};
+
 const baseInput: GetAdditionalContextInput = {
   question: "Resolve dashboard context",
   dashboardContext: {
@@ -203,10 +213,9 @@ describe("TableauMcpContextProvider query analysis", () => {
       throw new Error("Expected a query selection.");
     }
 
-    const fields = selection.arguments.query.fields as Array<
-      Record<string, unknown>
-    >;
-    expect(selection.arguments.datasourceLuid).toBe("ds-123");
+    const readySelection = selection as unknown as ReadyQuerySelection;
+    const fields = readySelection.arguments.query.fields;
+    expect(readySelection.arguments.datasourceLuid).toBe("ds-123");
     expect(fields[0]?.fieldCaption).toMatch(/Hashtag Normalized|Hashtag/);
     expect(fields.some((field) => field.fieldAlias === "engagement_rate")).toBe(
       false,
@@ -274,9 +283,8 @@ describe("TableauMcpContextProvider query analysis", () => {
       throw new Error("Expected a query selection.");
     }
 
-    const fields = selection.arguments.query.fields as Array<
-      Record<string, unknown>
-    >;
+    const readySelection = selection as unknown as ReadyQuerySelection;
+    const fields = readySelection.arguments.query.fields;
     expect(fields.some((field) => field.fieldAlias === "engagement_rate")).toBe(
       false,
     );
@@ -343,9 +351,8 @@ describe("TableauMcpContextProvider query analysis", () => {
       throw new Error("Expected a query selection.");
     }
 
-    const fields = selection.arguments.query.fields as Array<
-      Record<string, unknown>
-    >;
+    const readySelection = selection as unknown as ReadyQuerySelection;
+    const fields = readySelection.arguments.query.fields;
     expect(fields).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
