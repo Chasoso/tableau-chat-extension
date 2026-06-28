@@ -33,3 +33,12 @@ export type {
   TraceStepType,
 } from "./types";
 export { createTraceError, createTraceEvent, createTraceStep } from "./trace";
+export type {
+  AgentRunBudget,
+  AgentRunInput,
+  AgentRunOptions,
+  AgentRunResult,
+  AgentRunWarning,
+  AgentRunner,
+  AgentTraceSink,
+} from "./runner";
