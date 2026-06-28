@@ -1,5 +1,6 @@
 import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import userEvent from "@testing-library/user-event";
+import { describe, expect, it, vi } from "vitest";
 import AIContextPreviewPanel from "./AIContextPreviewPanel";
 import type { ContextPreviewModel } from "../tableau/contextPreview";
 
@@ -156,6 +157,20 @@ function createPreviewModel(): ContextPreviewModel {
       viewId: "not_implemented",
       datasourceFields: "available",
     },
+    actionSuggestions: [
+      {
+        id: "explain_selection",
+        label: "この選択を説明",
+        intent: "selected_mark_explanation",
+        enabled: true,
+        description: "1件の選択マーク・1件をプレビュー表示",
+        source: "selectedMarks",
+        prompt: "この選択を説明してください。",
+        selectedMarkCount: 1,
+        previewCount: 1,
+        truncated: false,
+      },
+    ],
     warnings: ["Live context may be incomplete."],
     metadata: {
       sourceKind: "tableau-extension",
@@ -178,6 +193,7 @@ describe("AIContextPreviewPanel", () => {
     expect(screen.getByText("Parameters")).toBeInTheDocument();
     expect(screen.getByText("Selected Marks")).toBeInTheDocument();
     expect(screen.getByText("Summary Data Preview")).toBeInTheDocument();
+    expect(screen.getByText("Suggested Actions")).toBeInTheDocument();
     expect(screen.getByText("Availability / Warnings")).toBeInTheDocument();
     expect(screen.getAllByText("Executive Overview").length).toBeGreaterThan(1);
     expect(screen.getAllByText("Sales Trend").length).toBeGreaterThan(0);
@@ -185,6 +201,9 @@ describe("AIContextPreviewPanel", () => {
     expect(
       screen.getByText("Live context may be incomplete."),
     ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "この選択を説明" }),
+    ).toBeEnabled();
     expect(
       screen.getByText((content) =>
         content.includes("2026-06-07T01:23:45.000Z"),
@@ -222,6 +241,17 @@ describe("AIContextPreviewPanel", () => {
             items: [],
             note: "Summary data preview is unavailable.",
           },
+          actionSuggestions: [
+            {
+              id: "explain_selection",
+              label: "この選択を説明",
+              intent: "selected_mark_explanation",
+              enabled: false,
+              reason: "マークが選択されていません。",
+              source: "selectedMarks",
+              prompt: "この選択を説明してください。",
+            },
+          ],
           warnings: [],
           lastChangedWorksheet: null,
         }}
@@ -234,7 +264,32 @@ describe("AIContextPreviewPanel", () => {
     expect(
       screen.getByText("Summary data preview is unavailable."),
     ).toBeInTheDocument();
+    expect(screen.getByText("Suggested Actions")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "この選択を説明" }),
+    ).toBeDisabled();
     expect(screen.getByText("No warnings")).toBeInTheDocument();
     expect(screen.getByText("Not available")).toBeInTheDocument();
+  });
+
+  it("invokes the action suggestion callback without auto submitting anything", async () => {
+    const user = userEvent.setup();
+    const onActionSuggestionClick = vi.fn();
+
+    render(
+      <AIContextPreviewPanel
+        preview={createPreviewModel()}
+        onActionSuggestionClick={onActionSuggestionClick}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "この選択を説明" }));
+
+    expect(onActionSuggestionClick).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: "explain_selection",
+        prompt: "この選択を説明してください。",
+      }),
+    );
   });
 });
