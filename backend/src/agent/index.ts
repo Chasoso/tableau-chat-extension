@@ -33,6 +33,7 @@ export type {
   TraceStepType,
 } from "./types";
 export { createTraceError, createTraceEvent, createTraceStep } from "./trace";
+export { LambdaAgentRunner, createLambdaAgentRunner } from "./lambdaRunner";
 export type {
   AgentRunBudget,
   AgentRunInput,
