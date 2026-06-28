@@ -33,6 +33,23 @@ export type {
   TraceStepType,
 } from "./types";
 export { createTraceError, createTraceEvent, createTraceStep } from "./trace";
+export {
+  buildFixedPlan,
+  CURRENT_DASHBOARD_SUMMARY_PLAN,
+  UNSUPPORTED_FIXED_PLAN,
+} from "./fixedPlans";
+export type {
+  BuildFixedPlanInput,
+  FixedPlan,
+  FixedPlanContextPack,
+  FixedPlanFallbackBehavior,
+  FixedPlanId,
+  FixedPlanResponseStrategy,
+  FixedPlanSelection,
+  FixedPlanStep,
+  FixedPlanTarget,
+  FixedPlanToolPolicy,
+} from "./fixedPlans";
 export { LambdaAgentRunner, createLambdaAgentRunner } from "./lambdaRunner";
 export type {
   AgentRunBudget,
