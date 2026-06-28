@@ -4,6 +4,10 @@ import type { AgentRunId } from "./runId";
 
 export type AgentContextSource = "tableau-extension" | "api" | "job-worker";
 
+export type JsonPrimitive = string | number | boolean | null;
+export type JsonValue = JsonPrimitive | JsonObject | JsonValue[];
+export type JsonObject = { [key: string]: JsonValue };
+
 export type AgentUserContext = Pick<
   AuthenticatedUser,
   "userId" | "email" | "tableauSubject" | "tokenUse"
@@ -30,6 +34,14 @@ export type ContextPack = {
 };
 
 export type AgentIntentName = QuestionIntent;
+
+export type AgentRunStatus =
+  | "queued"
+  | "planning"
+  | "running"
+  | "completed"
+  | "failed"
+  | "cancelled";
 
 export type AgentIntent = {
   name: AgentIntentName;
@@ -83,7 +95,7 @@ export type ToolAction = {
   timeoutMs?: number;
 };
 
-export type TraceEventKind =
+export type TraceEventType =
   | "run_started"
   | "context_normalized"
   | "intent_resolved"
@@ -96,18 +108,63 @@ export type TraceEventKind =
   | "run_completed"
   | "run_failed";
 
+export type TraceEventKind = TraceEventType;
+
 export type TraceEventSeverity = "debug" | "info" | "warn" | "error";
+
+export type TraceStepType =
+  | "context_normalization"
+  | "intent_resolution"
+  | "plan_build"
+  | "tool_routing"
+  | "tool_execution"
+  | "response_composition";
+
+export type TraceStepStatus =
+  | "pending"
+  | "running"
+  | "completed"
+  | "failed"
+  | "skipped";
+
+export type TraceError = {
+  code: string;
+  message: string;
+  details?: JsonObject;
+  stack?: string;
+  cause?: string;
+};
+
+export type TraceStep = {
+  agentRunId: AgentRunId;
+  stepId: string;
+  type: TraceStepType;
+  status: TraceStepStatus;
+  message: string;
+  startedAt?: string;
+  endedAt?: string;
+  metadata?: JsonObject;
+  error?: TraceError;
+};
 
 export type TraceEvent = {
   agentRunId: AgentRunId;
   eventId: string;
   at: string;
+  type: TraceEventType;
   kind: TraceEventKind;
   severity: TraceEventSeverity;
   message: string;
+  runStatus?: AgentRunStatus;
+  stepId?: string;
+  stepType?: TraceStepType;
+  stepStatus?: TraceStepStatus;
   step?: AgentPlanStepType;
   toolAction?: ToolAction;
-  data?: Record<string, unknown>;
+  traceStep?: TraceStep;
+  metadata?: JsonObject;
+  error?: TraceError;
+  data?: JsonObject;
 };
 
 export type AgentRunContext = {
