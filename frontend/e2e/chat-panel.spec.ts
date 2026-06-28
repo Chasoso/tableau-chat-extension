@@ -100,10 +100,11 @@ test.describe("chat panel", () => {
     await expect(page.locator(".question-starters")).toBeVisible();
     await expect(page.locator(".starter-user-row button")).toHaveCount(3);
 
-    await expect(page.getByText("Mock Executive Sales Dashboard")).toHaveCount(
-      0,
-    );
-    await expect(page.getByText("Mock Sales Workbook")).toHaveCount(0);
+    const chatPanel = page.locator(".chat-panel");
+    await expect(
+      chatPanel.getByText("Mock Executive Sales Dashboard"),
+    ).toHaveCount(0);
+    await expect(chatPanel.getByText("Mock Sales Workbook")).toHaveCount(0);
 
     const panelOverflow = await page
       .locator(".chat-panel")
@@ -126,7 +127,9 @@ test.describe("chat panel", () => {
 
     await expect(page.locator(".message-bubble.user")).toHaveCount(1);
     await expect(page.locator(".message-bubble.assistant")).toHaveCount(1);
-    await expect(page.getByRole("heading", { name: "Summary" })).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: /^Summary$/ }),
+    ).toBeVisible();
     await expect(
       page.getByText(
         "This is a mocked assistant response for UI verification.",
@@ -144,7 +147,9 @@ test.describe("chat panel", () => {
     await input.press("Enter");
 
     await expect(page.getByText("How is the trend this week?")).toBeVisible();
-    await expect(page.getByRole("heading", { name: "Summary" })).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: /^Summary$/ }),
+    ).toBeVisible();
     await expect(input).toHaveValue("");
   });
 

@@ -18,6 +18,9 @@ const mocks = vi.hoisted(() => {
   const initializeTableauExtensionMock = vi.fn();
   const getDashboardContextMock = vi.fn();
   const buildContextPreviewModelMock = vi.fn();
+  const aiContextPreviewPanelMock = vi.fn(() => (
+    <div data-testid="context-preview-panel" />
+  ));
   const registerMarkSelectionChangedListenersMock = vi.fn();
   const chatPanelMock = vi.fn(() => <div data-testid="chat-panel" />);
   const cleanupMock = vi.fn();
@@ -34,6 +37,7 @@ const mocks = vi.hoisted(() => {
     initializeTableauExtensionMock,
     getDashboardContextMock,
     buildContextPreviewModelMock,
+    aiContextPreviewPanelMock,
     registerMarkSelectionChangedListenersMock,
     chatPanelMock,
     cleanupMock,
@@ -58,6 +62,10 @@ vi.mock("./env", () => ({
 
 vi.mock("./components/ChatPanel", () => ({
   default: mocks.chatPanelMock,
+}));
+
+vi.mock("./components/AIContextPreviewPanel", () => ({
+  default: mocks.aiContextPreviewPanelMock,
 }));
 
 vi.mock("./tableau/tableauExtension", () => ({
@@ -89,6 +97,7 @@ describe("App", () => {
     mocks.initializeTableauExtensionMock.mockReset();
     mocks.getDashboardContextMock.mockReset();
     mocks.buildContextPreviewModelMock.mockReset();
+    mocks.aiContextPreviewPanelMock.mockClear();
     mocks.registerMarkSelectionChangedListenersMock.mockClear();
     mocks.chatPanelMock.mockClear();
     mocks.cleanupMock.mockReset();
@@ -153,54 +162,56 @@ describe("App", () => {
       capturedAt: "2026-06-07T00:01:00.000Z",
     });
 
-    mocks.buildContextPreviewModelMock.mockReturnValue({
-      previewVersion: "v1",
-      generatedAt: "2026-06-07T00:00:00.000Z",
-      dashboard: { name: "Executive Overview" },
-      workbook: {
-        name: "Sales Workbook",
-        id: "workbook-1",
-        contentUrl: "sales-workbook",
-      },
-      view: { name: "Executive Overview", id: "view-1" },
-      worksheets: [],
-      filters: [],
-      parameters: [],
-      selectedMarks: {
-        status: "empty",
-        items: [],
-        totalCount: 0,
-        previewCount: 0,
-        limit: 10,
-        truncated: false,
-      },
-      dataSources: [],
-      summaryDataPreview: {
-        status: "notCollected",
-        generatedAt: null,
-        updatedAt: null,
-        maxRows: 20,
-        maxColumns: 20,
-        totalWorksheetCount: 0,
-        previewWorksheetCount: 0,
-        truncated: false,
-        items: [],
-        note: "Summary data preview has not been collected yet.",
-      },
-      lastChangedWorksheet: null,
-      availability: {
-        status: "available",
-        workbookId: "available",
-        viewId: "not_implemented",
-        datasourceFields: "not_implemented",
-      },
-      warnings: [],
-      metadata: {
-        sourceKind: "tableau-extension",
-        sourceVersion: "dashboard-context-preview-v2",
-        generatedFrom: "dashboardContext",
-      },
-    });
+    mocks.buildContextPreviewModelMock.mockImplementation(
+      (_context, options) => ({
+        previewVersion: "v1",
+        generatedAt: "2026-06-07T00:00:00.000Z",
+        dashboard: { name: "Executive Overview" },
+        workbook: {
+          name: "Sales Workbook",
+          id: "workbook-1",
+          contentUrl: "sales-workbook",
+        },
+        view: { name: "Executive Overview", id: "view-1" },
+        worksheets: [],
+        filters: [],
+        parameters: [],
+        selectedMarks: {
+          status: "empty",
+          items: [],
+          totalCount: 0,
+          previewCount: 0,
+          limit: 10,
+          truncated: false,
+        },
+        dataSources: [],
+        summaryDataPreview: {
+          status: "notCollected",
+          generatedAt: null,
+          updatedAt: null,
+          maxRows: 20,
+          maxColumns: 20,
+          totalWorksheetCount: 0,
+          previewWorksheetCount: 0,
+          truncated: false,
+          items: [],
+          note: "Summary data preview has not been collected yet.",
+        },
+        lastChangedWorksheet: options?.lastChangedWorksheet ?? null,
+        availability: {
+          status: "available",
+          workbookId: "available",
+          viewId: "not_implemented",
+          datasourceFields: "not_implemented",
+        },
+        warnings: [],
+        metadata: {
+          sourceKind: "tableau-extension",
+          sourceVersion: "dashboard-context-preview-v2",
+          generatedFrom: "dashboardContext",
+        },
+      }),
+    );
   });
 
   it("registers mark selection listeners and rebuilds context preview on selection change", async () => {
@@ -211,6 +222,7 @@ describe("App", () => {
       expect(
         mocks.registerMarkSelectionChangedListenersMock,
       ).toHaveBeenCalledTimes(1);
+      expect(mocks.aiContextPreviewPanelMock).toHaveBeenCalled();
     });
 
     mocks.getDashboardContextMock.mockClear();
@@ -241,6 +253,19 @@ describe("App", () => {
           source: "selection",
         },
       },
+    );
+    expect(mocks.aiContextPreviewPanelMock).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        preview: expect.objectContaining({
+          lastChangedWorksheet: {
+            worksheetName: "Sales Trend",
+            worksheetId: "worksheet-1",
+            changedAt: "2026-06-07T01:23:45.000Z",
+            source: "selection",
+          },
+        }),
+      }),
+      undefined,
     );
 
     unmount();
