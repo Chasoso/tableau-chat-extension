@@ -35,3 +35,34 @@ This document defines the mandatory operational constraints for the AI Agent whe
 - **Physical Reality Rule**: A task is only "done" when the change is reflected in the file system, not when it is described in the chat.
 - **Verification Required**: Every tool execution that modifies the file system must be followed by a verification step (e-g, `ls` or `read_file`) to ensure the change was successful.
 
+## 5. Issue and Scope Control
+
+- Work on one GitHub Issue at a time.
+- Keep changes focused on the target Issue.
+- Do not make unrelated refactors or formatting-only changes.
+- Preserve existing runtime behavior unless the target Issue explicitly requires a behavior change.
+- Do not change public API responses, authentication, deployment, or infrastructure unless explicitly requested.
+- If a scope expansion is necessary, explain why before making the change.
+
+## 6. Required Checks and Final Report
+
+Before reporting completion, run the relevant checks.
+
+For backend changes:
+- Run backend lint.
+- Run backend typecheck.
+- Run backend tests.
+
+For frontend changes:
+- Run frontend lint.
+- Run frontend typecheck.
+- Run frontend tests when available or relevant.
+
+If a script does not exist, inspect the relevant package.json and report that it is unavailable.
+
+The final report must include:
+- Changed files
+- Summary of implementation
+- Commands executed
+- Result of each command
+- Known limitations or follow-up work
