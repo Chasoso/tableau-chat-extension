@@ -24,6 +24,23 @@
 - [frontend/src/components/ChatPanel.tsx](../frontend/src/components/ChatPanel.tsx)
 - [frontend/src/tableau/tableauExtension.ts](../frontend/src/tableau/tableauExtension.ts)
 
+### v0.2 実装状況
+
+v0.2.0 の土台は次の順で揃った。
+
+- 完了済み
+  - Issue #19: `ContextPack` / `AgentIntent` / `AgentPlan` / `ToolAction` / `TraceEvent` などの agent core types
+  - Issue #20: `agentRunId` helper と trace schema
+  - Issue #21: `AgentRunner` interface
+  - Issue #18: `LambdaAgentRunner` wrapper
+  - Issue #23: Minimal fixed plan design
+- まだ接続していないもの
+  - `ChatService` の実行フローは `runLightweightAgentLoop()` のまま
+  - `LambdaAgentRunner` は既存 job flow に未接続
+  - fixed plan は定義と選択ロジックまでで、ExecutionEngine には未接続
+  - ContextPack preview API / UI は未導入
+  - `IntentResolver` / `ToolRouter` / `ExecutionEngine` / `TraceLogger` は v0.3 以降の実装対象
+
 ### 現在の入口
 
 - ユーザー質問の主要入口は `frontend/src/components/ChatPanel.tsx` の `handleSend` から `createChatJob()` へ流れる `POST /chat-jobs`。
@@ -293,83 +310,62 @@ frontend/src/
 - `ChatResponse.debug` と `ChatJobRecord.progressMessages` だけでは将来の trace 要件を満たしにくい。
 - `agentRunId` / `stepId` / `traceEventType` を持つ共通 trace モデルが必要。
 
-## 7. v0.2.0 で実装する最小スコープ
+## 7. v0.2.0 で実装済みの範囲
 
-v0.2.0 の目標は「将来差し替え可能な骨格を作ること」であり、機能増強ではない。
+v0.2.0 の完了時点で、次の基礎部品は揃っている。
 
-### 必須
+### 実装済み
 
-- `AgentOrchestrator` の設計と実装方針
-- `Context / Intent / Plan / Tool / Trace` の型定義案
-- 既存処理の分解単位の提案
-- `AgentRunner` interface の設計案
-- `LambdaAgentRunner` を既存構成からどう移行するかの方針
-- 将来 `AgentCoreRunner` を追加できる抽象化方針
-- すべての実行に `agentRunId` を付与
-- trace を残せる共通フォーマット案
+- Issue #19: ContextPack / AgentIntent / AgentPlan / ToolAction / TraceEvent / AgentRunId の core types
+- Issue #20: agentRunId helper と trace schema
+- Issue #21: AgentRunner interface
+- Issue #18: LambdaAgentRunner wrapper
+- Issue #23: Minimal fixed plan design
+- `backend/src/agent/index.ts` からの export 整理
 
-### 実装しない
+### まだ接続していない範囲
 
-- AgentCore 移植
-- 音声入力
-- 新規の高度なツール追加
-- 既存 UI の大幅刷新
-- 既存デプロイ方式の全面変更
-
-### v0.2 の実行方針
-
-1. 現行 API を壊さずに、内部の agent 処理を新しい境界へ寄せる。
-2. まず `ContextPack` と `Trace` を導入する。
-3. 次に `AgentRunner` で current flow を包む。
-4. 最後に fixed plan へ移行する。
+- `ChatService` の本流はまだ `runLightweightAgentLoop()` のまま
+- `LambdaAgentRunner` は既存 job flow に未接続
+- fixed plan は定義と選択ロジックまでで、ExecutionEngine に未接続
+- `IntentResolver` / `ToolRouter` / `ExecutionEngine` / `TraceLogger` の本体は未実装
+- ContextPack preview API / UI は未導入
 
 ## 8. v0.3.0 以降に回すべきスコープ
 
-v0.2 で無理に入れないほうがよいもの。
+v0.2 で意図的に残した次フェーズ候補。
 
-- AgentCoreRunner 実装
+- ContextPack preview API / UI
+- Tableau Extension API context collector の強化
+- MarkSelectionChanged listener
+- AI Context Preview panel
+- Orchestrator facade
+- `LambdaAgentRunner` を既存 chat job flow に接続する変更
+- ExecutionEngine の最小実装
+- IntentResolver の最小実装
+- ToolRouter の最小実装
+- `selected_mark_explanation` fixed plan の実行接続
+- `current_dashboard_summary` fixed plan の実行接続
+- AgentCoreRunner への差し替え
 - AgentCore Gateway 連携
-- 音声入力 / 音声応答
-- 高度な streaming trace UI
-- 複数 tool provider の動的レジストリ化
-- Notebook/Canvas 的な長期ワークスペース
-- Notion を含む action 層の細かなプラグイン化
-- ルールベースを超える汎用エージェントループの再導入
+- Streaming trace UI
+- Notion を tool layer へ寄せるかどうかの再整理
 
 ## 9. 移行手順
 
-### Phase 0: 現状凍結
+### 現在地
 
-- 既存の `/chat-jobs`、`/chat-jobs/{id}`、`/context`、Notion の基本フローを integration test で固定する。
-- 既存出力の互換性を確認する。
+1. v0.2 の基礎型・trace・runner・wrapper・fixed plan は揃った。
+2. 既存の実行フローはまだ壊さず、接続点を次フェーズに残している。
 
-### Phase 1: 型と trace の導入
+### 次の移行順
 
-- `ContextPack`、`Intent`、`Plan`、`ToolAction`、`TraceEvent` の型を追加する。
-- `agentRunId` を request ごとに生成する。
-- `ChatJobRecord` に `agentRunId` を紐づける方針を決める。
-
-### Phase 2: Orchestrator の薄い導入
-
-- `AgentRunner` interface を追加する。
-- `LambdaAgentRunner` を作り、既存の `ChatService` を内部的に包む。
-- まずは behavior を変えずに trace だけ収集する。
-
-### Phase 3: 固定 Plan 化
-
-- Intent ごとに `fixed plan` を定義する。
-- ループ型の再計画をやめ、必要な tool set を事前に決める。
-- MCP は「必要なときだけ」呼ぶように分岐を移す。
-
-### Phase 4: 実行エンジン分離
-
-- `ToolRouter` と `ExecutionEngine` を分離する。
-- Tableau MCP / REST / Metadata / Notion を個別 tool として扱う。
-
-### Phase 5: `ChatService` の縮退
-
-- `ChatService` を API facade とし、orchestrator へ委譲する。
-- 既存の fast path や fallback は必要最小限に残す。
+1. ContextPack preview API / UI を整える。
+2. Orchestrator facade を追加し、入口を一本化する。
+3. `LambdaAgentRunner` を chat job flow に接続する。
+4. 最小の IntentResolver / PlanBuilder / ToolRouter / ExecutionEngine を追加する。
+5. fixed plan の実行接続を進める。
+6. その後に AgentCoreRunner へ差し替え可能な境界を確認する。
 
 ## 10. リスクと注意点
 
@@ -385,12 +381,11 @@ v0.2 で無理に入れないほうがよいもの。
 
 ### 11.1 Unit
 
-- `ContextNormalizer`
-- `IntentResolver`
-- `PlanBuilder`
-- `ToolRouter`
-- `TraceLogger`
-- `AgentRunner` の各アダプタ
+- `ContextPack`
+- `TraceEvent`
+- `AgentRunner`
+- `LambdaAgentRunner`
+- `buildFixedPlan()`
 
 ### 11.2 Contract
 
@@ -413,16 +408,14 @@ v0.2 で無理に入れないほうがよいもの。
 
 ## 12. 実装前に確認すべき未解決事項
 
-1. v0.2 で主要入口は `/chat` ではなく `/chat-jobs` に統一するか。
-2. `ContextPack` は frontend で完結させるか、backend でも正規化するか。
-3. `agentRunId` を `ChatJobRecord` と完全に一致させるか、job 配下の子 ID にするか。
-4. trace の永続先は DynamoDB、CloudWatch、S3 のどれを主にするか。
-5. Notion は v0.2 では action 連携のまま残すか、tool layer に寄せるか。
-6. `TableauContextProvider` の `mock / direct-api / mcp` 切り替えを残すか、v0.2 では新しい collector abstraction に寄せ始めるか。
-7. `CHAT_AGENT_ENABLED` 相当のスイッチを残すか。
-8. 失敗時の fallback を「回答生成の fallback」に限定するか、「tool plan fallback」も許容するか。
-9. 固定 Plan の単位を intent ベースにするか、より細かい dashboard task ベースにするか。
-10. 既存の `POST /context` を v0.2 でも残すか、context pack preview API に置き換えるか。
+v0.2 の完了により多くは次フェーズへ送れるが、v0.3 へ入る前に再確認したい点を残す。
+
+1. `ContextPack preview` を `/context` の互換維持で進めるか、新 API として分けるか。
+2. `agentRunId` を job ID と完全一致させるか、子 ID にするか。
+3. trace の永続先は DynamoDB、CloudWatch、S3 のどれを主にするか。
+4. `CHAT_AGENT_ENABLED` 相当のスイッチを残すか。
+5. fixed plan の追加単位を intent ベースで拡張するか、dashboard task ベースにするか。
+6. Notion は action 連携のまま残すか、tool layer に寄せるか。
 
 ## 13. 既存コードの処理フロー詳細
 
@@ -460,6 +453,7 @@ v0.2 で無理に入れないほうがよいもの。
 - `AnswerGenerator.generate()` が最後の自然文回答を作る。
 - `buildNotionDraft()` が必要なら Notion 下書きを作る。
 - `persistAndBuildResponse()` が履歴を保存してレスポンスを返す。
+- v0.2 で追加した `backend/src/agent/` の基礎部品は、この既存フローの外側に並ぶ土台として存在しているが、まだ本流には接続していない。
 
 ### 13.5 Bedrock call count が増えやすい箇所
 
@@ -470,16 +464,19 @@ v0.2 で無理に入れないほうがよいもの。
 
 このため、現在は質問 1 回あたり 1〜2 回に抑えたいという方針に対して、実装上はまだ余地が大きい。
 
-## 14. 次の実装依頼で Codex に渡すべき具体的タスクリスト
+## 14. 次フェーズ候補
 
-1. `backend/src/agent/` 配下に `ContextPack`、`Intent`、`Plan`、`ToolAction`、`TraceEvent` の型を追加する。
-2. `AgentRunner` interface と `LambdaAgentRunner` の骨組みを作る。
-3. `ChatService` から `runLightweightAgentLoop()` を切り離し、orchestrator 経由に差し替える。
-4. `TableauMcpContextProvider` を `ContextCollector` と `ToolExecutor` に分割する。
-5. `POST /chat-jobs` に `agentRunId` を返し、job と trace を追えるようにする。
-6. `TraceLogger` の保存先と JSON schema を決めて実装する。
-7. `POST /context` を `ContextPack preview` として再定義するか、互換維持するかを確定する。
-8. `ChatPanel` 側で `ContextPack preview` を表示する導線を整理する。
-9. `notion` を action と tool のどちらに置くかを確定し、実装境界を固定する。
-10. 既存の integration test を固定してから、固定 Plan 化を進める。
+Issue 化しやすい粒度で整理した次の候補。
 
+1. `ContextPack preview API` の設計と実装
+2. `AI Context Preview panel` の実装
+3. Tableau Extension API の `DashboardStateCollector` 強化
+4. `MarkSelectionChanged` listener の追加
+5. `Orchestrator facade` の導入
+6. `LambdaAgentRunner` を chat job flow に接続する Issue
+7. `IntentResolver` の最小実装
+8. `ToolRouter` の最小実装
+9. `ExecutionEngine` の最小実装
+10. `current_dashboard_summary` fixed plan の実行接続
+11. `selected_mark_explanation` fixed plan の実行接続
+12. `TraceLogger` の永続化先を確定する Issue
