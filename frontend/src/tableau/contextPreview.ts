@@ -19,6 +19,15 @@ export type ContextPreviewCellValue = string | number | boolean | null;
 
 export type ContextPreviewRow = Record<string, ContextPreviewCellValue>;
 
+export type ContextPreviewSectionStatus = "available" | "empty";
+
+export type ContextPreviewValueList = {
+  items: string[];
+  totalCount: number;
+  limit: number;
+  truncated: boolean;
+};
+
 export type ContextPreviewDashboard = {
   name: string;
 };
@@ -34,7 +43,31 @@ export type ContextPreviewView = {
   id?: string | null;
 };
 
+export type ContextPreviewFilter = {
+  status: ContextPreviewSectionStatus;
+  worksheetName?: string | null;
+  fieldName: string;
+  filterType?: string | null;
+  appliedValues: ContextPreviewValueList;
+  isAllSelected: boolean | null;
+};
+
+export type ContextPreviewParameterValue = {
+  raw: ContextPreviewCellValue;
+  display: string;
+  isEmpty: boolean;
+};
+
+export type ContextPreviewParameter = {
+  status: ContextPreviewSectionStatus;
+  name: string;
+  currentValue: ContextPreviewParameterValue;
+  dataType?: string | null;
+  allowableValues: ContextPreviewValueList;
+};
+
 export type ContextPreviewSelectedMarks = {
+  status: ContextPreviewSectionStatus;
   items: SelectedMarkSummary[];
   totalCount: number;
   limit: number;
@@ -73,6 +106,12 @@ export type ContextPreviewMetadata = {
   generatedFrom: "dashboardContext";
 };
 
+export type ContextPreviewBuildOptions = {
+  filterValueLimit?: number;
+  parameterValueLimit?: number;
+  selectedMarkLimit?: number;
+};
+
 export type ContextPreviewModel = {
   previewVersion: ContextPreviewVersion;
   generatedAt: string;
@@ -80,8 +119,8 @@ export type ContextPreviewModel = {
   workbook: ContextPreviewWorkbook;
   view: ContextPreviewView;
   worksheets: WorksheetSummary[];
-  filters: FilterSummary[];
-  parameters: ParameterSummary[];
+  filters: ContextPreviewFilter[];
+  parameters: ContextPreviewParameter[];
   selectedMarks: ContextPreviewSelectedMarks;
   dataSources: DataSourceSummary[];
   summaryDataPreview: ContextPreviewSummaryDataPreview;
@@ -92,16 +131,26 @@ export type ContextPreviewModel = {
 };
 
 const DEFAULT_SELECTED_MARK_LIMIT = 10;
+const DEFAULT_FILTER_VALUE_LIMIT = 10;
+const DEFAULT_PARAMETER_VALUE_LIMIT = 10;
 
 export function buildContextPreviewModel(
   dashboardContext: DashboardContext,
+  options: ContextPreviewBuildOptions = {},
 ): ContextPreviewModel {
   const worksheets = cloneWorksheets(dashboardContext.worksheets ?? []);
-  const filters = cloneFilters(dashboardContext.filters ?? []);
-  const parameters = cloneParameters(dashboardContext.parameters ?? []);
+  const filters = buildFilterPreviews(
+    dashboardContext.filters ?? [],
+    options.filterValueLimit ?? DEFAULT_FILTER_VALUE_LIMIT,
+  );
+  const parameters = buildParameterPreviews(
+    dashboardContext.parameters ?? [],
+    options.parameterValueLimit ?? DEFAULT_PARAMETER_VALUE_LIMIT,
+  );
   const dataSources = cloneDataSources(dashboardContext.dataSources ?? []);
   const selectedMarks = buildSelectedMarksPreview(
     dashboardContext.selectedMarks ?? [],
+    options.selectedMarkLimit ?? DEFAULT_SELECTED_MARK_LIMIT,
   );
   const availability = buildAvailability(dashboardContext.availability);
   const warnings = buildWarnings(dashboardContext);
@@ -135,7 +184,7 @@ export function buildContextPreviewModel(
     warnings,
     metadata: {
       sourceKind: dashboardContext.contextSource ?? "unknown",
-      sourceVersion: "dashboard-context-preview-v1",
+      sourceVersion: "dashboard-context-preview-v2",
       generatedFrom: "dashboardContext",
     },
   };
@@ -148,20 +197,46 @@ function cloneWorksheets(worksheets: WorksheetSummary[]): WorksheetSummary[] {
   }));
 }
 
-function cloneFilters(filters: FilterSummary[]): FilterSummary[] {
-  return filters.map((filter) => ({
-    ...filter,
-    appliedValues: filter.appliedValues ? [...filter.appliedValues] : undefined,
-  }));
+function buildFilterPreviews(
+  filters: FilterSummary[],
+  limit: number,
+): ContextPreviewFilter[] {
+  return filters.map((filter) => {
+    const values = normalizeValueList(filter.appliedValues ?? [], limit);
+
+    return {
+      status: values.totalCount > 0 ? "available" : "empty",
+      worksheetName: filter.worksheetName ?? null,
+      fieldName: filter.fieldName,
+      filterType: filter.filterType ?? null,
+      appliedValues: values,
+      isAllSelected: filter.isAllSelected ?? null,
+    };
+  });
 }
 
-function cloneParameters(parameters: ParameterSummary[]): ParameterSummary[] {
-  return parameters.map((parameter) => ({
-    ...parameter,
-    allowableValues: parameter.allowableValues
-      ? [...parameter.allowableValues]
-      : undefined,
-  }));
+function buildParameterPreviews(
+  parameters: ParameterSummary[],
+  limit: number,
+): ContextPreviewParameter[] {
+  return parameters.map((parameter) => {
+    const allowableValues = normalizeValueList(
+      parameter.allowableValues ?? [],
+      limit,
+    );
+    const currentValue = normalizeParameterValue(parameter.currentValue);
+
+    return {
+      status:
+        currentValue.isEmpty && allowableValues.totalCount === 0
+          ? "empty"
+          : "available",
+      name: parameter.name,
+      currentValue,
+      dataType: parameter.dataType ?? null,
+      allowableValues,
+    };
+  });
 }
 
 function cloneDataSources(
@@ -175,23 +250,67 @@ function cloneDataSources(
 
 function buildSelectedMarksPreview(
   selectedMarks: SelectedMarkSummary[],
+  limit: number,
 ): ContextPreviewSelectedMarks {
   const totalCount = selectedMarks.length;
-  const truncated = totalCount > DEFAULT_SELECTED_MARK_LIMIT;
-  const items = selectedMarks
-    .slice(0, DEFAULT_SELECTED_MARK_LIMIT)
-    .map((mark) => ({
-      ...mark,
-      columns: mark.columns ? [...mark.columns] : undefined,
-      status: mark.status ?? ("available" as Availability),
-    }));
+  const truncated = totalCount > limit;
+  const items = selectedMarks.slice(0, limit).map((mark) => ({
+    ...mark,
+    columns: mark.columns ? [...mark.columns] : undefined,
+    status: mark.status ?? ("available" as Availability),
+  }));
 
   return {
+    status: totalCount > 0 ? "available" : "empty",
     items,
     totalCount,
-    limit: DEFAULT_SELECTED_MARK_LIMIT,
+    limit,
     truncated,
   };
+}
+
+function normalizeValueList(
+  values: Array<string | number | boolean | null | undefined>,
+  limit: number,
+): ContextPreviewValueList {
+  const normalized = values.map((value) => normalizeDisplayValue(value));
+  const totalCount = normalized.length;
+  return {
+    items: normalized.slice(0, limit),
+    totalCount,
+    limit,
+    truncated: totalCount > limit,
+  };
+}
+
+function normalizeParameterValue(
+  value: ParameterSummary["currentValue"],
+): ContextPreviewParameterValue {
+  return {
+    raw: value ?? null,
+    display: normalizeDisplayValue(value),
+    isEmpty: value === null || value === undefined || value === "",
+  };
+}
+
+function normalizeDisplayValue(value: unknown): string {
+  if (value === null || value === undefined) {
+    return "Not set";
+  }
+
+  if (typeof value === "string") {
+    return value.trim() ? value : "(empty)";
+  }
+
+  if (typeof value === "number" || typeof value === "boolean") {
+    return String(value);
+  }
+
+  try {
+    return JSON.stringify(value) ?? String(value);
+  } catch {
+    return String(value);
+  }
 }
 
 function buildAvailability(

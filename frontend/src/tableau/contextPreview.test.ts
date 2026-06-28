@@ -111,7 +111,7 @@ describe("contextPreview", () => {
       warnings: ["Live context may be incomplete."],
       metadata: {
         sourceKind: "tableau-extension",
-        sourceVersion: "dashboard-context-preview-v1",
+        sourceVersion: "dashboard-context-preview-v2",
         generatedFrom: "dashboardContext",
       },
     });
@@ -129,19 +129,35 @@ describe("contextPreview", () => {
     ]);
     expect(preview.filters).toEqual([
       {
+        status: "available",
         worksheetName: "Sales Trend",
         fieldName: "Region",
         filterType: "categorical",
-        appliedValues: ["West", "Central"],
+        appliedValues: {
+          items: ["West", "Central"],
+          totalCount: 2,
+          limit: 10,
+          truncated: false,
+        },
         isAllSelected: false,
       },
     ]);
     expect(preview.parameters).toEqual([
       {
+        status: "available",
         name: "Metric Selector",
-        currentValue: "Sales",
+        currentValue: {
+          raw: "Sales",
+          display: "Sales",
+          isEmpty: false,
+        },
         dataType: "string",
-        allowableValues: ["Sales", "Profit"],
+        allowableValues: {
+          items: ["Sales", "Profit"],
+          totalCount: 2,
+          limit: 10,
+          truncated: false,
+        },
       },
     ]);
     expect(preview.selectedMarks.items).toEqual([
@@ -186,6 +202,7 @@ describe("contextPreview", () => {
     expect(preview.filters).toEqual([]);
     expect(preview.parameters).toEqual([]);
     expect(preview.selectedMarks).toEqual({
+      status: "empty",
       items: [],
       totalCount: 0,
       limit: 10,
@@ -202,7 +219,7 @@ describe("contextPreview", () => {
     ]);
   });
 
-  it("truncates selected marks for preview safety", () => {
+  it("truncates selected marks and preview value lists for safety", () => {
     const dashboardContext = createDashboardContext();
     dashboardContext.selectedMarks = Array.from({ length: 12 }, (_, index) => ({
       worksheetName: `Worksheet ${index + 1}`,
@@ -210,11 +227,35 @@ describe("contextPreview", () => {
       rowCount: index + 1,
       status: "available",
     }));
+    dashboardContext.filters = [
+      {
+        worksheetName: "Sales Trend",
+        fieldName: "Region",
+        filterType: "categorical",
+        appliedValues: Array.from(
+          { length: 12 },
+          (_, index) => `Region ${index + 1}`,
+        ),
+        isAllSelected: false,
+      },
+    ];
+    dashboardContext.parameters = [
+      {
+        name: "Long Parameter",
+        currentValue: true,
+        dataType: "boolean",
+        allowableValues: Array.from(
+          { length: 12 },
+          (_, index) => `Value ${index + 1}`,
+        ),
+      },
+    ];
 
     const preview = buildContextPreviewModel(dashboardContext);
 
     expect(preview.selectedMarks.totalCount).toBe(12);
     expect(preview.selectedMarks.truncated).toBe(true);
+    expect(preview.selectedMarks.status).toBe("available");
     expect(preview.selectedMarks.items).toHaveLength(10);
     expect(preview.selectedMarks.items[0]).toMatchObject({
       worksheetName: "Worksheet 1",
@@ -222,6 +263,146 @@ describe("contextPreview", () => {
     expect(preview.selectedMarks.items[9]).toMatchObject({
       worksheetName: "Worksheet 10",
     });
+    expect(preview.filters[0]).toMatchObject({
+      status: "available",
+      appliedValues: {
+        items: [
+          "Region 1",
+          "Region 2",
+          "Region 3",
+          "Region 4",
+          "Region 5",
+          "Region 6",
+          "Region 7",
+          "Region 8",
+          "Region 9",
+          "Region 10",
+        ],
+        totalCount: 12,
+        limit: 10,
+        truncated: true,
+      },
+    });
+    expect(preview.parameters[0]).toMatchObject({
+      status: "available",
+      currentValue: {
+        raw: true,
+        display: "true",
+        isEmpty: false,
+      },
+      allowableValues: {
+        items: [
+          "Value 1",
+          "Value 2",
+          "Value 3",
+          "Value 4",
+          "Value 5",
+          "Value 6",
+          "Value 7",
+          "Value 8",
+          "Value 9",
+          "Value 10",
+        ],
+        totalCount: 12,
+        limit: 10,
+        truncated: true,
+      },
+    });
+  });
+
+  it("formats parameter current values across scalar types", () => {
+    const dashboardContext = createDashboardContext();
+    dashboardContext.parameters = [
+      {
+        name: "String Param",
+        currentValue: "Sales",
+        dataType: "string",
+      },
+      {
+        name: "Number Param",
+        currentValue: 42,
+        dataType: "number",
+      },
+      {
+        name: "Boolean Param",
+        currentValue: false,
+        dataType: "boolean",
+      },
+      {
+        name: "Null Param",
+        currentValue: null,
+        dataType: "string",
+      },
+    ];
+
+    const preview = buildContextPreviewModel(dashboardContext);
+
+    expect(preview.parameters).toEqual([
+      {
+        status: "available",
+        name: "String Param",
+        currentValue: {
+          raw: "Sales",
+          display: "Sales",
+          isEmpty: false,
+        },
+        dataType: "string",
+        allowableValues: {
+          items: [],
+          totalCount: 0,
+          limit: 10,
+          truncated: false,
+        },
+      },
+      {
+        status: "available",
+        name: "Number Param",
+        currentValue: {
+          raw: 42,
+          display: "42",
+          isEmpty: false,
+        },
+        dataType: "number",
+        allowableValues: {
+          items: [],
+          totalCount: 0,
+          limit: 10,
+          truncated: false,
+        },
+      },
+      {
+        status: "available",
+        name: "Boolean Param",
+        currentValue: {
+          raw: false,
+          display: "false",
+          isEmpty: false,
+        },
+        dataType: "boolean",
+        allowableValues: {
+          items: [],
+          totalCount: 0,
+          limit: 10,
+          truncated: false,
+        },
+      },
+      {
+        status: "empty",
+        name: "Null Param",
+        currentValue: {
+          raw: null,
+          display: "Not set",
+          isEmpty: true,
+        },
+        dataType: "string",
+        allowableValues: {
+          items: [],
+          totalCount: 0,
+          limit: 10,
+          truncated: false,
+        },
+      },
+    ]);
   });
 
   it("does not mutate the input dashboard context", () => {
