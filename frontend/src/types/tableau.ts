@@ -44,6 +44,40 @@ export type SelectedMarkRowSummary = {
   values: SelectedMarkCellSummary[];
 };
 
+export type SummaryDataCellSummary = {
+  fieldName?: string | null;
+  raw: string | number | boolean | null;
+  display: string;
+  isEmpty: boolean;
+};
+
+export type SummaryDataRowSummary = {
+  values: SummaryDataCellSummary[];
+};
+
+export type SummaryDataColumnSummary = {
+  name: string;
+  dataType?: string | null;
+};
+
+export type WorksheetSummaryDataPreview = {
+  worksheetName: string;
+  worksheetId?: string | null;
+  columns: SummaryDataColumnSummary[];
+  rows: SummaryDataRowSummary[];
+  maxRows: number;
+  maxColumns: number;
+  totalRowCount: number;
+  previewRowCount: number;
+  totalColumnCount: number;
+  previewColumnCount: number;
+  truncated: boolean;
+  status: "available" | "empty" | "unavailable";
+  generatedAt: string;
+  updatedAt: string;
+  errorMessage?: string | null;
+};
+
 export type DataSourceSummary = {
   worksheetName?: string | null;
   name: string;
@@ -69,6 +103,7 @@ export type DashboardContext = {
   filters: FilterSummary[];
   parameters: ParameterSummary[];
   selectedMarks?: SelectedMarkSummary[];
+  summaryDataPreview?: WorksheetSummaryDataPreview[];
   dataSources?: DataSourceSummary[];
   availability?: ContextAvailability;
   contextSource?: "tableau-extension" | "mock";

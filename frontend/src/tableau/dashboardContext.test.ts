@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { getDashboardContext } from "./dashboardContext";
 
 describe("dashboardContext", () => {
-  it("normalizes selected mark rows with mixed cell value types", async () => {
+  it("normalizes selected mark rows and summary data preview with mixed cell value types", async () => {
     const dashboard = {
       name: "Sales Dashboard",
       workbook: {
@@ -12,6 +12,19 @@ describe("dashboardContext", () => {
         {
           name: "Sales Trend",
           sheetType: "worksheet",
+          getSummaryDataAsync: async () => ({
+            columns: [
+              { fieldName: "Region", dataType: "string" },
+              { fieldName: "Sales", dataType: "number" },
+            ],
+            data: [
+              [
+                { formattedValue: "West", value: "West" },
+                { formattedValue: "1200", value: 1200 },
+              ],
+            ],
+            totalRowCount: 1,
+          }),
           getSelectedMarksAsync: async () => ({
             data: [
               {
@@ -81,5 +94,52 @@ describe("dashboardContext", () => {
         status: "available",
       },
     ]);
+    expect(context.summaryDataPreview).toBeDefined();
+    const summaryDataPreview = context.summaryDataPreview?.[0];
+    if (!summaryDataPreview) {
+      throw new Error("summaryDataPreview was not generated");
+    }
+    expect(summaryDataPreview).toMatchObject({
+      worksheetName: "Sales Trend",
+      worksheetId: null,
+      columns: [
+        {
+          name: "Region",
+          dataType: "string",
+        },
+        {
+          name: "Sales",
+          dataType: "number",
+        },
+      ],
+      rows: [
+        {
+          values: [
+            {
+              fieldName: "Region",
+              raw: "West",
+              display: "West",
+              isEmpty: false,
+            },
+            {
+              fieldName: "Sales",
+              raw: 1200,
+              display: "1200",
+              isEmpty: false,
+            },
+          ],
+        },
+      ],
+      maxRows: 20,
+      maxColumns: 20,
+      totalRowCount: 1,
+      previewRowCount: 1,
+      totalColumnCount: 2,
+      previewColumnCount: 2,
+      truncated: false,
+      status: "available",
+    });
+    expect(summaryDataPreview.generatedAt).toEqual(expect.any(String));
+    expect(summaryDataPreview.updatedAt).toEqual(expect.any(String));
   });
 });

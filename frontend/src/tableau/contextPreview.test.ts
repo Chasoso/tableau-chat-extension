@@ -110,6 +110,60 @@ function createDashboardContext(): DashboardContext {
         status: "notAvailable",
       },
     ],
+    summaryDataPreview: [
+      {
+        worksheetName: "Sales Trend",
+        worksheetId: "worksheet-1",
+        columns: [
+          { name: "Region", dataType: "string" },
+          { name: "Sales", dataType: "number" },
+        ],
+        rows: [
+          {
+            values: [
+              {
+                fieldName: "Region",
+                raw: "West",
+                display: "West",
+                isEmpty: false,
+              },
+              {
+                fieldName: "Sales",
+                raw: 1200,
+                display: "1200",
+                isEmpty: false,
+              },
+            ],
+          },
+        ],
+        maxRows: 20,
+        maxColumns: 20,
+        totalRowCount: 1,
+        previewRowCount: 1,
+        totalColumnCount: 2,
+        previewColumnCount: 2,
+        truncated: false,
+        status: "available",
+        generatedAt: "2026-06-07T00:00:00.000Z",
+        updatedAt: "2026-06-07T00:00:00.000Z",
+      },
+      {
+        worksheetName: "Regional Performance",
+        worksheetId: "worksheet-2",
+        columns: [],
+        rows: [],
+        maxRows: 20,
+        maxColumns: 20,
+        totalRowCount: 0,
+        previewRowCount: 0,
+        totalColumnCount: 0,
+        previewColumnCount: 0,
+        truncated: false,
+        status: "empty",
+        generatedAt: "2026-06-07T00:00:00.000Z",
+        updatedAt: "2026-06-07T00:00:00.000Z",
+      },
+    ],
     dataSources: [
       {
         worksheetName: "Sales Trend",
@@ -159,7 +213,14 @@ describe("contextPreview", () => {
         truncated: false,
       },
       summaryDataPreview: {
-        status: "notCollected",
+        status: "available",
+        generatedAt: "2026-06-07T00:00:00.000Z",
+        updatedAt: "2026-06-07T00:00:00.000Z",
+        maxRows: 20,
+        maxColumns: 20,
+        totalWorksheetCount: 2,
+        previewWorksheetCount: 2,
+        truncated: false,
       },
       lastChangedWorksheet: null,
       availability: {
@@ -306,6 +367,24 @@ describe("contextPreview", () => {
         fieldsAvailability: "available",
       },
     ]);
+    expect(preview.summaryDataPreview.items[0]).toMatchObject({
+      worksheetName: "Sales Trend",
+      worksheetId: "worksheet-1",
+      status: "available",
+      truncated: false,
+      previewRowCount: 1,
+      previewColumnCount: 2,
+      maxRows: 20,
+      maxColumns: 20,
+    });
+    expect(preview.summaryDataPreview.items[1]).toMatchObject({
+      worksheetName: "Regional Performance",
+      worksheetId: "worksheet-2",
+      status: "empty",
+      truncated: false,
+      previewRowCount: 0,
+      previewColumnCount: 0,
+    });
   });
 
   it("keeps empty or missing selected marks safe", () => {
@@ -328,6 +407,14 @@ describe("contextPreview", () => {
     });
     expect(preview.summaryDataPreview).toEqual({
       status: "notCollected",
+      generatedAt: null,
+      updatedAt: null,
+      maxRows: 20,
+      maxColumns: 20,
+      totalWorksheetCount: 0,
+      previewWorksheetCount: 0,
+      truncated: false,
+      items: [],
       note: "Summary data preview has not been collected yet.",
     });
     expect(preview.lastChangedWorksheet).toBeNull();

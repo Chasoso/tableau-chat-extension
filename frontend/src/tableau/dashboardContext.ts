@@ -8,6 +8,10 @@ import type {
   SelectedMarkRowSummary,
   WorksheetSummary,
 } from "../types/tableau";
+import {
+  collectSummaryDataPreview,
+  type SummaryDataPreviewOptions,
+} from "./summaryDataPreview";
 
 type TableauDashboard = {
   name?: string;
@@ -19,14 +23,19 @@ type TableauDashboard = {
 type DashboardContextOptions = {
   workbook?: unknown;
   referrer?: string;
+  summaryDataPreview?: SummaryDataPreviewOptions;
 };
 
 type TableauWorksheet = {
   name?: string;
+  id?: string;
   sheetType?: string;
   size?: { width?: number; height?: number };
   getFiltersAsync?: () => Promise<unknown[]>;
   getSelectedMarksAsync?: () => Promise<unknown>;
+  getSummaryDataAsync?: (
+    options?: SummaryDataPreviewOptions,
+  ) => Promise<unknown>;
   getDataSourcesAsync?: () => Promise<unknown[]>;
 };
 
@@ -120,12 +129,14 @@ export async function getDashboardContext(
     }),
   );
 
-  const [filters, selectedMarks, dataSources, parameters] = await Promise.all([
-    collectFilters(worksheets),
-    collectSelectedMarks(worksheets),
-    collectDataSources(worksheets),
-    collectParameters(dashboard),
-  ]);
+  const [filters, selectedMarks, dataSources, parameters, summaryDataPreview] =
+    await Promise.all([
+      collectFilters(worksheets),
+      collectSelectedMarks(worksheets),
+      collectDataSources(worksheets),
+      collectParameters(dashboard),
+      collectSummaryDataPreview(worksheets, options.summaryDataPreview),
+    ]);
 
   return {
     dashboardName: dashboard.name ?? "Untitled dashboard",
@@ -138,6 +149,7 @@ export async function getDashboardContext(
     filters,
     parameters,
     selectedMarks,
+    summaryDataPreview,
     dataSources,
     availability: {
       workbookId: workbookId ? "available" : "not_supported",

@@ -8,6 +8,7 @@ import type {
   SelectedMarkCellSummary,
   SelectedMarkSummary,
   SelectedMarkRowSummary,
+  WorksheetSummaryDataPreview,
   WorksheetSummary,
 } from "../types/tableau";
 
@@ -18,8 +19,6 @@ export type ContextPreviewSourceKind =
   | "unknown";
 
 export type ContextPreviewCellValue = string | number | boolean | null;
-
-export type ContextPreviewRow = Record<string, ContextPreviewCellValue>;
 
 export type ContextPreviewSectionStatus = "available" | "empty";
 
@@ -93,15 +92,15 @@ export type ContextPreviewSelectedMarks = {
 };
 
 export type ContextPreviewSummaryDataPreview = {
-  status: "notCollected" | "available" | "notAvailable";
-  worksheetName?: string | null;
-  rowCount?: number;
-  columnCount?: number;
-  columns?: string[];
-  rows?: ContextPreviewRow[];
-  truncated?: boolean;
-  limitRows?: number;
-  limitColumns?: number;
+  status: "notCollected" | "available" | "empty" | "unavailable";
+  generatedAt: string | null;
+  updatedAt: string | null;
+  maxRows: number;
+  maxColumns: number;
+  totalWorksheetCount: number;
+  previewWorksheetCount: number;
+  truncated: boolean;
+  items: WorksheetSummaryDataPreview[];
   note?: string;
 };
 
@@ -175,6 +174,9 @@ export function buildContextPreviewModel(
     options.selectedMarkLimit ?? DEFAULT_SELECTED_MARK_LIMIT,
     options.selectedMarkRowLimit ?? DEFAULT_SELECTED_MARK_ROW_LIMIT,
   );
+  const summaryDataPreview = buildSummaryDataPreview(
+    dashboardContext.summaryDataPreview ?? [],
+  );
   const availability = buildAvailability(dashboardContext.availability);
   const warnings = buildWarnings(dashboardContext);
 
@@ -198,10 +200,7 @@ export function buildContextPreviewModel(
     parameters,
     selectedMarks,
     dataSources,
-    summaryDataPreview: {
-      status: "notCollected",
-      note: "Summary data preview has not been collected yet.",
-    },
+    summaryDataPreview,
     lastChangedWorksheet: options.lastChangedWorksheet ?? null,
     availability,
     warnings,
@@ -309,6 +308,76 @@ function buildSelectedMarksPreview(
     limit,
     truncated,
   };
+}
+
+function buildSummaryDataPreview(
+  summaryDataPreview: WorksheetSummaryDataPreview[],
+): ContextPreviewSummaryDataPreview {
+  if (!summaryDataPreview.length) {
+    return {
+      status: "notCollected",
+      generatedAt: null,
+      updatedAt: null,
+      maxRows: 20,
+      maxColumns: 20,
+      totalWorksheetCount: 0,
+      previewWorksheetCount: 0,
+      truncated: false,
+      items: [],
+      note: "Summary data preview has not been collected yet.",
+    };
+  }
+
+  const totalWorksheetCount = summaryDataPreview.length;
+  const previewWorksheetCount = summaryDataPreview.length;
+  const truncated = summaryDataPreview.some((item) => item.truncated);
+  const availableCount = summaryDataPreview.filter(
+    (item) => item.status === "available",
+  ).length;
+  const emptyCount = summaryDataPreview.filter(
+    (item) => item.status === "empty",
+  ).length;
+  const unavailableCount = summaryDataPreview.filter(
+    (item) => item.status === "unavailable",
+  ).length;
+  const generatedAt = summaryDataPreview[0]?.generatedAt ?? null;
+  const updatedAt =
+    summaryDataPreview[summaryDataPreview.length - 1]?.updatedAt ?? generatedAt;
+
+  const status: ContextPreviewSummaryDataPreview["status"] =
+    availableCount > 0
+      ? "available"
+      : unavailableCount > 0 && emptyCount === 0
+        ? "unavailable"
+        : emptyCount > 0
+          ? "empty"
+          : "notCollected";
+
+  return {
+    status,
+    generatedAt,
+    updatedAt,
+    maxRows: summaryDataPreview[0]?.maxRows ?? 20,
+    maxColumns: summaryDataPreview[0]?.maxColumns ?? 20,
+    totalWorksheetCount,
+    previewWorksheetCount,
+    truncated,
+    items: cloneSummaryDataPreview(summaryDataPreview),
+  };
+}
+
+function cloneSummaryDataPreview(
+  summaryDataPreview: WorksheetSummaryDataPreview[],
+): WorksheetSummaryDataPreview[] {
+  return summaryDataPreview.map((item) => ({
+    ...item,
+    columns: item.columns.map((column) => ({ ...column })),
+    rows: item.rows.map((row) => ({
+      values: row.values.map((value) => ({
+        ...value,
+      })),
+    })),
+  }));
 }
 
 function normalizeSelectedMarkPreview(
