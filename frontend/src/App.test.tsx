@@ -177,6 +177,15 @@ describe("App", () => {
       dataSources: [],
       summaryDataPreview: {
         status: "notCollected",
+        generatedAt: null,
+        updatedAt: null,
+        maxRows: 20,
+        maxColumns: 20,
+        totalWorksheetCount: 0,
+        previewWorksheetCount: 0,
+        truncated: false,
+        items: [],
+        note: "Summary data preview has not been collected yet.",
       },
       lastChangedWorksheet: null,
       availability: {
