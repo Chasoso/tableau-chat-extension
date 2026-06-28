@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { env } from "./env";
 import { isAuthPopupStart, isAuthRedirect } from "./auth/cognitoAuth";
+import AIContextPreviewPanel from "./components/AIContextPreviewPanel";
 import AuthCallback from "./components/AuthCallback";
 import AuthGate from "./components/AuthGate";
 import AuthPopupStart from "./components/AuthPopupStart";
@@ -27,7 +28,7 @@ export default function App() {
 function DashboardExtensionApp() {
   const [dashboardContext, setDashboardContext] =
     useState<DashboardContext | null>(null);
-  const [, setContextPreview] = useState<ReturnType<
+  const [contextPreview, setContextPreview] = useState<ReturnType<
     typeof buildContextPreviewModel
   > | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -35,6 +36,18 @@ function DashboardExtensionApp() {
   useEffect(() => {
     let isMounted = true;
     let cleanupListeners = () => {};
+
+    const applyDashboardContext = (
+      nextContext: DashboardContext,
+      lastChangedWorksheet?: ContextPreviewLastChangedWorksheet,
+    ) => {
+      setDashboardContext(nextContext);
+      setContextPreview(
+        buildContextPreviewModel(nextContext, {
+          lastChangedWorksheet,
+        }),
+      );
+    };
 
     const refreshDashboardContext = async (
       lastChangedWorksheet?: ContextPreviewLastChangedWorksheet,
@@ -55,19 +68,13 @@ function DashboardExtensionApp() {
         return;
       }
 
-      setDashboardContext(nextContext);
-      setContextPreview(
-        buildContextPreviewModel(nextContext, {
-          lastChangedWorksheet,
-        }),
-      );
+      applyDashboardContext(nextContext, lastChangedWorksheet);
     };
 
     initializeTableauExtension()
       .then((context) => {
         if (isMounted) {
-          setDashboardContext(context);
-          setContextPreview(buildContextPreviewModel(context));
+          applyDashboardContext(context);
 
           const tableauDashboard =
             window.tableau?.extensions?.dashboardContent?.dashboard;
@@ -141,6 +148,7 @@ function DashboardExtensionApp() {
     onSignIn?: () => Promise<void>;
   }) => (
     <div className="app-shell">
+      <AIContextPreviewPanel preview={contextPreview} />
       <ChatPanel
         dashboardContext={dashboardContext}
         authToken={authToken}
@@ -157,9 +165,20 @@ function DashboardExtensionApp() {
             : undefined
         }
         onDashboardContextPatch={(patch) => {
-          setDashboardContext((current) =>
-            current ? { ...current, ...patch } : current,
-          );
+          setDashboardContext((current) => {
+            if (!current) {
+              return current;
+            }
+
+            const nextContext = { ...current, ...patch };
+            setContextPreview((currentPreview) =>
+              buildContextPreviewModel(nextContext, {
+                lastChangedWorksheet:
+                  currentPreview?.lastChangedWorksheet ?? null,
+              }),
+            );
+            return nextContext;
+          });
         }}
       />
     </div>
