@@ -5,7 +5,9 @@ import type {
   DashboardContext,
   FilterSummary,
   ParameterSummary,
+  SelectedMarkCellSummary,
   SelectedMarkSummary,
+  SelectedMarkRowSummary,
   WorksheetSummary,
 } from "../types/tableau";
 
@@ -20,6 +22,10 @@ export type ContextPreviewCellValue = string | number | boolean | null;
 export type ContextPreviewRow = Record<string, ContextPreviewCellValue>;
 
 export type ContextPreviewSectionStatus = "available" | "empty";
+
+export type ContextPreviewSelectedMarksStatus =
+  | ContextPreviewSectionStatus
+  | "unavailable";
 
 export type ContextPreviewValueList = {
   items: string[];
@@ -66,10 +72,22 @@ export type ContextPreviewParameter = {
   allowableValues: ContextPreviewValueList;
 };
 
+export type ContextPreviewSelectedMark = {
+  worksheetName: string;
+  columns: string[];
+  columnCount: number;
+  rowCount: number;
+  previewRowCount: number;
+  rows: SelectedMarkRowSummary[];
+  status: Availability;
+  truncated: boolean;
+};
+
 export type ContextPreviewSelectedMarks = {
-  status: ContextPreviewSectionStatus;
-  items: SelectedMarkSummary[];
+  status: ContextPreviewSelectedMarksStatus;
+  items: ContextPreviewSelectedMark[];
   totalCount: number;
+  previewCount: number;
   limit: number;
   truncated: boolean;
 };
@@ -110,6 +128,7 @@ export type ContextPreviewBuildOptions = {
   filterValueLimit?: number;
   parameterValueLimit?: number;
   selectedMarkLimit?: number;
+  selectedMarkRowLimit?: number;
 };
 
 export type ContextPreviewModel = {
@@ -131,6 +150,7 @@ export type ContextPreviewModel = {
 };
 
 const DEFAULT_SELECTED_MARK_LIMIT = 10;
+const DEFAULT_SELECTED_MARK_ROW_LIMIT = 5;
 const DEFAULT_FILTER_VALUE_LIMIT = 10;
 const DEFAULT_PARAMETER_VALUE_LIMIT = 10;
 
@@ -149,8 +169,9 @@ export function buildContextPreviewModel(
   );
   const dataSources = cloneDataSources(dashboardContext.dataSources ?? []);
   const selectedMarks = buildSelectedMarksPreview(
-    dashboardContext.selectedMarks ?? [],
+    dashboardContext.selectedMarks,
     options.selectedMarkLimit ?? DEFAULT_SELECTED_MARK_LIMIT,
+    options.selectedMarkRowLimit ?? DEFAULT_SELECTED_MARK_ROW_LIMIT,
   );
   const availability = buildAvailability(dashboardContext.availability);
   const warnings = buildWarnings(dashboardContext);
@@ -249,24 +270,117 @@ function cloneDataSources(
 }
 
 function buildSelectedMarksPreview(
-  selectedMarks: SelectedMarkSummary[],
+  selectedMarks: SelectedMarkSummary[] | undefined,
   limit: number,
+  rowLimit: number,
 ): ContextPreviewSelectedMarks {
+  if (selectedMarks === undefined) {
+    return {
+      status: "unavailable",
+      items: [],
+      totalCount: 0,
+      previewCount: 0,
+      limit,
+      truncated: false,
+    };
+  }
+
   const totalCount = selectedMarks.length;
   const truncated = totalCount > limit;
-  const items = selectedMarks.slice(0, limit).map((mark) => ({
-    ...mark,
-    columns: mark.columns ? [...mark.columns] : undefined,
-    status: mark.status ?? ("available" as Availability),
-  }));
+  const previewMarks = selectedMarks.slice(0, limit);
+  const items = previewMarks.map((mark) =>
+    normalizeSelectedMarkPreview(mark, rowLimit),
+  );
+  const hasAvailableMarks = items.some((mark) => mark.status === "available");
+  const status: ContextPreviewSelectedMarksStatus =
+    totalCount === 0
+      ? "empty"
+      : hasAvailableMarks
+        ? "available"
+        : "unavailable";
 
   return {
-    status: totalCount > 0 ? "available" : "empty",
+    status,
     items,
     totalCount,
+    previewCount: items.length,
     limit,
     truncated,
   };
+}
+
+function normalizeSelectedMarkPreview(
+  mark: SelectedMarkSummary,
+  rowLimit: number,
+): ContextPreviewSelectedMark {
+  const columns = mark.columns ? [...mark.columns] : [];
+  const rows = normalizeSelectedMarkRows(mark.rows, columns, rowLimit);
+  const previewRowCount = rows.length;
+  const rowCount = mark.rowCount ?? previewRowCount;
+
+  return {
+    worksheetName: mark.worksheetName,
+    columns,
+    columnCount: columns.length,
+    rowCount,
+    previewRowCount,
+    rows,
+    status: mark.status ?? ("available" as Availability),
+    truncated:
+      typeof mark.rowCount === "number"
+        ? mark.rowCount > previewRowCount
+        : false,
+  };
+}
+
+function normalizeSelectedMarkRows(
+  rows: SelectedMarkRowSummary[] | undefined,
+  columns: string[],
+  limit: number,
+): SelectedMarkRowSummary[] {
+  if (!rows || rows.length === 0) {
+    return [];
+  }
+
+  return rows.slice(0, limit).map((row) => ({
+    values: row.values.map((value, index) =>
+      normalizeSelectedMarkCell(value, columns[index]),
+    ),
+  }));
+}
+
+function normalizeSelectedMarkCell(
+  cell: SelectedMarkCellSummary,
+  fieldName?: string,
+): SelectedMarkCellSummary {
+  return {
+    fieldName: fieldName ?? cell.fieldName ?? null,
+    raw: normalizeSelectedMarkRawValue(cell.raw),
+    display: normalizeDisplayValue(cell.display),
+    isEmpty: cell.isEmpty,
+  };
+}
+
+function normalizeSelectedMarkRawValue(
+  value: unknown,
+): SelectedMarkCellSummary["raw"] {
+  if (value === null || value === undefined) {
+    return null;
+  }
+
+  if (value instanceof Date) {
+    return value.toISOString();
+  }
+
+  if (
+    typeof value === "string" ||
+    typeof value === "number" ||
+    typeof value === "boolean"
+  ) {
+    return value;
+  }
+
+  return String(value);
 }
 
 function normalizeValueList(
@@ -296,6 +410,10 @@ function normalizeParameterValue(
 function normalizeDisplayValue(value: unknown): string {
   if (value === null || value === undefined) {
     return "Not set";
+  }
+
+  if (value instanceof Date) {
+    return value.toISOString();
   }
 
   if (typeof value === "string") {
