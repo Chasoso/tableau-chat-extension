@@ -6,6 +6,10 @@ import AuthGate from "./components/AuthGate";
 import AuthPopupStart from "./components/AuthPopupStart";
 import ChatPanel from "./components/ChatPanel";
 import { initializeTableauExtension } from "./tableau/tableauExtension";
+import { buildContextPreviewModel } from "./tableau/contextPreview";
+import { getDashboardContext } from "./tableau/dashboardContext";
+import { registerMarkSelectionChangedListeners } from "./tableau/markSelectionListener";
+import type { ContextPreviewLastChangedWorksheet } from "./tableau/contextPreview";
 import type { DashboardContext } from "./types/tableau";
 
 export default function App() {
@@ -23,15 +27,72 @@ export default function App() {
 function DashboardExtensionApp() {
   const [dashboardContext, setDashboardContext] =
     useState<DashboardContext | null>(null);
+  const [, setContextPreview] = useState<ReturnType<
+    typeof buildContextPreviewModel
+  > | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let isMounted = true;
+    let cleanupListeners = () => {};
+
+    const refreshDashboardContext = async (
+      lastChangedWorksheet?: ContextPreviewLastChangedWorksheet,
+    ) => {
+      const tableau = window.tableau?.extensions;
+      const dashboard = tableau?.dashboardContent?.dashboard;
+
+      if (!tableau?.initializeAsync || !dashboard) {
+        return;
+      }
+
+      const nextContext = await getDashboardContext(dashboard as never, {
+        workbook: tableau.workbook,
+        referrer: document.referrer,
+      });
+
+      if (!isMounted) {
+        return;
+      }
+
+      setDashboardContext(nextContext);
+      setContextPreview(
+        buildContextPreviewModel(nextContext, {
+          lastChangedWorksheet,
+        }),
+      );
+    };
 
     initializeTableauExtension()
       .then((context) => {
         if (isMounted) {
           setDashboardContext(context);
+          setContextPreview(buildContextPreviewModel(context));
+
+          const tableauDashboard =
+            window.tableau?.extensions?.dashboardContent?.dashboard;
+          cleanupListeners = registerMarkSelectionChangedListeners(
+            tableauDashboard,
+            {
+              onSelectionChanged: (selectionContext) =>
+                refreshDashboardContext(
+                  selectionContext.worksheetName
+                    ? {
+                        worksheetName: selectionContext.worksheetName,
+                        worksheetId: selectionContext.worksheetId,
+                        changedAt: selectionContext.changedAt,
+                        source: "selection",
+                      }
+                    : null,
+                ),
+              onError: (listenerError) => {
+                console.warn(
+                  "Failed to register MarkSelectionChanged listener.",
+                  listenerError,
+                );
+              },
+            },
+          );
         }
       })
       .catch((unknownError) => {
@@ -46,6 +107,7 @@ function DashboardExtensionApp() {
 
     return () => {
       isMounted = false;
+      cleanupListeners();
     };
   }, []);
 

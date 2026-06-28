@@ -349,6 +349,24 @@ describe("contextPreview", () => {
     });
   });
 
+  it("propagates last changed worksheet metadata into the preview model", () => {
+    const preview = buildContextPreviewModel(createDashboardContext(), {
+      lastChangedWorksheet: {
+        worksheetName: "Sales Trend",
+        worksheetId: "worksheet-1",
+        changedAt: "2026-06-07T01:23:45.000Z",
+        source: "selection",
+      },
+    });
+
+    expect(preview.lastChangedWorksheet).toEqual({
+      worksheetName: "Sales Trend",
+      worksheetId: "worksheet-1",
+      changedAt: "2026-06-07T01:23:45.000Z",
+      source: "selection",
+    });
+  });
+
   it("truncates selected marks and selected rows for preview safety", () => {
     const dashboardContext = createDashboardContext();
     dashboardContext.selectedMarks = Array.from({ length: 12 }, (_, index) => ({

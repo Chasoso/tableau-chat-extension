@@ -107,6 +107,7 @@ export type ContextPreviewSummaryDataPreview = {
 
 export type ContextPreviewLastChangedWorksheet = {
   worksheetName: string;
+  worksheetId?: string | null;
   changedAt?: string;
   source?: "selection" | "filter" | "parameter" | "manual" | "unknown";
 } | null;
@@ -129,6 +130,7 @@ export type ContextPreviewBuildOptions = {
   parameterValueLimit?: number;
   selectedMarkLimit?: number;
   selectedMarkRowLimit?: number;
+  lastChangedWorksheet?: ContextPreviewLastChangedWorksheet;
 };
 
 export type ContextPreviewModel = {
@@ -200,7 +202,7 @@ export function buildContextPreviewModel(
       status: "notCollected",
       note: "Summary data preview has not been collected yet.",
     },
-    lastChangedWorksheet: null,
+    lastChangedWorksheet: options.lastChangedWorksheet ?? null,
     availability,
     warnings,
     metadata: {
