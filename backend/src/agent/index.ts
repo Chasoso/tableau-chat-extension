@@ -32,6 +32,27 @@ export type {
   TraceStepStatus,
   TraceStepType,
 } from "./types";
+export {
+  buildIntentResolutionTraceMetadata,
+  createFallbackIntentResolution,
+  createIntentEvidence,
+  createResolvedIntentResolution,
+  createUnresolvedIntentResolution,
+  normalizeIntentConfidence,
+} from "./intent";
+export type {
+  IntentId,
+  IntentResolutionContextPackRef,
+  IntentResolutionContextSummary,
+  IntentResolutionEvidence,
+  IntentResolutionInput,
+  IntentResolutionResult,
+  IntentResolutionSource,
+  IntentResolutionStatus,
+  IntentResolutionSelectedMarksSummary,
+  IntentResolver,
+  IntentResolverMode,
+} from "./intent";
 export { createTraceError, createTraceEvent, createTraceStep } from "./trace";
 export {
   buildFixedPlan,
