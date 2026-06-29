@@ -64,6 +64,12 @@ export {
   createMinimalToolRouter,
   MinimalToolRouter,
 } from "./toolRouter";
+export {
+  buildExecutionTraceMetadata,
+  createDefaultExecutionEngine,
+  createMinimalExecutionEngine,
+  MinimalExecutionEngine,
+} from "./execution";
 export type {
   IntentId,
   IntentResolutionContextPackRef,
@@ -110,6 +116,16 @@ export type {
   ToolRoutingResult,
   ToolRoutingStatus,
 } from "./toolRouter";
+export type {
+  ExecutionBudgetUsage,
+  ExecutionEngine,
+  ExecutionInput,
+  ExecutionResult,
+  ExecutionStatus,
+  ExecutionStepResult,
+  ExecutionStepStatus,
+  MinimalExecutionEngineOptions,
+} from "./execution";
 export { createTraceError, createTraceEvent, createTraceStep } from "./trace";
 export {
   buildFixedPlan,
