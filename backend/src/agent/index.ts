@@ -40,6 +40,11 @@ export {
   createUnresolvedIntentResolution,
   normalizeIntentConfidence,
 } from "./intent";
+export {
+  createDefaultIntentResolver,
+  createMinimalIntentResolver,
+  MinimalIntentResolver,
+} from "./minimalIntentResolver";
 export type {
   IntentId,
   IntentResolutionContextPackRef,
@@ -53,6 +58,7 @@ export type {
   IntentResolver,
   IntentResolverMode,
 } from "./intent";
+export type { MinimalIntentResolverOptions } from "./minimalIntentResolver";
 export { createTraceError, createTraceEvent, createTraceStep } from "./trace";
 export {
   buildFixedPlan,
