@@ -45,6 +45,19 @@ export {
   createMinimalIntentResolver,
   MinimalIntentResolver,
 } from "./minimalIntentResolver";
+export {
+  buildPlanSelection,
+  buildPlanExecutionMetadata,
+  CURRENT_DASHBOARD_SUMMARY_PLAN_DEFINITION,
+  createCurrentDashboardSummaryPlanDefinition,
+  createSelectedMarkExplanationPlanDefinition,
+  createUnsupportedPlanDefinition,
+  evaluatePlanPreconditions,
+  isValidRunBudget,
+  normalizeRunBudget,
+  SELECTED_MARK_EXPLANATION_PLAN_DEFINITION,
+  UNSUPPORTED_PLAN_DEFINITION,
+} from "./plan";
 export type {
   IntentId,
   IntentResolutionContextPackRef,
@@ -59,6 +72,25 @@ export type {
   IntentResolverMode,
 } from "./intent";
 export type { MinimalIntentResolverOptions } from "./minimalIntentResolver";
+export type {
+  PlanContextPackId,
+  PlanDefinition,
+  PlanExecutionContext,
+  PlanFallback,
+  PlanId,
+  PlanMetadata,
+  PlanPrecondition,
+  PlanPreconditionResult,
+  PlanPreconditionType,
+  PlanSelectionInput,
+  PlanSelectionResult,
+  PlanSelectionStatus,
+  PlanStep,
+  PlanStepType,
+  PlanToolPolicy,
+  ResponseStrategy,
+  RunBudget,
+} from "./plan";
 export { createTraceError, createTraceEvent, createTraceStep } from "./trace";
 export {
   buildFixedPlan,
