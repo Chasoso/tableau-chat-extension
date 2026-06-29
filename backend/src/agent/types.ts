@@ -95,7 +95,7 @@ export type ToolAction = {
   timeoutMs?: number;
 };
 
-export type TraceEventType =
+export type LegacyTraceEventType =
   | "run_started"
   | "context_normalized"
   | "intent_resolved"
@@ -107,6 +107,34 @@ export type TraceEventType =
   | "response_composed"
   | "run_completed"
   | "run_failed";
+
+export type OrchestrationTraceEventType =
+  | "orchestration.started"
+  | "orchestration.completed"
+  | "orchestration.failed"
+  | "intent_resolution.started"
+  | "intent_resolution.completed"
+  | "intent_resolution.failed"
+  | "plan_selection.started"
+  | "plan_selection.completed"
+  | "plan_selection.failed"
+  | "execution.started"
+  | "execution.completed"
+  | "execution.failed"
+  | "plan_step.started"
+  | "plan_step.completed"
+  | "plan_step.skipped"
+  | "plan_step.blocked"
+  | "plan_step.failed"
+  | "tool_routing.started"
+  | "tool_routing.completed"
+  | "tool_routing.blocked"
+  | "tool_routing.skipped"
+  | "tool_routing.failed"
+  | "budget.updated"
+  | "fallback.selected";
+
+export type TraceEventType = LegacyTraceEventType | OrchestrationTraceEventType;
 
 export type TraceEventKind = TraceEventType;
 
