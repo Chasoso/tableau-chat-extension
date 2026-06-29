@@ -480,3 +480,27 @@ Issue 化しやすい粒度で整理した次の候補。
 10. `current_dashboard_summary` fixed plan の実行接続
 11. `selected_mark_explanation` fixed plan の実行接続
 12. `TraceLogger` の永続化先を確定する Issue
+## 15. v0.3.0 Follow-up
+
+v0.3.0 "Tableau Context First" is now complete on the frontend side.
+
+Completed follow-up issues:
+
+- Issue #33: Frontend Tableau context collector audit
+- Issue #34: Define frontend context preview model
+- Issue #35: Collect filters and parameters from Tableau Extension API
+- Issue #36: Collect selected marks from Tableau worksheets
+- Issue #37: Add MarkSelectionChanged listener
+- Issue #38: Add summary data preview collector
+- Issue #39: Add AI Context Preview panel
+- Issue #40: Add selected mark action suggestions
+
+What remains for v0.4.0:
+
+- structured orchestration
+- IntentResolver
+- PlanBuilder
+- ToolRouter
+- ExecutionEngine
+- trace-first orchestration visibility
+- safe connection from preview actions into fixed plans
