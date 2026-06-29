@@ -1,6 +1,13 @@
 import { getConfig } from "../config";
 import { authenticateRequest } from "../auth/cognitoAuth";
 import {
+  createAgentRunId,
+  createDefaultIntentResolver,
+  type JsonObject,
+  type IntentId,
+  type IntentResolutionInput,
+} from "../agent";
+import {
   logError,
   logInfo,
   logWarn,
@@ -15,6 +22,10 @@ import type {
   LambdaExecutionContext,
 } from "../types/api";
 import type { ChatRequest, ContextRequest } from "../types/chat";
+import type {
+  ResolveIntentRequest,
+  ResolveIntentResponse,
+} from "../types/orchestration";
 import { handleNotionRoute } from "./notionHandler";
 import { handleCognitoPopupAuthRoute } from "./cognitoPopupAuthHandler";
 
@@ -122,6 +133,12 @@ export async function handler(
       });
     }
 
+    if (routePath === "/intent/resolve" && method !== "POST") {
+      return jsonResponse(405, {
+        message: "Method not allowed.",
+      });
+    }
+
     const request = parseRequest(event.body);
 
     if (routePath === "/context") {
@@ -142,6 +159,38 @@ export async function handler(
         patchedFields: response.dashboardContextPatch?.workbookName
           ? ["workbookName"]
           : [],
+      });
+      return jsonResponse(200, response);
+    }
+
+    if (routePath === "/intent/resolve") {
+      if (method !== "POST") {
+        return jsonResponse(405, {
+          message: "Method not allowed.",
+        });
+      }
+
+      const intentRequest = request as ResolveIntentRequest;
+      const validationError = validateResolveIntentRequest(intentRequest);
+      if (validationError) {
+        logWarn("chat.intent_request.invalid", {
+          requestId,
+          validationError,
+        });
+        return jsonResponse(400, { message: validationError });
+      }
+
+      const resolver = createDefaultIntentResolver();
+      const result = await resolver.resolve(
+        buildIntentResolutionInput(intentRequest),
+      );
+      const response: ResolveIntentResponse = { result };
+
+      logInfo("chat.intent_request.completed", {
+        requestId,
+        agentRunId: result.agentRunId,
+        resolvedIntentId: result.resolvedIntentId,
+        status: result.status,
       });
       return jsonResponse(200, response);
     }
@@ -224,6 +273,22 @@ function validateContextRequest(request: ContextRequest): string | null {
   return null;
 }
 
+function validateResolveIntentRequest(
+  request: ResolveIntentRequest,
+): string | null {
+  if (!request || typeof request !== "object" || Array.isArray(request)) {
+    return "request body must be an object.";
+  }
+
+  if (request.contextSummary?.worksheetNames) {
+    if (!Array.isArray(request.contextSummary.worksheetNames)) {
+      return "contextSummary.worksheetNames must be an array.";
+    }
+  }
+
+  return null;
+}
+
 function getRoutePath(event: ApiGatewayProxyEvent): string {
   return event.rawPath ?? event.path ?? "";
 }
@@ -254,6 +319,40 @@ function parseJobId(routePath: string): string | null {
 
   const jobId = routePath.slice(prefix.length).trim();
   return jobId || null;
+}
+
+function buildIntentResolutionInput(
+  request: ResolveIntentRequest,
+): IntentResolutionInput {
+  return {
+    agentRunId: createAgentRunId(),
+    message: request.message,
+    frontendActionId: request.actionId,
+    requestedIntentId: request.requestedIntent as IntentId | undefined,
+    contextSummary: request.contextSummary
+      ? {
+          dashboardName: request.contextSummary.dashboardName,
+          workbookName: request.contextSummary.workbookName,
+          viewName: request.contextSummary.viewName,
+          worksheetNames: request.contextSummary.worksheetNames,
+          selectedMarks: {
+            hasSelectedMarks: request.contextSummary.hasSelectedMarks,
+            totalCount: request.contextSummary.selectedMarkCount ?? 0,
+            previewCount: request.contextSummary.selectedMarkCount ?? 0,
+            truncated: false,
+            worksheetNames: request.contextSummary.worksheetNames,
+          },
+        }
+      : undefined,
+    resolverMode: "deterministic",
+    traceMetadata: {
+      clientTimestamp: request.clientTimestamp ?? null,
+      actionId: request.actionId ?? null,
+    },
+    metadata: request.metadata
+      ? ({ ...request.metadata } as JsonObject)
+      : undefined,
+  };
 }
 
 function mapChatJobRouteError(

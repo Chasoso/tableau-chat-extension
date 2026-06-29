@@ -6,12 +6,17 @@ import AuthCallback from "./components/AuthCallback";
 import AuthGate from "./components/AuthGate";
 import AuthPopupStart from "./components/AuthPopupStart";
 import ChatPanel from "./components/ChatPanel";
+import { resolveIntent } from "./api/orchestrationApi";
 import { initializeTableauExtension } from "./tableau/tableauExtension";
 import { buildContextPreviewModel } from "./tableau/contextPreview";
 import { getDashboardContext } from "./tableau/dashboardContext";
 import { registerMarkSelectionChangedListeners } from "./tableau/markSelectionListener";
 import type { ContextPreviewLastChangedWorksheet } from "./tableau/contextPreview";
 import type { DashboardContext } from "./types/tableau";
+import type {
+  ResolveIntentRequest,
+  ResolveIntentResponse,
+} from "./types/orchestration";
 
 export default function App() {
   if (env.authRequired && isAuthPopupStart()) {
@@ -31,10 +36,13 @@ function DashboardExtensionApp() {
   const [contextPreview, setContextPreview] = useState<ReturnType<
     typeof buildContextPreviewModel
   > | null>(null);
-  const [questionPrefill, setQuestionPrefill] = useState<{
-    requestId: string;
-    text: string;
-  } | null>(null);
+  const [lastIntentResolution, setLastIntentResolution] = useState<
+    ResolveIntentResponse["result"] | null
+  >(null);
+  const [isResolvingIntent, setIsResolvingIntent] = useState(false);
+  const [intentResolutionError, setIntentResolutionError] = useState<
+    string | null
+  >(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -152,17 +160,72 @@ function DashboardExtensionApp() {
     onSignIn?: () => Promise<void>;
   }) => (
     <div className="app-shell">
+      {isResolvingIntent ? (
+        <div className="operation-status" aria-live="polite">
+          Resolving selected-mark intent...
+        </div>
+      ) : null}
+      {lastIntentResolution ? (
+        <div className="operation-status" aria-live="polite">
+          Resolved intent: {lastIntentResolution.resolvedIntentId} (
+          {lastIntentResolution.status}, confidence{" "}
+          {lastIntentResolution.confidence.toFixed(2)})
+        </div>
+      ) : null}
+      {intentResolutionError ? (
+        <div className="error-banner" aria-live="polite">
+          {intentResolutionError}
+        </div>
+      ) : null}
       <AIContextPreviewPanel
         preview={contextPreview}
-        onActionSuggestionClick={(suggestion) => {
-          if (!suggestion.enabled || !suggestion.prompt) {
+        onActionSuggestionClick={async (suggestion) => {
+          if (!suggestion.enabled || !suggestion.prompt || !contextPreview) {
             return;
           }
 
-          setQuestionPrefill({
-            requestId: crypto.randomUUID(),
-            text: suggestion.prompt,
-          });
+          setIsResolvingIntent(true);
+          setIntentResolutionError(null);
+          setLastIntentResolution(null);
+
+          const request: ResolveIntentRequest = {
+            actionId: suggestion.id,
+            requestedIntent: suggestion.intent,
+            message: suggestion.prompt,
+            clientTimestamp: new Date().toISOString(),
+            contextSummary: {
+              dashboardName: contextPreview.dashboard.name,
+              workbookName: contextPreview.workbook.name ?? undefined,
+              viewName: contextPreview.view.name ?? undefined,
+              hasSelectedMarks: contextPreview.selectedMarks.totalCount > 0,
+              selectedMarkCount: contextPreview.selectedMarks.totalCount,
+              worksheetNames: contextPreview.selectedMarks.items.map(
+                (item) => item.worksheetName,
+              ),
+            },
+            metadata: {
+              sourceKind: contextPreview.metadata.sourceKind,
+              sourceVersion: contextPreview.metadata.sourceVersion,
+              previewVersion: contextPreview.previewVersion,
+              generatedAt: contextPreview.generatedAt,
+              lastChangedWorksheet: contextPreview.lastChangedWorksheet,
+              selectedMarksTruncated: contextPreview.selectedMarks.truncated,
+            },
+          };
+
+          try {
+            const response = await resolveIntent(request, authToken);
+            setLastIntentResolution(response.result);
+          } catch (unknownError) {
+            setLastIntentResolution(null);
+            setIntentResolutionError(
+              unknownError instanceof Error
+                ? unknownError.message
+                : "Intent resolution failed.",
+            );
+          } finally {
+            setIsResolvingIntent(false);
+          }
         }}
       />
       <ChatPanel
@@ -180,7 +243,6 @@ function DashboardExtensionApp() {
               }
             : undefined
         }
-        questionPrefill={questionPrefill}
         onDashboardContextPatch={(patch) => {
           setDashboardContext((current) => {
             if (!current) {
