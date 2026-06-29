@@ -31,6 +31,10 @@ function DashboardExtensionApp() {
   const [contextPreview, setContextPreview] = useState<ReturnType<
     typeof buildContextPreviewModel
   > | null>(null);
+  const [questionPrefill, setQuestionPrefill] = useState<{
+    requestId: string;
+    text: string;
+  } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -148,7 +152,19 @@ function DashboardExtensionApp() {
     onSignIn?: () => Promise<void>;
   }) => (
     <div className="app-shell">
-      <AIContextPreviewPanel preview={contextPreview} />
+      <AIContextPreviewPanel
+        preview={contextPreview}
+        onActionSuggestionClick={(suggestion) => {
+          if (!suggestion.enabled || !suggestion.prompt) {
+            return;
+          }
+
+          setQuestionPrefill({
+            requestId: crypto.randomUUID(),
+            text: suggestion.prompt,
+          });
+        }}
+      />
       <ChatPanel
         dashboardContext={dashboardContext}
         authToken={authToken}
@@ -164,6 +180,7 @@ function DashboardExtensionApp() {
               }
             : undefined
         }
+        questionPrefill={questionPrefill}
         onDashboardContextPatch={(patch) => {
           setDashboardContext((current) => {
             if (!current) {

@@ -1,13 +1,20 @@
-import type { ContextPreviewModel } from "../tableau/contextPreview";
+import type {
+  ContextActionSuggestion,
+  ContextPreviewModel,
+} from "../tableau/contextPreview";
 
 type Props = {
   preview: ContextPreviewModel | null;
+  onActionSuggestionClick?: (suggestion: ContextActionSuggestion) => void;
 };
 
 const SUMMARY_DATA_ROW_LIMIT = 5;
 const SELECTED_MARK_ROW_LIMIT = 3;
 
-export default function AIContextPreviewPanel({ preview }: Props) {
+export default function AIContextPreviewPanel({
+  preview,
+  onActionSuggestionClick,
+}: Props) {
   if (!preview) {
     return (
       <aside className="context-preview-panel" aria-label="AI context preview">
@@ -266,6 +273,49 @@ export default function AIContextPreviewPanel({ preview }: Props) {
               </section>
             ))}
           </div>
+        )}
+      </section>
+
+      <section className="context-preview-section">
+        <h3>Suggested Actions</h3>
+        {preview.actionSuggestions.length === 0 ? (
+          <p className="context-preview-empty">No suggested actions</p>
+        ) : (
+          <ul className="context-preview-suggestion-list">
+            {preview.actionSuggestions.map((suggestion) => (
+              <li
+                key={suggestion.id}
+                className="context-preview-suggestion-item"
+              >
+                <button
+                  type="button"
+                  className="context-preview-suggestion-button"
+                  disabled={!suggestion.enabled}
+                  aria-label={suggestion.label}
+                  onClick={() => {
+                    if (!suggestion.enabled) {
+                      return;
+                    }
+                    onActionSuggestionClick?.(suggestion);
+                  }}
+                >
+                  <span className="context-preview-suggestion-label">
+                    {suggestion.label}
+                  </span>
+                  {suggestion.description ? (
+                    <span className="context-preview-suggestion-description">
+                      {suggestion.description}
+                    </span>
+                  ) : null}
+                  {suggestion.reason ? (
+                    <span className="context-preview-suggestion-reason">
+                      {suggestion.reason}
+                    </span>
+                  ) : null}
+                </button>
+              </li>
+            ))}
+          </ul>
         )}
       </section>
 

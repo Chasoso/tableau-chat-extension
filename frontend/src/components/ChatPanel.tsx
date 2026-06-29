@@ -37,6 +37,10 @@ type Props = {
   onDashboardContextPatch?: (
     patch: Partial<Pick<DashboardContext, "workbookName">>,
   ) => void;
+  questionPrefill?: {
+    requestId: string;
+    text: string;
+  } | null;
 };
 
 type ActiveChatJob = {
@@ -60,6 +64,7 @@ export default function ChatPanel({
   isAuthLoading = false,
   authOverlay,
   onDashboardContextPatch,
+  questionPrefill,
 }: Props) {
   const enrichmentStartedKey = useRef<string | null>(null);
   const notionPopupRef = useRef<Window | null>(null);
@@ -628,7 +633,11 @@ export default function ChatPanel({
               </div>
             ) : null}
           </div>
-          <MessageInput disabled={isSendLocked} onSend={handleSend} />
+          <MessageInput
+            disabled={isSendLocked}
+            onSend={handleSend}
+            prefill={questionPrefill}
+          />
         </div>
       </div>
 

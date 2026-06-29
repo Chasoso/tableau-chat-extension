@@ -91,6 +91,20 @@ export type ContextPreviewSelectedMarks = {
   truncated: boolean;
 };
 
+export type ContextActionSuggestion = {
+  id: "explain_selection";
+  label: string;
+  description?: string;
+  intent: "selected_mark_explanation";
+  enabled: boolean;
+  reason?: string;
+  source: "selectedMarks";
+  prompt?: string;
+  selectedMarkCount?: number;
+  previewCount?: number;
+  truncated?: boolean;
+};
+
 export type ContextPreviewSummaryDataPreview = {
   status: "notCollected" | "available" | "empty" | "unavailable";
   generatedAt: string | null;
@@ -146,6 +160,7 @@ export type ContextPreviewModel = {
   summaryDataPreview: ContextPreviewSummaryDataPreview;
   lastChangedWorksheet: ContextPreviewLastChangedWorksheet;
   availability: ContextPreviewAvailability;
+  actionSuggestions: ContextActionSuggestion[];
   warnings: string[];
   metadata: ContextPreviewMetadata;
 };
@@ -174,6 +189,7 @@ export function buildContextPreviewModel(
     options.selectedMarkLimit ?? DEFAULT_SELECTED_MARK_LIMIT,
     options.selectedMarkRowLimit ?? DEFAULT_SELECTED_MARK_ROW_LIMIT,
   );
+  const actionSuggestions = buildContextActionSuggestions(selectedMarks);
   const summaryDataPreview = buildSummaryDataPreview(
     dashboardContext.summaryDataPreview ?? [],
   );
@@ -203,6 +219,7 @@ export function buildContextPreviewModel(
     summaryDataPreview,
     lastChangedWorksheet: options.lastChangedWorksheet ?? null,
     availability,
+    actionSuggestions,
     warnings,
     metadata: {
       sourceKind: dashboardContext.contextSource ?? "unknown",
@@ -308,6 +325,52 @@ function buildSelectedMarksPreview(
     limit,
     truncated,
   };
+}
+
+function buildContextActionSuggestions(
+  selectedMarks: ContextPreviewSelectedMarks,
+): ContextActionSuggestion[] {
+  const baseSuggestion: ContextActionSuggestion = {
+    id: "explain_selection",
+    label: "この選択を説明",
+    intent: "selected_mark_explanation",
+    enabled: false,
+    reason: "マークが選択されていません。",
+    source: "selectedMarks",
+    prompt: "この選択を説明してください。",
+  };
+
+  if (selectedMarks.status === "unavailable") {
+    return [
+      {
+        ...baseSuggestion,
+        reason: "選択マーク情報を取得できませんでした。",
+      },
+    ];
+  }
+
+  if (selectedMarks.totalCount === 0) {
+    return [baseSuggestion];
+  }
+
+  const descriptionParts = [
+    `${selectedMarks.totalCount}件の選択マーク`,
+    `${selectedMarks.previewCount}件をプレビュー表示`,
+  ];
+
+  return [
+    {
+      ...baseSuggestion,
+      enabled: true,
+      reason: selectedMarks.truncated
+        ? "選択マークは一部のみプレビュー表示されています。"
+        : undefined,
+      description: descriptionParts.join("・"),
+      selectedMarkCount: selectedMarks.totalCount,
+      previewCount: selectedMarks.previewCount,
+      truncated: selectedMarks.truncated,
+    },
+  ];
 }
 
 function buildSummaryDataPreview(

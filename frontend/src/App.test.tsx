@@ -204,6 +204,17 @@ describe("App", () => {
           viewId: "not_implemented",
           datasourceFields: "not_implemented",
         },
+        actionSuggestions: [
+          {
+            id: "explain_selection",
+            label: "この選択を説明",
+            intent: "selected_mark_explanation",
+            enabled: false,
+            reason: "マークが選択されていません。",
+            source: "selectedMarks",
+            prompt: "この選択を説明してください。",
+          },
+        ],
         warnings: [],
         metadata: {
           sourceKind: "tableau-extension",

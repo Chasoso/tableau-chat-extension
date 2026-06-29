@@ -229,6 +229,20 @@ describe("contextPreview", () => {
         viewId: "not_implemented",
         datasourceFields: "available",
       },
+      actionSuggestions: [
+        {
+          id: "explain_selection",
+          label: "この選択を説明",
+          intent: "selected_mark_explanation",
+          enabled: true,
+          description: "2件の選択マーク・2件をプレビュー表示",
+          source: "selectedMarks",
+          prompt: "この選択を説明してください。",
+          selectedMarkCount: 2,
+          previewCount: 2,
+          truncated: false,
+        },
+      ],
       warnings: ["Live context may be incomplete."],
       metadata: {
         sourceKind: "tableau-extension",
@@ -418,6 +432,25 @@ describe("contextPreview", () => {
       note: "Summary data preview has not been collected yet.",
     });
     expect(preview.lastChangedWorksheet).toBeNull();
+  });
+
+  it("builds a disabled suggestion when no selected marks are available", () => {
+    const preview = buildContextPreviewModel({
+      ...createDashboardContext(),
+      selectedMarks: [],
+    });
+
+    expect(preview.actionSuggestions).toEqual([
+      {
+        id: "explain_selection",
+        label: "この選択を説明",
+        intent: "selected_mark_explanation",
+        enabled: false,
+        reason: "マークが選択されていません。",
+        source: "selectedMarks",
+        prompt: "この選択を説明してください。",
+      },
+    ]);
   });
 
   it("treats an empty selected mark array as a valid empty state", () => {
