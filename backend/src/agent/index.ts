@@ -20,8 +20,10 @@ export type {
   JsonObject,
   JsonPrimitive,
   JsonValue,
+  LegacyTraceEventType,
   ToolAction,
   ToolActionKind,
+  OrchestrationTraceEventType,
   TraceError,
   TraceEvent,
   TraceEventKind,
@@ -70,6 +72,25 @@ export {
   createMinimalExecutionEngine,
   MinimalExecutionEngine,
 } from "./execution";
+export {
+  buildBudgetTraceMetadata,
+  buildExecutionTraceMetadata as buildOrchestrationExecutionTraceMetadata,
+  buildFallbackTraceMetadata,
+  buildIntentResolutionTraceMetadata as buildOrchestrationIntentResolutionTraceMetadata,
+  buildPlanSelectionTraceMetadata,
+  buildPlanStepTraceMetadata,
+  buildToolRoutingTraceMetadata as buildOrchestrationToolRoutingTraceMetadata,
+  createBudgetTraceEvent,
+  createFallbackTraceEvent,
+  createIntentResolutionTraceEvent,
+  createOrchestrationCompletedTraceEvent,
+  createOrchestrationFailedTraceEvent,
+  createOrchestrationStartedTraceEvent,
+  createOrchestrationTraceEvent,
+  createPlanSelectionTraceEvent,
+  createPlanStepTraceEvent,
+  createToolRoutingTraceEvent,
+} from "./orchestrationTrace";
 export type {
   IntentId,
   IntentResolutionContextPackRef,
@@ -126,6 +147,16 @@ export type {
   ExecutionStepStatus,
   MinimalExecutionEngineOptions,
 } from "./execution";
+export type {
+  OrchestrationTraceBudgetSnapshot,
+  OrchestrationTraceBudgetUsage,
+  OrchestrationTraceContextSummary,
+  OrchestrationTraceEventInput,
+  OrchestrationTraceMetadata,
+  OrchestrationTraceSelectionSummary,
+  OrchestrationTraceStage,
+  OrchestrationTraceStepSummary,
+} from "./orchestrationTrace";
 export { createTraceError, createTraceEvent, createTraceStep } from "./trace";
 export {
   buildFixedPlan,

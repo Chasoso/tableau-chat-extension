@@ -2,10 +2,12 @@ import { getConfig } from "../config";
 import { authenticateRequest } from "../auth/cognitoAuth";
 import {
   createAgentRunId,
+  buildOrchestrationIntentResolutionTraceMetadata,
   createDefaultIntentResolver,
   type JsonObject,
   type IntentId,
   type IntentResolutionInput,
+  type OrchestrationTraceContextSummary,
 } from "../agent";
 import {
   logError,
@@ -184,7 +186,23 @@ export async function handler(
       const result = await resolver.resolve(
         buildIntentResolutionInput(intentRequest),
       );
-      const response: ResolveIntentResponse = { result };
+      const response: ResolveIntentResponse = {
+        result: {
+          ...result,
+          traceMetadata: {
+            ...(result.traceMetadata ?? {}),
+            orchestration: buildOrchestrationIntentResolutionTraceMetadata(
+              result,
+              {
+                frontendActionId: intentRequest.actionId,
+                contextSummary: buildOrchestrationContextSummary(
+                  intentRequest.contextSummary,
+                ),
+              },
+            ),
+          },
+        },
+      };
 
       logInfo("chat.intent_request.completed", {
         requestId,
@@ -352,6 +370,28 @@ function buildIntentResolutionInput(
     metadata: request.metadata
       ? ({ ...request.metadata } as JsonObject)
       : undefined,
+  };
+}
+
+function buildOrchestrationContextSummary(
+  contextSummary: ResolveIntentRequest["contextSummary"],
+): OrchestrationTraceContextSummary | undefined {
+  if (!contextSummary) {
+    return undefined;
+  }
+
+  return {
+    dashboardName: contextSummary.dashboardName,
+    workbookName: contextSummary.workbookName,
+    viewName: contextSummary.viewName,
+    worksheetNames: contextSummary.worksheetNames,
+    selectedMarks: {
+      hasSelectedMarks: contextSummary.hasSelectedMarks,
+      totalCount: contextSummary.selectedMarkCount,
+      previewCount: contextSummary.selectedMarkCount,
+      truncated: false,
+      worksheetNames: contextSummary.worksheetNames,
+    },
   };
 }
 
