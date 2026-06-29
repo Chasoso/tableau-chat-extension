@@ -1,12 +1,28 @@
-﻿import { FormEvent, KeyboardEvent, useMemo, useState } from "react";
+import { FormEvent, KeyboardEvent, useEffect, useMemo, useState } from "react";
+
+type MessageInputPrefill = {
+  requestId: string;
+  text: string;
+} | null;
 
 type Props = {
   disabled?: boolean;
   onSend: (question: string) => void;
+  prefill?: MessageInputPrefill;
 };
 
-export default function MessageInput({ disabled, onSend }: Props) {
+export default function MessageInput({ disabled, onSend, prefill }: Props) {
   const [question, setQuestion] = useState("");
+  const prefillRequestId = prefill?.requestId;
+  const prefillText = prefill?.text;
+
+  useEffect(() => {
+    if (!prefillText) {
+      return;
+    }
+
+    setQuestion(prefillText);
+  }, [prefillRequestId, prefillText]);
 
   const canSend = useMemo(
     () => Boolean(question.trim()) && !disabled,

@@ -6,7 +6,7 @@
     "dev": "vite --host 0.0.0.0",
     "build": "tsc -b && vite build",
     "lint": "eslint . && npm run format:check",
-    "format:check": "prettier --check \"src/**/*.{ts,tsx}\" \"e2e/**/*.ts\" \"*.{ts,json,mjs}\"",
+    "format:check": "prettier --check src e2e package.json package-lock.json eslint.config.mjs playwright.config.ts tsconfig.json vite.config.ts vitest.config.ts",
     "preview": "vite preview",
     "test:unit": "vitest run",
     "test:coverage": "vitest run --coverage",

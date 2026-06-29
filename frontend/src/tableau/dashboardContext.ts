@@ -3,9 +3,15 @@ import type {
   DataSourceSummary,
   FilterSummary,
   ParameterSummary,
+  SelectedMarkCellSummary,
   SelectedMarkSummary,
+  SelectedMarkRowSummary,
   WorksheetSummary,
 } from "../types/tableau";
+import {
+  collectSummaryDataPreview,
+  type SummaryDataPreviewOptions,
+} from "./summaryDataPreview";
 
 type TableauDashboard = {
   name?: string;
@@ -17,14 +23,19 @@ type TableauDashboard = {
 type DashboardContextOptions = {
   workbook?: unknown;
   referrer?: string;
+  summaryDataPreview?: SummaryDataPreviewOptions;
 };
 
 type TableauWorksheet = {
   name?: string;
+  id?: string;
   sheetType?: string;
   size?: { width?: number; height?: number };
   getFiltersAsync?: () => Promise<unknown[]>;
   getSelectedMarksAsync?: () => Promise<unknown>;
+  getSummaryDataAsync?: (
+    options?: SummaryDataPreviewOptions,
+  ) => Promise<unknown>;
   getDataSourcesAsync?: () => Promise<unknown[]>;
 };
 
@@ -118,12 +129,14 @@ export async function getDashboardContext(
     }),
   );
 
-  const [filters, selectedMarks, dataSources, parameters] = await Promise.all([
-    collectFilters(worksheets),
-    collectSelectedMarks(worksheets),
-    collectDataSources(worksheets),
-    collectParameters(dashboard),
-  ]);
+  const [filters, selectedMarks, dataSources, parameters, summaryDataPreview] =
+    await Promise.all([
+      collectFilters(worksheets),
+      collectSelectedMarks(worksheets),
+      collectDataSources(worksheets),
+      collectParameters(dashboard),
+      collectSummaryDataPreview(worksheets, options.summaryDataPreview),
+    ]);
 
   return {
     dashboardName: dashboard.name ?? "Untitled dashboard",
@@ -136,6 +149,7 @@ export async function getDashboardContext(
     filters,
     parameters,
     selectedMarks,
+    summaryDataPreview,
     dataSources,
     availability: {
       workbookId: workbookId ? "available" : "not_supported",
@@ -363,12 +377,15 @@ async function collectSelectedMarks(
           }>;
         };
         const firstTable = selected.data?.[0];
+        const columns =
+          firstTable?.columns?.map(
+            (column) => column.fieldName ?? "Unknown column",
+          ) ?? [];
+        const rows = normalizeSelectedMarkRows(firstTable?.data, columns);
         return {
           worksheetName: worksheet.name ?? "Untitled worksheet",
-          columns:
-            firstTable?.columns?.map(
-              (column) => column.fieldName ?? "Unknown column",
-            ) ?? [],
+          columns,
+          rows,
           rowCount: firstTable?.data?.length ?? 0,
           status: "available" as const,
         };
@@ -382,6 +399,170 @@ async function collectSelectedMarks(
   );
 
   return summaries;
+}
+
+function normalizeSelectedMarkRows(
+  rows: unknown[] | undefined,
+  columns: string[],
+): SelectedMarkRowSummary[] | undefined {
+  if (!Array.isArray(rows) || rows.length === 0) {
+    return undefined;
+  }
+
+  const normalizedRows = rows
+    .map((row) => normalizeSelectedMarkRow(row, columns))
+    .filter((row): row is SelectedMarkRowSummary => row !== undefined);
+
+  return normalizedRows.length ? normalizedRows : undefined;
+}
+
+function normalizeSelectedMarkRow(
+  row: unknown,
+  columns: string[],
+): SelectedMarkRowSummary | undefined {
+  if (Array.isArray(row)) {
+    const values = row.map((cell, index) =>
+      normalizeSelectedMarkCell(cell, columns[index]),
+    );
+    return values.length ? { values } : undefined;
+  }
+
+  if (!row || typeof row !== "object") {
+    return undefined;
+  }
+
+  const record = row as Record<string, unknown>;
+
+  if (Array.isArray(record.values)) {
+    const values = record.values.map((cell, index) =>
+      normalizeSelectedMarkCell(cell, columns[index]),
+    );
+    return values.length ? { values } : undefined;
+  }
+
+  if (Array.isArray(record.cells)) {
+    const values = record.cells.map((cell, index) =>
+      normalizeSelectedMarkCell(cell, columns[index]),
+    );
+    return values.length ? { values } : undefined;
+  }
+
+  const values = columns.map((column) =>
+    normalizeSelectedMarkCell(record[column], column),
+  );
+
+  return values.length ? { values } : undefined;
+}
+
+function normalizeSelectedMarkCell(
+  cell: unknown,
+  fieldName?: string,
+): SelectedMarkCellSummary {
+  const value = normalizeSelectedMarkCellValue(cell);
+
+  return {
+    fieldName: fieldName ?? null,
+    raw: value.raw,
+    display: value.display,
+    isEmpty: value.isEmpty,
+  };
+}
+
+function normalizeSelectedMarkCellValue(cell: unknown): {
+  raw: string | number | boolean | null;
+  display: string;
+  isEmpty: boolean;
+} {
+  if (cell === null || cell === undefined) {
+    return {
+      raw: null,
+      display: "Not set",
+      isEmpty: true,
+    };
+  }
+
+  if (cell instanceof Date) {
+    const display = cell.toISOString();
+    return {
+      raw: display,
+      display,
+      isEmpty: false,
+    };
+  }
+
+  if (typeof cell !== "object") {
+    return {
+      raw: cell as string | number | boolean,
+      display: normalizeDisplayValue(cell),
+      isEmpty: false,
+    };
+  }
+
+  const record = cell as {
+    formattedValue?: unknown;
+    value?: unknown;
+    displayValue?: unknown;
+  };
+  const rawValue =
+    record.value ?? record.formattedValue ?? record.displayValue ?? null;
+  const displaySource =
+    record.formattedValue ?? record.displayValue ?? record.value ?? null;
+
+  return {
+    raw: normalizeSelectedMarkRawValue(rawValue),
+    display: normalizeDisplayValue(displaySource),
+    isEmpty: rawValue === null || rawValue === undefined || rawValue === "",
+  };
+}
+
+function normalizeSelectedMarkRawValue(
+  value: unknown,
+): string | number | boolean | null {
+  if (value === null || value === undefined) {
+    return null;
+  }
+
+  if (value instanceof Date) {
+    return value.toISOString();
+  }
+
+  if (
+    typeof value === "string" ||
+    typeof value === "number" ||
+    typeof value === "boolean"
+  ) {
+    return value;
+  }
+
+  try {
+    return JSON.stringify(value) ?? String(value);
+  } catch {
+    return String(value);
+  }
+}
+
+function normalizeDisplayValue(value: unknown): string {
+  if (value === null || value === undefined) {
+    return "Not set";
+  }
+
+  if (value instanceof Date) {
+    return value.toISOString();
+  }
+
+  if (typeof value === "string") {
+    return value.trim() ? value : "(empty)";
+  }
+
+  if (typeof value === "number" || typeof value === "boolean") {
+    return String(value);
+  }
+
+  try {
+    return JSON.stringify(value) ?? String(value);
+  } catch {
+    return String(value);
+  }
 }
 
 async function collectDataSources(

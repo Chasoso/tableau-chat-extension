@@ -35,12 +35,34 @@ describe("MessageInput", () => {
     render(<MessageInput onSend={onSend} />);
 
     const textarea = screen.getByLabelText("質問");
-    fireEvent.change(textarea, { target: { value: "週次トレンドを教えて" } });
+    fireEvent.change(textarea, { target: { value: "選択マークを説明して" } });
 
     fireEvent.keyDown(textarea, { key: "Enter", shiftKey: true });
     expect(onSend).not.toHaveBeenCalled();
 
     fireEvent.keyDown(textarea, { key: "Enter", shiftKey: false });
-    expect(onSend).toHaveBeenCalledWith("週次トレンドを教えて");
+    expect(onSend).toHaveBeenCalledWith("選択マークを説明して");
+  });
+
+  it("prefills the textarea without auto submitting", () => {
+    const onSend = vi.fn();
+    const { rerender } = render(<MessageInput onSend={onSend} />);
+
+    rerender(
+      <MessageInput
+        onSend={onSend}
+        prefill={{
+          requestId: "suggestion-1",
+          text: "この選択を説明してください。",
+        }}
+      />,
+    );
+
+    const textarea = screen.getByLabelText("質問");
+    const submitButton = screen.getByRole("button", { name: "送信" });
+
+    expect(textarea).toHaveValue("この選択を説明してください。");
+    expect(onSend).not.toHaveBeenCalled();
+    expect(submitButton).not.toBeDisabled();
   });
 });
