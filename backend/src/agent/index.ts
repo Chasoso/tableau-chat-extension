@@ -58,6 +58,12 @@ export {
   SELECTED_MARK_EXPLANATION_PLAN_DEFINITION,
   UNSUPPORTED_PLAN_DEFINITION,
 } from "./plan";
+export {
+  buildToolRoutingTraceMetadata,
+  createDefaultToolRouter,
+  createMinimalToolRouter,
+  MinimalToolRouter,
+} from "./toolRouter";
 export type {
   IntentId,
   IntentResolutionContextPackRef,
@@ -91,6 +97,19 @@ export type {
   ResponseStrategy,
   RunBudget,
 } from "./plan";
+export type {
+  MinimalToolRouterOptions,
+  ToolRouter,
+  ToolRoutingBudgetStatus,
+  ToolRoutingContextSummary,
+  ToolRoutingFallbackBehavior,
+  ToolRoutingInput,
+  ToolRoutingPolicy,
+  ToolRoutingPreconditionResult,
+  ToolRoutingPreconditionStatus,
+  ToolRoutingResult,
+  ToolRoutingStatus,
+} from "./toolRouter";
 export { createTraceError, createTraceEvent, createTraceStep } from "./trace";
 export {
   buildFixedPlan,
