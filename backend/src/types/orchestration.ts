@@ -1,3 +1,11 @@
+import type {
+  ExecutionResult,
+  IntentResolutionResult,
+  OrchestrationTraceContextSummary,
+  PlanSelectionResult,
+  TraceEvent,
+} from "../agent";
+
 export type ResolveIntentContextSummary = {
   dashboardName?: string;
   workbookName?: string;
@@ -7,36 +15,34 @@ export type ResolveIntentContextSummary = {
   worksheetNames?: string[];
 };
 
+export type ResolveIntentRunMode =
+  | "resolve_only"
+  | "resolve_and_execute_fixed_plan";
+
 export type ResolveIntentRequest = {
   actionId?: string;
   requestedIntent?: string;
   message?: string;
   clientTimestamp?: string;
   contextSummary?: ResolveIntentContextSummary;
+  runMode?: ResolveIntentRunMode;
   metadata?: Record<string, unknown>;
 };
 
+export type SelectedMarkOrchestrationResponse = {
+  mode: Extract<ResolveIntentRunMode, "resolve_and_execute_fixed_plan">;
+  status: "completed" | "partial" | "fallback" | "failed";
+  message: string;
+  placeholderResponse: string;
+  intentResolution: IntentResolutionResult;
+  planSelection?: PlanSelectionResult;
+  execution?: ExecutionResult;
+  traceEvents: TraceEvent[];
+  traceMetadata?: Record<string, unknown>;
+  contextSummary?: OrchestrationTraceContextSummary;
+};
+
 export type ResolveIntentResponse = {
-  result: {
-    agentRunId: string;
-    status: "resolved" | "unresolved" | "fallback";
-    resolvedIntentId: string;
-    confidence: number;
-    source:
-      | "ui_action"
-      | "explicit"
-      | "deterministic_rule"
-      | "llm"
-      | "fallback";
-    reason?: string;
-    warnings: string[];
-    fallbackIntentId?: string;
-    evidence?: Array<{
-      type: string;
-      value: string;
-      metadata?: Record<string, unknown>;
-    }>;
-    traceMetadata?: Record<string, unknown>;
-    metadata?: Record<string, unknown>;
-  };
+  result: IntentResolutionResult;
+  orchestration?: SelectedMarkOrchestrationResponse;
 };

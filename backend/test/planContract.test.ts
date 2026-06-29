@@ -77,10 +77,17 @@ describe("plan execution contract", () => {
       "selected_marks",
     ]);
     expect(plan.steps.map((step) => step.type)).toEqual([
-      "collect_context",
       "validate_context",
+      "call_tool",
+      "call_tool",
       "compose_response",
     ]);
+    expect(plan.allowedTools).toEqual(["context"]);
+    expect(plan.budget).toMatchObject({
+      maxModelCalls: 0,
+      maxToolCalls: 2,
+      timeoutMs: 15_000,
+    });
     expect(preconditions.every((item) => item.satisfied)).toBe(true);
     expect(JSON.parse(JSON.stringify(plan))).toEqual(plan);
   });

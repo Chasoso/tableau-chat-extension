@@ -1,5 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { resolveIntent } from "./orchestrationApi";
+import {
+  resolveIntent,
+  runSelectedMarkExplanationOrchestration,
+} from "./orchestrationApi";
 
 const fetchMock = vi.fn();
 
@@ -74,6 +77,76 @@ describe("orchestrationApi", () => {
         headers: expect.objectContaining({
           Authorization: "Bearer token-1",
         }),
+      }),
+    );
+  });
+
+  it("posts selected-mark orchestration requests with the fixed-plan mode", async () => {
+    fetchMock.mockResolvedValue(
+      jsonResponse({
+        result: {
+          agentRunId: "agent-run-1",
+          status: "resolved",
+          resolvedIntentId: "selected_mark_explanation",
+          confidence: 0.99,
+          source: "ui_action",
+          warnings: [],
+          evidence: [],
+        },
+        orchestration: {
+          mode: "resolve_and_execute_fixed_plan",
+          status: "completed",
+          message: "Structured orchestration is connected.",
+          placeholderResponse: "Structured orchestration is connected.",
+          intentResolution: {
+            agentRunId: "agent-run-1",
+            status: "resolved",
+            resolvedIntentId: "selected_mark_explanation",
+            confidence: 0.99,
+            source: "ui_action",
+            warnings: [],
+            evidence: [],
+          },
+          traceEvents: [],
+        },
+      }),
+    );
+
+    await expect(
+      runSelectedMarkExplanationOrchestration(
+        {
+          actionId: "explain_selection",
+          requestedIntent: "selected_mark_explanation",
+          message: "Explain this selection.",
+          contextSummary: {
+            hasSelectedMarks: true,
+            selectedMarkCount: 3,
+            worksheetNames: ["Sales Trend"],
+            dashboardName: "Executive Overview",
+            workbookName: "Sales Workbook",
+            viewName: "Executive Overview",
+          },
+          metadata: {
+            sourceKind: "tableau-extension",
+          },
+        },
+        "token-1",
+      ),
+    ).resolves.toEqual(
+      expect.objectContaining({
+        orchestration: expect.objectContaining({
+          mode: "resolve_and_execute_fixed_plan",
+          status: "completed",
+        }),
+      }),
+    );
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/intent/resolve",
+      expect.objectContaining({
+        body: expect.stringContaining(
+          '"runMode":"resolve_and_execute_fixed_plan"',
+        ),
       }),
     );
   });

@@ -6,7 +6,7 @@ import AuthCallback from "./components/AuthCallback";
 import AuthGate from "./components/AuthGate";
 import AuthPopupStart from "./components/AuthPopupStart";
 import ChatPanel from "./components/ChatPanel";
-import { resolveIntent } from "./api/orchestrationApi";
+import { runSelectedMarkExplanationOrchestration } from "./api/orchestrationApi";
 import { initializeTableauExtension } from "./tableau/tableauExtension";
 import { buildContextPreviewModel } from "./tableau/contextPreview";
 import { getDashboardContext } from "./tableau/dashboardContext";
@@ -16,6 +16,7 @@ import type { DashboardContext } from "./types/tableau";
 import type {
   ResolveIntentRequest,
   ResolveIntentResponse,
+  SelectedMarkOrchestrationResponse,
 } from "./types/orchestration";
 
 export default function App() {
@@ -39,6 +40,8 @@ function DashboardExtensionApp() {
   const [lastIntentResolution, setLastIntentResolution] = useState<
     ResolveIntentResponse["result"] | null
   >(null);
+  const [lastOrchestrationResult, setLastOrchestrationResult] =
+    useState<SelectedMarkOrchestrationResponse | null>(null);
   const [isResolvingIntent, setIsResolvingIntent] = useState(false);
   const [intentResolutionError, setIntentResolutionError] = useState<
     string | null
@@ -162,7 +165,7 @@ function DashboardExtensionApp() {
     <div className="app-shell">
       {isResolvingIntent ? (
         <div className="operation-status" aria-live="polite">
-          Resolving selected-mark intent...
+          Running selected-mark orchestration...
         </div>
       ) : null}
       {lastIntentResolution ? (
@@ -171,6 +174,25 @@ function DashboardExtensionApp() {
           {lastIntentResolution.status}, confidence{" "}
           {lastIntentResolution.confidence.toFixed(2)})
         </div>
+      ) : null}
+      {lastOrchestrationResult ? (
+        <>
+          <div className="operation-status" aria-live="polite">
+            Orchestration: {lastOrchestrationResult.status}
+            {lastOrchestrationResult.planSelection?.selectedPlan?.id ? (
+              <>
+                {" "}
+                / Plan: {lastOrchestrationResult.planSelection.selectedPlan.id}
+              </>
+            ) : null}
+            {lastOrchestrationResult.execution?.status ? (
+              <> / Execution: {lastOrchestrationResult.execution.status}</>
+            ) : null}
+          </div>
+          <div className="operation-status" aria-live="polite">
+            {lastOrchestrationResult.placeholderResponse}
+          </div>
+        </>
       ) : null}
       {intentResolutionError ? (
         <div className="error-banner" aria-live="polite">
@@ -187,6 +209,7 @@ function DashboardExtensionApp() {
           setIsResolvingIntent(true);
           setIntentResolutionError(null);
           setLastIntentResolution(null);
+          setLastOrchestrationResult(null);
 
           const request: ResolveIntentRequest = {
             actionId: suggestion.id,
@@ -214,14 +237,19 @@ function DashboardExtensionApp() {
           };
 
           try {
-            const response = await resolveIntent(request, authToken);
+            const response = await runSelectedMarkExplanationOrchestration(
+              request,
+              authToken,
+            );
             setLastIntentResolution(response.result);
+            setLastOrchestrationResult(response.orchestration ?? null);
           } catch (unknownError) {
             setLastIntentResolution(null);
+            setLastOrchestrationResult(null);
             setIntentResolutionError(
               unknownError instanceof Error
                 ? unknownError.message
-                : "Intent resolution failed.",
+                : "Selected-mark orchestration failed.",
             );
           } finally {
             setIsResolvingIntent(false);

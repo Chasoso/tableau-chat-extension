@@ -286,8 +286,8 @@ describe("MinimalExecutionEngine", () => {
     const result = await engine.execute(createExecutionInput());
     const traceMetadata = buildExecutionTraceMetadata(result);
 
-    expect(result.budgetUsage.maxToolCalls).toBe(0);
-    expect(result.budgetUsage.maxModelCalls).toBe(1);
+    expect(result.budgetUsage.maxToolCalls).toBe(2);
+    expect(result.budgetUsage.maxModelCalls).toBe(0);
     expect(result.budgetUsage.timeoutMs).toBe(15_000);
     expect(traceMetadata.planId).toBe("selected_mark_explanation-v1");
     expect(traceMetadata.intentId).toBe("selected_mark_explanation");
@@ -305,10 +305,13 @@ describe("MinimalExecutionEngine", () => {
     );
 
     expect(result.planId).toBe("selected_mark_explanation-v1");
-    expect(result.stepResults).toHaveLength(3);
-    expect(
-      result.stepResults.every((step) => step.status === "not_executed"),
-    ).toBe(true);
+    expect(result.stepResults).toHaveLength(4);
+    expect(result.stepResults.map((step) => step.status)).toEqual([
+      "not_executed",
+      "routed",
+      "routed",
+      "not_executed",
+    ]);
     expect(result.status).toBe("partial");
   });
 
