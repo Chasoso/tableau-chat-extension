@@ -1,4 +1,5 @@
 import type { JsonObject, JsonValue } from "./types";
+import type { ToolPrecondition } from "./toolPreconditions";
 
 export type ToolCategory =
   | "context"
@@ -64,6 +65,7 @@ export type ToolDefinition = {
   availability: ToolAvailability;
   inputSchema: ToolSchemaPolicy;
   outputSchema: ToolSchemaPolicy;
+  preconditions?: readonly ToolPrecondition[];
   version?: string;
   metadata?: JsonObject;
   traceMetadata?: JsonObject;
@@ -78,6 +80,7 @@ export type ToolDefinitionSummary = {
   availability: ToolAvailability;
   inputSchema: ToolSchemaPolicy;
   outputSchema: ToolSchemaPolicy;
+  preconditions?: readonly ToolPrecondition[];
   version?: string;
 };
 
@@ -93,6 +96,9 @@ export function createToolDefinitionSummary(
     availability: { ...definition.availability },
     inputSchema: cloneToolSchemaPolicy(definition.inputSchema),
     outputSchema: cloneToolSchemaPolicy(definition.outputSchema),
+    ...(definition.preconditions?.length
+      ? { preconditions: cloneToolPreconditions(definition.preconditions) }
+      : {}),
     ...(definition.version ? { version: definition.version } : {}),
   };
 }
@@ -113,6 +119,20 @@ function cloneToolSchemaPolicy(policy: ToolSchemaPolicy): ToolSchemaPolicy {
       ? { optionalFields: [...policy.optionalFields] }
       : {}),
   };
+}
+
+function cloneToolPreconditions(
+  preconditions: readonly ToolPrecondition[],
+): ToolPrecondition[] {
+  return preconditions.map((precondition) => ({
+    ...precondition,
+    ...(precondition.expected
+      ? { expected: { ...precondition.expected } }
+      : {}),
+    ...(precondition.metadata
+      ? { metadata: { ...precondition.metadata } }
+      : {}),
+  }));
 }
 
 function isJsonSafeValue(value: JsonValue | ToolDefinitionSummary): boolean {

@@ -2,40 +2,45 @@
 
 ## Background
 
-Tool の安全性を担保するには、selected marks や availability、permission などの前提条件を統一的に表現する必要がある。
+ToolDefinition and ToolRegistry now exist as contracts, but v0.5.0 still needs a shared precondition model so safety, context, policy, and budget checks can be described consistently.
 
 ## Goal
 
-ToolPrecondition model を定義し、ToolRegistry / ToolRouter / ExecutionEngine から参照できるようにする。
+Define the minimal ToolPrecondition contract so tools can express required and optional conditions without implementing full enforcement yet.
 
 ## Scope
 
 - ToolPrecondition model
-- selected marks / summary data / availability
-- permission / explicit confirmation の表現
-- budget / policy の最小表現
+- ToolPreconditionType
+- pass / fail / skip / blocked
+- selected marks / summary data / availability conditions
+- permission / explicit confirmation conditions
+- budget / policy conditions
+- selected_mark_explanation precondition set
 
 ## Out of scope
 
-- 実際の precondition enforcement のフル実装
-- write-capable tool の大規模追加
+- full precondition enforcement
+- ToolRouter / ExecutionEngine integration
+- large write-capable tool expansion
 
 ## Tasks
 
-- precondition type を整理する
-- pass / fail / skip / blocked を定義する
-- selected_mark_explanation 向けの precondition を決める
+- define precondition and result types
+- define selected_mark_explanation preconditions
+- add a minimal deterministic evaluator for contract tests
 
 ## Acceptance criteria
 
-- precondition が JSON-safe に表現できる
-- required / optional を表現できる
-- selected_mark_explanation に必要な条件を表せる
+- preconditions are JSON-safe
+- required / optional conditions are represented
+- selected_mark_explanation conditions are represented
+- pass / fail / skip / blocked are clearly distinguishable
 
 ## Validation
 
-- contract test が通る
-- 既存 orchestration を壊していない
+- contract tests pass
+- existing orchestration behavior is unchanged
 
 ## Related
 
