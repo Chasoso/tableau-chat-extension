@@ -14,6 +14,7 @@ ToolDefinition / ToolCategory / ToolSafety の契約を定義し、selected_mark
 - ToolCategory contract
 - Tool safety / read-only / write-capable の分類
 - input/output schema policy の最小定義
+- selected_mark_explanation 向け context-derived pseudo tools を表現できる contract
 
 ## Out of scope
 
@@ -26,12 +27,14 @@ ToolDefinition / ToolCategory / ToolSafety の契約を定義し、selected_mark
 - tool metadata の最小項目を定義する
 - category / safety / availability を型に落とす
 - schema policy を docs に反映する
+- selected_mark_explanation 用 pseudo tool の fixture を用意する
 
 ## Acceptance criteria
 
 - ToolDefinition が JSON-safe に扱える
 - category / safety を表現できる
 - selected_mark_explanation 向け tool を表現できる
+- schema library が不要な contract に留まっている
 
 ## Validation
 
