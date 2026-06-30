@@ -14,6 +14,7 @@ import {
   type ToolRoutingPreconditionResult,
   type ToolRoutingResult,
 } from "./toolRouter";
+import type { ToolRegistry } from "./toolRegistry";
 import type { JsonObject } from "./types";
 
 export type ExecutionStatus = "completed" | "partial" | "failed" | "skipped";
@@ -91,6 +92,7 @@ export interface ExecutionEngine {
 
 export type MinimalExecutionEngineOptions = {
   toolRouter?: ToolRouter;
+  toolRegistry?: ToolRegistry;
 };
 
 export class MinimalExecutionEngine implements ExecutionEngine {
@@ -102,7 +104,13 @@ export class MinimalExecutionEngine implements ExecutionEngine {
       input.plan.budget,
       input.initialBudget,
     );
-    const toolRouter = this.options.toolRouter ?? createDefaultToolRouter();
+    const toolRouter =
+      this.options.toolRouter ??
+      createDefaultToolRouter(
+        this.options.toolRegistry
+          ? { registry: this.options.toolRegistry }
+          : undefined,
+      );
     const stepResults: ExecutionStepResult[] = [];
     const executedSteps: string[] = [];
     const skippedSteps: string[] = [];

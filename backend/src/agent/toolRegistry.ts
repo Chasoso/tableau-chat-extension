@@ -187,7 +187,7 @@ export class InMemoryToolRegistry implements ToolRegistry {
       return {
         status: "missing",
         toolName,
-        reason: `Tool '${toolName}' is not registered.`,
+        reason: `Tool '${toolName}' is missing from the registry.`,
         warnings: ["missing_tool"],
       };
     }
@@ -301,7 +301,7 @@ export class InMemoryToolRegistry implements ToolRegistry {
       return {
         status: "missing",
         toolName,
-        reason: `Tool '${toolName}' is not registered.`,
+        reason: `Tool '${toolName}' is missing from the registry.`,
         warnings: ["missing_tool"],
       };
     }

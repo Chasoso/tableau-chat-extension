@@ -2,40 +2,43 @@
 
 ## Background
 
-v0.4.0 の ToolRouter は門番として動いているだけなので、ToolRegistry を参照して実行可否を判断できるようにしたい。
+ToolRouter in v0.4.0 can gate plan steps, but v0.5.0 needs it to consult ToolRegistry so that context pseudo tools and other registered tools can be routed consistently.
 
 ## Goal
 
-ToolRouter が ToolRegistry lookup / availability / preconditions を参照できるようにする。
+Connect ToolRouter to ToolRegistry lookups without adding tool execution or registry discovery.
 
 ## Scope
 
-- ToolRouter contract の拡張
-- ToolRegistry lookup との接続
-- allowed / blocked / unavailable の判定
+- ToolRouter contract extension
+- ToolRegistry lookup integration
+- allowed / blocked / unavailable decisions
 
 ## Out of scope
 
-- 実 tool execution
-- registry discovery
+- tool execution
+- registry discovery automation
 
 ## Tasks
 
-- ToolRouter 入力に registry reference を追加する
-- lookup result を routing result に落とす
-- selected_mark_explanation に必要な tool だけを通す
+- inject a ToolRegistry reference into ToolRouter
+- map lookup results to routing results
+- keep the no-registry path backward-compatible
 
 ## Acceptance criteria
 
-- ToolRouter が registry を参照できる
-- routing 結果が安全に返る
+- ToolRouter can consult ToolRegistry when available
+- routing remains JSON-safe and trace-friendly
+- existing routing behavior remains stable when no registry is provided
 
 ## Validation
 
-- router contract test が通る
-- 既存 behavior を壊していない
+- router contract tests pass
+- docs describe the mapping clearly
 
 ## Related
 
-- #51 v0.5.0 Tool Layer Rebuild
-- docs/v0.5-tool-layer-rebuild-plan.md
+- `docs/v0.5-context-derived-pseudo-tools.md`
+- `docs/v0.5-tool-layer-rebuild-plan.md`
+- `docs/v0.5-tool-layer-audit-and-boundaries.md`
+- #74 v0.5.0 Tool Layer Rebuild
