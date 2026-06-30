@@ -116,6 +116,23 @@ export {
   MinimalExecutionEngine,
 } from "./execution";
 export {
+  buildToolExecutionTraceMetadata,
+  createDefaultToolExecutionWrapper,
+  createMinimalToolExecutionWrapper,
+  MinimalToolExecutionWrapper,
+} from "./toolExecutionWrapper";
+export type {
+  MinimalToolExecutionWrapperOptions,
+  ToolExecutionBudgetUsage,
+  ToolExecutionHandler,
+  ToolExecutionInput,
+  ToolExecutionNormalizationSummary,
+  ToolExecutionResult,
+  ToolExecutionStatus,
+  ToolExecutionWrapper,
+  ToolExecutionWrapperOptions,
+} from "./toolExecutionWrapper";
+export {
   runSelectedMarkExplanationOrchestration,
   selectFixedPlanForIntent,
 } from "./selectedMarkOrchestration";
