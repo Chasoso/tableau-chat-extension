@@ -34,6 +34,22 @@ export type {
   TraceStepStatus,
   TraceStepType,
 } from "./types";
+export type {
+  ToolAvailability,
+  ToolAvailabilityStatus,
+  ToolCapability,
+  ToolCategory,
+  ToolDefinition,
+  ToolDefinitionSummary,
+  ToolSafety,
+  ToolSafetyLevel,
+  ToolSchemaPolicy,
+  ToolSchemaPolicyKind,
+} from "./toolDefinition";
+export {
+  createToolDefinitionSummary,
+  isToolDefinitionJsonSafe,
+} from "./toolDefinition";
 export {
   buildIntentResolutionTraceMetadata,
   createFallbackIntentResolution,
