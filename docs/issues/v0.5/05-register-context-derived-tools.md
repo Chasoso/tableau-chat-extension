@@ -2,11 +2,11 @@
 
 ## Background
 
-selected marks や summary data preview は外部ツールではないが、plan から参照しやすい形で扱う必要がある。
+Context-derived data such as selected marks and summary data preview are not external tools, but v0.5.0 needs a clear way to route and trace them through the orchestration layer.
 
 ## Goal
 
-context-derived data を ToolRegistry 上でどう扱うかを決め、必要なら pseudo tool として登録する。
+Define the hybrid strategy for representing context-derived data as pseudo tools so that ToolRegistry, ToolRouter, ExecutionEngine, and trace can handle them consistently without turning them into external service calls.
 
 ## Scope
 
@@ -14,30 +14,35 @@ context-derived data を ToolRegistry 上でどう扱うかを決め、必要な
 - summary data preview
 - filters
 - parameters
-- dashboard / workbook metadata
+- dashboard / workbook / view metadata
 
 ## Out of scope
 
-- Tableau MCP の登録
-- 実外部ツールの追加
+- Tableau MCP registration
+- external tool registration
+- tool execution wrapper implementation
 
 ## Tasks
 
-- pseudo tool にするかを決める
-- hybrid で扱う場合の責務を整理する
-- selected_mark_explanation の最小 path と整合させる
+- document the adopted hybrid approach
+- describe the pseudo tool catalog
+- define the ToolRegistry boundary
+- align the path with `selected_mark_explanation`
 
 ## Acceptance criteria
 
-- context-derived data の扱い方針が明確
-- ToolRegistry 化との境界が分かる
+- the context-derived data strategy is explicitly documented
+- the boundary between pseudo tools and external tools is clear
+- selected_mark_explanation is aligned with the minimal pseudo tool path
 
 ## Validation
 
-- docs に方針が記載されている
-- 実装コードを変更していない
+- documentation is updated
+- implementation code is unchanged
 
 ## Related
 
-- #51 v0.5.0 Tool Layer Rebuild
-- docs/v0.5-tool-layer-rebuild-plan.md
+- `docs/v0.5-context-derived-pseudo-tools.md`
+- `docs/v0.5-tool-layer-rebuild-plan.md`
+- `docs/v0.5-tool-layer-audit-and-boundaries.md`
+- #74 v0.5.0 Tool Layer Rebuild
