@@ -50,6 +50,19 @@ export {
   createToolDefinitionSummary,
   isToolDefinitionJsonSafe,
 } from "./toolDefinition";
+export {
+  evaluateToolPrecondition,
+  evaluateToolPreconditions,
+  selectedMarkExplanationPreconditions,
+} from "./toolPreconditions";
+export type {
+  ToolPrecondition,
+  ToolPreconditionEvaluationContext,
+  ToolPreconditionResult,
+  ToolPreconditionSeverity,
+  ToolPreconditionStatus,
+  ToolPreconditionType,
+} from "./toolPreconditions";
 export { createToolRegistry, InMemoryToolRegistry } from "./toolRegistry";
 export type {
   ToolAvailabilityResult,
