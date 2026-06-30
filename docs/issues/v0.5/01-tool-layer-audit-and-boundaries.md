@@ -43,4 +43,5 @@ MCP / REST API / Notion / context-derived data を同じ tool layer に入れる
 ## Related
 
 - #51 v0.5.0 Tool Layer Rebuild
+- docs/v0.5-tool-layer-audit-and-boundaries.md
 - docs/v0.5-tool-layer-rebuild-plan.md
