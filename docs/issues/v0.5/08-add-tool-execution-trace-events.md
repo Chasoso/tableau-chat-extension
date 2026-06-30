@@ -39,3 +39,8 @@ tool_registry / precondition / execution の最小 trace events を追加する�
 
 - #51 v0.5.0 Tool Layer Rebuild
 - docs/v0.5-tool-layer-rebuild-plan.md
+
+## Notes
+
+- trace metadata is summary-only and must not include raw selected marks or full tool output bodies
+- this issue adds helper/factory support only; it does not add trace persistence or a UI trace panel
