@@ -1,5 +1,8 @@
 import type { AgentRunId } from "./runId";
-import type { IntentResolutionResult } from "./intent";
+import type {
+  IntentResolutionContextSummary,
+  IntentResolutionResult,
+} from "./intent";
 import type {
   PlanDefinition,
   PlanMetadata,
@@ -15,7 +18,22 @@ import {
   type ToolRoutingResult,
 } from "./toolRouter";
 import type { ToolRegistry } from "./toolRegistry";
-import type { JsonObject } from "./types";
+import type { ToolLookupResult } from "./toolRegistry";
+import type { ToolExecutionWrapper } from "./toolExecutionWrapper";
+import type { ToolExecutionResult } from "./toolExecutionWrapper";
+import type { ToolPreconditionEvaluationContext } from "./toolPreconditions";
+import type { ToolPreconditionResult } from "./toolPreconditions";
+import { buildSelectedMarkExplanationResponseMaterial } from "./selectedMarkContextTools";
+import { evaluateToolPreconditions } from "./toolPreconditions";
+import {
+  createBudgetTraceEvent,
+  createPlanStepTraceEvent,
+  createToolExecutionTraceEvent,
+  createToolPreconditionTraceEvent,
+  createToolRegistryTraceEvent,
+} from "./orchestrationTrace";
+import type { TraceEvent } from "./types";
+import type { JsonObject, JsonValue } from "./types";
 
 export type ExecutionStatus = "completed" | "partial" | "failed" | "skipped";
 
@@ -45,6 +63,11 @@ export type ExecutionStepResult = {
   routingStatus?: ToolRoutingResult["status"];
   reason?: string;
   warnings: string[];
+  lookupResult?: ToolLookupResult;
+  preconditionResults?: readonly ToolPreconditionResult[];
+  toolExecutionResult?: ToolExecutionResult;
+  output?: JsonValue;
+  normalizedOutput?: JsonValue;
   metadata?: JsonObject;
   traceMetadata?: JsonObject;
 };
@@ -63,6 +86,7 @@ export type ExecutionInput = {
   metadata?: JsonObject;
   traceMetadata?: JsonObject;
   toolRouter?: ToolRouter;
+  toolExecutionWrapper?: ToolExecutionWrapper;
 };
 
 export type ExecutionResult = {
@@ -82,8 +106,10 @@ export type ExecutionResult = {
     stepType?: PlanStep["type"];
   }>;
   fallbackReason?: string;
+  responseMaterial?: JsonObject;
   metadata?: JsonObject;
   traceMetadata?: JsonObject;
+  traceEvents: TraceEvent[];
 };
 
 export interface ExecutionEngine {
@@ -93,6 +119,7 @@ export interface ExecutionEngine {
 export type MinimalExecutionEngineOptions = {
   toolRouter?: ToolRouter;
   toolRegistry?: ToolRegistry;
+  toolExecutionWrapper?: ToolExecutionWrapper;
 };
 
 export class MinimalExecutionEngine implements ExecutionEngine {
@@ -117,6 +144,7 @@ export class MinimalExecutionEngine implements ExecutionEngine {
     const blockedSteps: string[] = [];
     const warnings: string[] = [];
     const errors: ExecutionResult["errors"] = [];
+    const traceEvents: TraceEvent[] = [];
     const routeablePreconditions = mapPlanPreconditionsToRoutingResults(
       input.selection?.preconditions,
       input.plan,
@@ -129,6 +157,7 @@ export class MinimalExecutionEngine implements ExecutionEngine {
         input,
         step,
         toolRouter,
+        budget,
         toolCallsUsed,
         modelCallsUsed,
         routeablePreconditions,
@@ -137,6 +166,7 @@ export class MinimalExecutionEngine implements ExecutionEngine {
       stepResults.push(stepResult.result);
       warnings.push(...stepResult.warnings);
       errors.push(...stepResult.errors);
+      traceEvents.push(...stepResult.traceEvents);
       toolCallsUsed = stepResult.toolCallsUsed;
       modelCallsUsed = stepResult.modelCallsUsed;
 
@@ -151,16 +181,19 @@ export class MinimalExecutionEngine implements ExecutionEngine {
       }
 
       if (stepResult.result.status === "blocked") {
-        blockedSteps.push(step.id);
         if (step.required || step.onFailure === "fail") {
+          blockedSteps.push(step.id);
           break;
         }
         continue;
       }
 
       if (stepResult.result.status === "failed") {
-        blockedSteps.push(step.id);
-        break;
+        if (step.required || step.onFailure === "fail") {
+          blockedSteps.push(step.id);
+          break;
+        }
+        continue;
       }
     }
 
@@ -201,8 +234,39 @@ export class MinimalExecutionEngine implements ExecutionEngine {
       ...(input.selection?.reasonBrief
         ? { fallbackReason: input.selection.reasonBrief }
         : {}),
+      ...(input.plan.id === "selected_mark_explanation-v1"
+        ? {
+            responseMaterial: buildSelectedMarkExplanationResponseMaterial({
+              contextSummary: input.contextSummary,
+              toolOutputs: collectSelectedMarkToolOutputs(stepResults),
+              warnings,
+            }),
+          }
+        : {}),
       ...(input.metadata ? { metadata: { ...input.metadata } } : {}),
+      traceEvents,
     };
+
+    traceEvents.push(
+      createBudgetTraceEvent({
+        agentRunId: input.agentRunId,
+        budget: {
+          maxModelCalls: result.budgetUsage.maxModelCalls,
+          maxToolCalls: result.budgetUsage.maxToolCalls,
+          timeoutMs: result.budgetUsage.timeoutMs,
+        },
+        budgetUsage: {
+          modelCallsUsed: result.budgetUsage.modelCallsUsed,
+          toolCallsUsed: result.budgetUsage.toolCallsUsed,
+          startedAt: result.budgetUsage.startedAt,
+          completedAt: result.budgetUsage.completedAt,
+          durationMs: result.budgetUsage.durationMs,
+        },
+        ...(input.contextSummary
+          ? { metadata: { contextSummary: input.contextSummary } }
+          : {}),
+      }),
+    );
 
     result.traceMetadata = buildExecutionTraceMetadata(
       result,
@@ -216,6 +280,7 @@ export class MinimalExecutionEngine implements ExecutionEngine {
     input: ExecutionInput;
     step: PlanStep;
     toolRouter: ToolRouter;
+    budget: RunBudget;
     toolCallsUsed: number;
     modelCallsUsed: number;
     routeablePreconditions: ToolRoutingPreconditionResult[];
@@ -225,9 +290,12 @@ export class MinimalExecutionEngine implements ExecutionEngine {
     errors: ExecutionResult["errors"];
     toolCallsUsed: number;
     modelCallsUsed: number;
+    traceEvents: TraceEvent[];
   }> {
     const errors: ExecutionResult["errors"] = [];
+    const traceEvents: TraceEvent[] = [];
     const step = input.step;
+    const contextSummary = summarizeExecutionContext(input.input);
 
     if (step.type !== "call_tool") {
       const result = createStepResult({
@@ -240,70 +308,305 @@ export class MinimalExecutionEngine implements ExecutionEngine {
         },
       });
 
+      traceEvents.push(
+        createPlanStepTraceEvent({
+          agentRunId: input.input.agentRunId,
+          type: "plan_step.started",
+          planId: input.input.plan.id,
+          intentId: input.input.intentResolution.resolvedIntentId,
+          stepId: step.id,
+          stepType: step.type,
+          toolName: step.toolName,
+          reason: result.reason,
+          warnings: result.warnings,
+          contextSummary,
+          metadata: result.traceMetadata ?? result.metadata,
+        }),
+      );
+
       return {
         result,
         warnings: [...result.warnings],
         errors,
         toolCallsUsed: input.toolCallsUsed,
         modelCallsUsed: input.modelCallsUsed,
+        traceEvents,
       };
     }
+
+    const toolName = normalizeToolName(step.toolName);
+    const routingPolicy = buildStepRoutingPolicy(input.input.plan, toolName);
+    const registryLookup =
+      toolName && this.options.toolRegistry
+        ? this.options.toolRegistry.lookup(toolName, routingPolicy)
+        : undefined;
+
+    traceEvents.push(
+      createPlanStepTraceEvent({
+        agentRunId: input.input.agentRunId,
+        type: "plan_step.started",
+        planId: input.input.plan.id,
+        intentId: input.input.intentResolution.resolvedIntentId,
+        stepId: step.id,
+        stepType: step.type,
+        toolName,
+        reason: step.description,
+        warnings: [],
+        contextSummary,
+        metadata: step.metadata,
+      }),
+    );
 
     const routingInput: ToolRoutingInput = {
       agentRunId: input.input.agentRunId,
       intentId: input.input.intentResolution.resolvedIntentId,
       planId: input.input.plan.id,
-      step: input.step,
-      requestedToolName: input.step.toolName,
-      allowedTools: input.input.plan.allowedTools,
-      disallowedTools: input.input.plan.disallowedTools,
-      toolPolicy: input.input.plan.toolPolicy,
-      runBudget: input.input.plan.budget,
+      step,
+      requestedToolName: toolName,
+      allowedTools: routingPolicy.allowedTools,
+      disallowedTools: routingPolicy.disallowedTools,
+      toolPolicy: routingPolicy.toolPolicy,
+      runBudget: input.budget,
       budgetUsage: {
         toolCallsUsed: input.toolCallsUsed,
         modelCallsUsed: input.modelCallsUsed,
       },
-      contextSummary: summarizeExecutionContext(input.input),
+      contextSummary,
       preconditions: input.routeablePreconditions,
       metadata: input.input.metadata,
     };
 
     const routingResult = await input.toolRouter.route(routingInput);
-    const routedResult = createStepResult({
+    if (registryLookup) {
+      traceEvents.push(
+        createToolRegistryTraceEvent({
+          agentRunId: input.input.agentRunId,
+          type: "tool_registry.lookup",
+          result: registryLookup,
+          contextSummary,
+        }),
+      );
+    }
+    if (routingResult.status !== "allowed") {
+      const routedResult = createStepResult({
+        step,
+        status: routingResult.status === "skipped" ? "skipped" : "blocked",
+        toolName: routingResult.toolName,
+        routingStatus: routingResult.status,
+        reason: routingResult.reason,
+        warnings: routingResult.warnings,
+        metadata: routingResult.metadata,
+        traceMetadata: routingResult.traceMetadata,
+        lookupResult: registryLookup,
+      });
+
+      traceEvents.push(
+        createPlanStepTraceEvent({
+          agentRunId: input.input.agentRunId,
+          type: mapPlanStepStatusToTraceEventType(routedResult.status),
+          planId: input.input.plan.id,
+          intentId: input.input.intentResolution.resolvedIntentId,
+          stepId: step.id,
+          stepType: step.type,
+          toolName: routedResult.toolName,
+          reason: routedResult.reason,
+          warnings: routedResult.warnings,
+          contextSummary,
+          metadata: routedResult.traceMetadata ?? routedResult.metadata,
+        }),
+      );
+
+      if (
+        routingResult.status === "blocked" ||
+        routingResult.status === "unavailable"
+      ) {
+        errors.push({
+          message: routingResult.reason ?? "Tool routing was blocked.",
+          stepId: step.id,
+          stepType: step.type,
+        });
+      }
+
+      return {
+        result: routedResult,
+        warnings: [...routingResult.warnings],
+        errors,
+        toolCallsUsed: input.toolCallsUsed,
+        modelCallsUsed: input.modelCallsUsed,
+        traceEvents,
+      };
+    }
+
+    const toolDefinition = registryLookup?.tool;
+    const toolPreconditionResults = evaluateToolPreconditions(
+      toolDefinition?.preconditions ?? [],
+      buildToolPreconditionContext(input.input, {
+        toolAvailable: Boolean(toolDefinition),
+        allowedByPolicy: routingResult.status === "allowed",
+        budget: input.budget,
+      }),
+    );
+    const executionContext = buildToolExecutionContext(input.input);
+
+    traceEvents.push(
+      ...toolPreconditionResults.map((preconditionResult) =>
+        createToolPreconditionTraceEvent({
+          agentRunId: input.input.agentRunId,
+          type:
+            preconditionResult.status === "passed"
+              ? "tool_precondition.passed"
+              : "tool_precondition.failed",
+          result: preconditionResult,
+          toolName,
+          contextSummary,
+        }),
+      ),
+    );
+
+    if (!this.options.toolExecutionWrapper) {
+      const routedResult = createStepResult({
+        step,
+        status: "routed",
+        toolName: routingResult.toolName,
+        routingStatus: routingResult.status,
+        reason: routingResult.reason,
+        warnings: routingResult.warnings,
+        metadata: routingResult.metadata,
+        traceMetadata: routingResult.traceMetadata,
+        lookupResult: registryLookup,
+        preconditionResults: toolPreconditionResults,
+      });
+
+      traceEvents.push(
+        createPlanStepTraceEvent({
+          agentRunId: input.input.agentRunId,
+          type: "plan_step.completed",
+          planId: input.input.plan.id,
+          intentId: input.input.intentResolution.resolvedIntentId,
+          stepId: step.id,
+          stepType: step.type,
+          toolName: routedResult.toolName,
+          reason: routedResult.reason,
+          warnings: routedResult.warnings,
+          contextSummary,
+          metadata: routedResult.traceMetadata ?? routedResult.metadata,
+        }),
+      );
+
+      return {
+        result: routedResult,
+        warnings: [...routingResult.warnings],
+        errors,
+        toolCallsUsed: input.toolCallsUsed + 1,
+        modelCallsUsed: input.modelCallsUsed,
+        traceEvents,
+      };
+    }
+
+    traceEvents.push(
+      createToolExecutionTraceEvent({
+        agentRunId: input.input.agentRunId,
+        type: "tool_execution.started",
+        toolName,
+        contextSummary,
+      }),
+    );
+
+    const toolExecutionResult = await this.options.toolExecutionWrapper.execute(
+      {
+        agentRunId: input.input.agentRunId,
+        toolName: toolName ?? "",
+        tool: toolDefinition,
+        input: buildToolExecutionInput(step, input.input),
+        context: executionContext,
+        timeoutMs: input.budget.timeoutMs,
+        budget: {
+          maxToolCalls: input.budget.maxToolCalls,
+          timeoutMs: input.budget.timeoutMs,
+        },
+        budgetUsage: {
+          toolCallsUsed: input.toolCallsUsed,
+        },
+        preconditionResults: toolPreconditionResults,
+        routingResult,
+        metadata: input.input.metadata,
+        traceMetadata: input.input.traceMetadata,
+      },
+    );
+
+    traceEvents.push(
+      createToolExecutionTraceEvent({
+        agentRunId: input.input.agentRunId,
+        type:
+          toolExecutionResult.status === "completed"
+            ? "tool_execution.completed"
+            : "tool_execution.failed",
+        result: toolExecutionResult,
+        toolName,
+        contextSummary,
+      }),
+    );
+
+    const executionStepResult = createStepResult({
       step,
-      status:
-        routingResult.status === "allowed"
-          ? "routed"
-          : routingResult.status === "skipped"
-            ? "skipped"
-            : "blocked",
+      status: mapToolExecutionStatusToStepStatus(toolExecutionResult.status),
       toolName: routingResult.toolName,
       routingStatus: routingResult.status,
-      reason: routingResult.reason,
-      warnings: routingResult.warnings,
-      metadata: routingResult.metadata,
-      traceMetadata: routingResult.traceMetadata,
+      reason: toolExecutionResult.reason ?? routingResult.reason,
+      warnings: [...routingResult.warnings, ...toolExecutionResult.warnings],
+      lookupResult: registryLookup,
+      preconditionResults: toolPreconditionResults,
+      toolExecutionResult,
+      output: toolExecutionResult.output ?? null,
+      normalizedOutput: toolExecutionResult.normalizedOutput ?? null,
+      metadata: {
+        ...(routingResult.metadata ?? {}),
+        ...(toolExecutionResult.metadata ?? {}),
+      },
+      traceMetadata: {
+        ...(routingResult.traceMetadata ?? {}),
+        ...(toolExecutionResult.traceMetadata ?? {}),
+      },
     });
 
-    const toolCallsUsed =
-      input.toolCallsUsed + (routingResult.status === "allowed" ? 1 : 0);
     if (
-      routingResult.status === "blocked" ||
-      routingResult.status === "unavailable"
+      toolExecutionResult.status === "blocked" ||
+      toolExecutionResult.status === "failed" ||
+      toolExecutionResult.status === "timed_out"
     ) {
       errors.push({
-        message: routingResult.reason ?? "Tool routing was blocked.",
+        message:
+          toolExecutionResult.reason ??
+          "Tool execution failed while processing the step.",
         stepId: step.id,
         stepType: step.type,
       });
     }
 
+    traceEvents.push(
+      createPlanStepTraceEvent({
+        agentRunId: input.input.agentRunId,
+        type: mapPlanStepStatusToTraceEventType(executionStepResult.status),
+        planId: input.input.plan.id,
+        intentId: input.input.intentResolution.resolvedIntentId,
+        stepId: step.id,
+        stepType: step.type,
+        toolName: executionStepResult.toolName,
+        reason: executionStepResult.reason,
+        warnings: executionStepResult.warnings,
+        contextSummary,
+        metadata:
+          executionStepResult.traceMetadata ?? executionStepResult.metadata,
+      }),
+    );
+
     return {
-      result: routedResult,
-      warnings: [...routingResult.warnings],
+      result: executionStepResult,
+      warnings: [...executionStepResult.warnings],
       errors,
-      toolCallsUsed,
+      toolCallsUsed: toolExecutionResult.budgetUsage.toolCallsUsed,
       modelCallsUsed: input.modelCallsUsed,
+      traceEvents,
     };
   }
 }
@@ -383,6 +686,11 @@ function createStepResult(input: {
   routingStatus?: ToolRoutingResult["status"];
   reason?: string;
   warnings: string[];
+  lookupResult?: ToolLookupResult;
+  preconditionResults?: readonly ToolPreconditionResult[];
+  toolExecutionResult?: ToolExecutionResult;
+  output?: JsonValue;
+  normalizedOutput?: JsonValue;
   metadata?: JsonObject;
   traceMetadata?: JsonObject;
 }): ExecutionStepResult {
@@ -394,11 +702,45 @@ function createStepResult(input: {
     ...(input.routingStatus ? { routingStatus: input.routingStatus } : {}),
     ...(input.reason ? { reason: input.reason } : {}),
     warnings: [...input.warnings],
+    ...(input.lookupResult ? { lookupResult: input.lookupResult } : {}),
+    ...(input.preconditionResults
+      ? { preconditionResults: [...input.preconditionResults] }
+      : {}),
+    ...(input.toolExecutionResult
+      ? { toolExecutionResult: input.toolExecutionResult }
+      : {}),
+    ...(input.output !== undefined ? { output: input.output } : {}),
+    ...(input.normalizedOutput !== undefined
+      ? { normalizedOutput: input.normalizedOutput }
+      : {}),
     ...(input.metadata ? { metadata: { ...input.metadata } } : {}),
     ...(input.traceMetadata
       ? { traceMetadata: { ...input.traceMetadata } }
       : {}),
   };
+}
+
+function mapPlanStepStatusToTraceEventType(
+  status: ExecutionStepStatus,
+):
+  | "plan_step.started"
+  | "plan_step.completed"
+  | "plan_step.skipped"
+  | "plan_step.blocked"
+  | "plan_step.failed" {
+  switch (status) {
+    case "routed":
+      return "plan_step.completed";
+    case "skipped":
+      return "plan_step.skipped";
+    case "blocked":
+      return "plan_step.blocked";
+    case "failed":
+      return "plan_step.failed";
+    case "not_executed":
+    default:
+      return "plan_step.started";
+  }
 }
 
 function deriveExecutionStatus(input: {
@@ -522,4 +864,163 @@ function mapPlanPreconditionsToRoutingResults(
         : {}),
     })) ?? []
   );
+}
+
+function buildStepRoutingPolicy(
+  plan: PlanDefinition,
+  toolName?: string,
+): Pick<ToolRoutingInput, "allowedTools" | "disallowedTools" | "toolPolicy"> {
+  const allowedTools = normalizeToolPolicyList([
+    ...plan.allowedTools,
+    ...(toolName ? [toolName] : []),
+  ]);
+  const disallowedTools = normalizeToolPolicyList(plan.disallowedTools);
+
+  return {
+    allowedTools,
+    disallowedTools,
+    toolPolicy: {
+      mode: plan.toolPolicy.mode,
+      allowedTools,
+      disallowedTools,
+    },
+  };
+}
+
+function buildToolPreconditionContext(
+  input: ExecutionInput,
+  options?: {
+    toolAvailable?: boolean;
+    allowedByPolicy?: boolean;
+    explicitConfirmation?: boolean;
+    permissionGranted?: boolean;
+    budget?: RunBudget;
+  },
+): ToolPreconditionEvaluationContext {
+  const contextSummary = asSelectedMarkExecutionContextSummary(
+    input.contextSummary,
+  );
+
+  return {
+    selectedMarkCount: contextSummary?.selectedMarks?.totalCount ?? 0,
+    summaryDataPreviewAvailable:
+      contextSummary?.summaryDataPreview?.available ?? false,
+    permissionGranted: options?.permissionGranted ?? true,
+    explicitConfirmation: options?.explicitConfirmation ?? true,
+    budgetRemaining:
+      (options?.budget?.maxToolCalls ?? input.plan.budget.maxToolCalls) >
+      (input.budgetUsage?.toolCallsUsed ?? 0),
+    allowedByPolicy: options?.allowedByPolicy ?? true,
+    contextAvailable: Boolean(input.contextSummary),
+    toolAvailable: options?.toolAvailable ?? true,
+  };
+}
+
+function buildToolExecutionContext(input: ExecutionInput): JsonObject {
+  return {
+    ...(input.contextSummary
+      ? { contextSummary: { ...input.contextSummary } }
+      : {}),
+    planId: input.plan.id,
+    intentId: input.intentResolution.resolvedIntentId,
+    ...(input.metadata ? { metadata: { ...input.metadata } } : {}),
+  };
+}
+
+function buildToolExecutionInput(
+  step: PlanStep,
+  input: ExecutionInput,
+): JsonObject {
+  return {
+    stepId: step.id,
+    stepType: step.type,
+    ...(step.input ? { stepInput: { ...step.input } } : {}),
+    ...(input.contextSummary
+      ? { contextSummary: { ...input.contextSummary } }
+      : {}),
+    planId: input.plan.id,
+    intentId: input.intentResolution.resolvedIntentId,
+  };
+}
+
+function collectSelectedMarkToolOutputs(
+  stepResults: readonly ExecutionStepResult[],
+): Record<string, JsonObject> {
+  const outputs: Record<string, JsonObject> = {};
+
+  for (const stepResult of stepResults) {
+    if (!stepResult.toolName || !stepResult.toolExecutionResult) {
+      continue;
+    }
+
+    if (!isSelectedMarkContextToolName(stepResult.toolName)) {
+      continue;
+    }
+
+    const normalizedOutput =
+      stepResult.normalizedOutput ?? stepResult.output ?? null;
+    outputs[stepResult.toolName] =
+      isJsonObject(normalizedOutput) && normalizedOutput !== null
+        ? { ...normalizedOutput }
+        : {
+            value: normalizedOutput,
+          };
+  }
+
+  return outputs;
+}
+
+function mapToolExecutionStatusToStepStatus(
+  status: ToolExecutionResult["status"],
+): ExecutionStepStatus {
+  switch (status) {
+    case "completed":
+      return "routed";
+    case "skipped":
+      return "skipped";
+    case "blocked":
+      return "blocked";
+    case "timed_out":
+    case "failed":
+    default:
+      return "failed";
+  }
+}
+
+function normalizeToolName(toolName?: string): string | undefined {
+  const normalized = toolName?.trim();
+  return normalized ? normalized : undefined;
+}
+
+function normalizeToolPolicyList(values: readonly string[]): string[] {
+  return Array.from(
+    new Set(values.map((value) => value.trim()).filter(Boolean)),
+  );
+}
+
+function isSelectedMarkContextToolName(
+  toolName: string,
+): toolName is
+  | "context.selectedMarks"
+  | "context.summaryDataPreview"
+  | "context.filters"
+  | "context.parameters" {
+  return (
+    toolName === "context.selectedMarks" ||
+    toolName === "context.summaryDataPreview" ||
+    toolName === "context.filters" ||
+    toolName === "context.parameters"
+  );
+}
+
+function asSelectedMarkExecutionContextSummary(
+  value?: JsonObject,
+): IntentResolutionContextSummary | undefined {
+  return isJsonObject(value)
+    ? (value as IntentResolutionContextSummary)
+    : undefined;
+}
+
+function isJsonObject(value: unknown): value is JsonObject {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }

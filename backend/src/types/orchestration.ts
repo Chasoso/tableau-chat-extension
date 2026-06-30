@@ -13,6 +13,21 @@ export type ResolveIntentContextSummary = {
   hasSelectedMarks?: boolean;
   selectedMarkCount?: number;
   worksheetNames?: string[];
+  summaryDataPreview?: {
+    available?: boolean;
+    rowCount?: number;
+    columnCount?: number;
+    columnNames?: string[];
+    truncated?: boolean;
+  };
+  filters?: {
+    count?: number;
+    names?: string[];
+  };
+  parameters?: {
+    count?: number;
+    names?: string[];
+  };
 };
 
 export type ResolveIntentRunMode =
@@ -40,6 +55,7 @@ export type SelectedMarkOrchestrationResponse = {
   traceEvents: TraceEvent[];
   traceMetadata?: Record<string, unknown>;
   contextSummary?: OrchestrationTraceContextSummary;
+  responseMaterial?: Record<string, unknown>;
 };
 
 export type ResolveIntentResponse = {

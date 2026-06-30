@@ -73,12 +73,22 @@ export type OrchestrationTraceContextSummary = {
     worksheetNames?: string[];
   };
   summaryDataPreview?: {
+    available?: boolean;
     worksheetCount?: number;
     rowCount?: number;
     columnCount?: number;
     previewRowCount?: number;
     previewColumnCount?: number;
+    columnNames?: string[];
     truncated?: boolean;
+  };
+  filters?: {
+    count?: number;
+    names?: string[];
+  };
+  parameters?: {
+    count?: number;
+    names?: string[];
   };
   contextPackId?: string;
   source?: string;
