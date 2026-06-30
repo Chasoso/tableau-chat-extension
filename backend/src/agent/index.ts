@@ -20,8 +20,10 @@ export type {
   JsonObject,
   JsonPrimitive,
   JsonValue,
+  LegacyTraceEventType,
   ToolAction,
   ToolActionKind,
+  OrchestrationTraceEventType,
   TraceError,
   TraceEvent,
   TraceEventKind,
@@ -32,6 +34,138 @@ export type {
   TraceStepStatus,
   TraceStepType,
 } from "./types";
+export {
+  buildIntentResolutionTraceMetadata,
+  createFallbackIntentResolution,
+  createIntentEvidence,
+  createResolvedIntentResolution,
+  createUnresolvedIntentResolution,
+  normalizeIntentConfidence,
+} from "./intent";
+export {
+  createDefaultIntentResolver,
+  createMinimalIntentResolver,
+  MinimalIntentResolver,
+} from "./minimalIntentResolver";
+export {
+  buildPlanSelection,
+  buildPlanExecutionMetadata,
+  CURRENT_DASHBOARD_SUMMARY_PLAN_DEFINITION,
+  createCurrentDashboardSummaryPlanDefinition,
+  createSelectedMarkExplanationPlanDefinition,
+  createUnsupportedPlanDefinition,
+  evaluatePlanPreconditions,
+  isValidRunBudget,
+  normalizeRunBudget,
+  SELECTED_MARK_EXPLANATION_PLAN_DEFINITION,
+  UNSUPPORTED_PLAN_DEFINITION,
+} from "./plan";
+export {
+  buildToolRoutingTraceMetadata,
+  createDefaultToolRouter,
+  createMinimalToolRouter,
+  MinimalToolRouter,
+} from "./toolRouter";
+export {
+  buildExecutionTraceMetadata,
+  createDefaultExecutionEngine,
+  createMinimalExecutionEngine,
+  MinimalExecutionEngine,
+} from "./execution";
+export {
+  runSelectedMarkExplanationOrchestration,
+  selectFixedPlanForIntent,
+} from "./selectedMarkOrchestration";
+export type {
+  SelectedMarkOrchestrationInput,
+  SelectedMarkPlanSelection,
+  SelectedMarkOrchestrationResponse,
+} from "./selectedMarkOrchestration";
+export {
+  buildBudgetTraceMetadata,
+  buildExecutionTraceMetadata as buildOrchestrationExecutionTraceMetadata,
+  buildFallbackTraceMetadata,
+  buildIntentResolutionTraceMetadata as buildOrchestrationIntentResolutionTraceMetadata,
+  buildPlanSelectionTraceMetadata,
+  buildPlanStepTraceMetadata,
+  buildToolRoutingTraceMetadata as buildOrchestrationToolRoutingTraceMetadata,
+  createBudgetTraceEvent,
+  createFallbackTraceEvent,
+  createIntentResolutionTraceEvent,
+  createOrchestrationCompletedTraceEvent,
+  createOrchestrationFailedTraceEvent,
+  createOrchestrationStartedTraceEvent,
+  createOrchestrationTraceEvent,
+  createPlanSelectionTraceEvent,
+  createPlanStepTraceEvent,
+  createToolRoutingTraceEvent,
+} from "./orchestrationTrace";
+export type {
+  IntentId,
+  IntentResolutionContextPackRef,
+  IntentResolutionContextSummary,
+  IntentResolutionEvidence,
+  IntentResolutionInput,
+  IntentResolutionResult,
+  IntentResolutionSource,
+  IntentResolutionStatus,
+  IntentResolutionSelectedMarksSummary,
+  IntentResolver,
+  IntentResolverMode,
+} from "./intent";
+export type { MinimalIntentResolverOptions } from "./minimalIntentResolver";
+export type {
+  PlanContextPackId,
+  PlanDefinition,
+  PlanExecutionContext,
+  PlanFallback,
+  PlanId,
+  PlanMetadata,
+  PlanPrecondition,
+  PlanPreconditionResult,
+  PlanPreconditionType,
+  PlanSelectionInput,
+  PlanSelectionResult,
+  PlanSelectionStatus,
+  PlanStep,
+  PlanStepType,
+  PlanToolPolicy,
+  ResponseStrategy,
+  RunBudget,
+} from "./plan";
+export type {
+  MinimalToolRouterOptions,
+  ToolRouter,
+  ToolRoutingBudgetStatus,
+  ToolRoutingContextSummary,
+  ToolRoutingFallbackBehavior,
+  ToolRoutingInput,
+  ToolRoutingPolicy,
+  ToolRoutingPreconditionResult,
+  ToolRoutingPreconditionStatus,
+  ToolRoutingResult,
+  ToolRoutingStatus,
+} from "./toolRouter";
+export type {
+  ExecutionBudgetUsage,
+  ExecutionEngine,
+  ExecutionInput,
+  ExecutionResult,
+  ExecutionStatus,
+  ExecutionStepResult,
+  ExecutionStepStatus,
+  MinimalExecutionEngineOptions,
+} from "./execution";
+export type {
+  OrchestrationTraceBudgetSnapshot,
+  OrchestrationTraceBudgetUsage,
+  OrchestrationTraceContextSummary,
+  OrchestrationTraceEventInput,
+  OrchestrationTraceMetadata,
+  OrchestrationTraceSelectionSummary,
+  OrchestrationTraceStage,
+  OrchestrationTraceStepSummary,
+} from "./orchestrationTrace";
 export { createTraceError, createTraceEvent, createTraceStep } from "./trace";
 export {
   buildFixedPlan,

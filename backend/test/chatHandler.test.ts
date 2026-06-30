@@ -1,4 +1,31 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+const mocks = vi.hoisted(() => {
+  const createChatServiceMock = vi.fn(() => ({
+    generateAnswer: vi.fn(),
+    getDashboardContextPatch: vi.fn(),
+  }));
+  const chatJobServiceImplementation = {
+    createChatJob: vi.fn(),
+    getChatJob: vi.fn(),
+  };
+
+  return {
+    createChatServiceMock,
+    chatJobServiceImplementation,
+  };
+});
+
+vi.mock("../src/services/chatService", () => ({
+  createChatService: mocks.createChatServiceMock,
+}));
+
+vi.mock("../src/services/chatJobService", () => ({
+  ChatJobService: vi
+    .fn()
+    .mockImplementation(() => mocks.chatJobServiceImplementation),
+}));
+
 import { handler } from "../src/handlers/chatHandler";
 
 describe("chatHandler", () => {
@@ -8,6 +35,9 @@ describe("chatHandler", () => {
   beforeEach(() => {
     delete process.env.AUTH_REQUIRED;
     delete process.env.NOTION_MCP_ENABLED;
+    mocks.createChatServiceMock.mockClear();
+    mocks.chatJobServiceImplementation.createChatJob.mockClear();
+    mocks.chatJobServiceImplementation.getChatJob.mockClear();
   });
 
   afterEach(() => {
@@ -112,5 +142,123 @@ describe("chatHandler", () => {
     });
 
     expect(response.statusCode).not.toBe(401);
+  });
+
+  it("resolves selected-mark intent without invoking chat services", async () => {
+    const response = await handler({
+      httpMethod: "POST",
+      rawPath: "/intent/resolve",
+      headers: {},
+      body: JSON.stringify({
+        actionId: "explain_selection",
+        requestedIntent: "selected_mark_explanation",
+        message: "Explain this selection.",
+        clientTimestamp: "2026-06-30T00:00:00.000Z",
+        contextSummary: {
+          hasSelectedMarks: true,
+          selectedMarkCount: 3,
+          worksheetNames: ["Sales Trend"],
+          dashboardName: "Executive Overview",
+          workbookName: "Sales Workbook",
+          viewName: "Executive Overview",
+        },
+        metadata: {
+          sourceKind: "tableau-extension",
+        },
+      }),
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = JSON.parse(response.body) as {
+      result?: {
+        resolvedIntentId?: string;
+        status?: string;
+        source?: string;
+      };
+    };
+    expect(body.result).toMatchObject({
+      resolvedIntentId: "selected_mark_explanation",
+      status: "resolved",
+      source: "explicit",
+    });
+    expect(mocks.createChatServiceMock).not.toHaveBeenCalled();
+    expect(
+      mocks.chatJobServiceImplementation.createChatJob,
+    ).not.toHaveBeenCalled();
+  });
+
+  it("runs selected-mark orchestration when requested without invoking chat services", async () => {
+    const response = await handler({
+      httpMethod: "POST",
+      rawPath: "/intent/resolve",
+      headers: {},
+      body: JSON.stringify({
+        actionId: "explain_selection",
+        requestedIntent: "selected_mark_explanation",
+        runMode: "resolve_and_execute_fixed_plan",
+        message: "Explain this selection.",
+        clientTimestamp: "2026-06-30T00:00:00.000Z",
+        contextSummary: {
+          hasSelectedMarks: true,
+          selectedMarkCount: 3,
+          worksheetNames: ["Sales Trend"],
+          dashboardName: "Executive Overview",
+          workbookName: "Sales Workbook",
+          viewName: "Executive Overview",
+        },
+        metadata: {
+          sourceKind: "tableau-extension",
+        },
+      }),
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = JSON.parse(response.body) as {
+      result?: {
+        resolvedIntentId?: string;
+        status?: string;
+      };
+      orchestration?: {
+        status?: string;
+        message?: string;
+        placeholderResponse?: string;
+        planSelection?: {
+          selectedPlan?: {
+            id?: string;
+          };
+        };
+        execution?: {
+          status?: string;
+          budgetUsage?: {
+            maxToolCalls?: number;
+          };
+        };
+        traceEvents?: unknown[];
+      };
+    };
+
+    expect(body.result).toMatchObject({
+      resolvedIntentId: "selected_mark_explanation",
+      status: "resolved",
+    });
+    expect(body.orchestration).toMatchObject({
+      status: "completed",
+      planSelection: {
+        selectedPlan: {
+          id: "selected_mark_explanation-v1",
+        },
+      },
+      execution: {
+        status: "partial",
+      },
+    });
+    expect(body.orchestration?.placeholderResponse).toContain(
+      "Structured orchestration",
+    );
+    expect(Array.isArray(body.orchestration?.traceEvents)).toBe(true);
+    expect(mocks.createChatServiceMock).not.toHaveBeenCalled();
+    expect(
+      mocks.chatJobServiceImplementation.createChatJob,
+    ).not.toHaveBeenCalled();
   });
 });

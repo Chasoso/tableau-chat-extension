@@ -6,12 +6,18 @@ import AuthCallback from "./components/AuthCallback";
 import AuthGate from "./components/AuthGate";
 import AuthPopupStart from "./components/AuthPopupStart";
 import ChatPanel from "./components/ChatPanel";
+import { runSelectedMarkExplanationOrchestration } from "./api/orchestrationApi";
 import { initializeTableauExtension } from "./tableau/tableauExtension";
 import { buildContextPreviewModel } from "./tableau/contextPreview";
 import { getDashboardContext } from "./tableau/dashboardContext";
 import { registerMarkSelectionChangedListeners } from "./tableau/markSelectionListener";
 import type { ContextPreviewLastChangedWorksheet } from "./tableau/contextPreview";
 import type { DashboardContext } from "./types/tableau";
+import type {
+  ResolveIntentRequest,
+  ResolveIntentResponse,
+  SelectedMarkOrchestrationResponse,
+} from "./types/orchestration";
 
 export default function App() {
   if (env.authRequired && isAuthPopupStart()) {
@@ -31,10 +37,15 @@ function DashboardExtensionApp() {
   const [contextPreview, setContextPreview] = useState<ReturnType<
     typeof buildContextPreviewModel
   > | null>(null);
-  const [questionPrefill, setQuestionPrefill] = useState<{
-    requestId: string;
-    text: string;
-  } | null>(null);
+  const [lastIntentResolution, setLastIntentResolution] = useState<
+    ResolveIntentResponse["result"] | null
+  >(null);
+  const [lastOrchestrationResult, setLastOrchestrationResult] =
+    useState<SelectedMarkOrchestrationResponse | null>(null);
+  const [isResolvingIntent, setIsResolvingIntent] = useState(false);
+  const [intentResolutionError, setIntentResolutionError] = useState<
+    string | null
+  >(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -152,17 +163,97 @@ function DashboardExtensionApp() {
     onSignIn?: () => Promise<void>;
   }) => (
     <div className="app-shell">
+      {isResolvingIntent ? (
+        <div className="operation-status" aria-live="polite">
+          Running selected-mark orchestration...
+        </div>
+      ) : null}
+      {lastIntentResolution ? (
+        <div className="operation-status" aria-live="polite">
+          Resolved intent: {lastIntentResolution.resolvedIntentId} (
+          {lastIntentResolution.status}, confidence{" "}
+          {lastIntentResolution.confidence.toFixed(2)})
+        </div>
+      ) : null}
+      {lastOrchestrationResult ? (
+        <>
+          <div className="operation-status" aria-live="polite">
+            Orchestration: {lastOrchestrationResult.status}
+            {lastOrchestrationResult.planSelection?.selectedPlan?.id ? (
+              <>
+                {" "}
+                / Plan: {lastOrchestrationResult.planSelection.selectedPlan.id}
+              </>
+            ) : null}
+            {lastOrchestrationResult.execution?.status ? (
+              <> / Execution: {lastOrchestrationResult.execution.status}</>
+            ) : null}
+          </div>
+          <div className="operation-status" aria-live="polite">
+            {lastOrchestrationResult.placeholderResponse}
+          </div>
+        </>
+      ) : null}
+      {intentResolutionError ? (
+        <div className="error-banner" aria-live="polite">
+          {intentResolutionError}
+        </div>
+      ) : null}
       <AIContextPreviewPanel
         preview={contextPreview}
-        onActionSuggestionClick={(suggestion) => {
-          if (!suggestion.enabled || !suggestion.prompt) {
+        onActionSuggestionClick={async (suggestion) => {
+          if (!suggestion.enabled || !suggestion.prompt || !contextPreview) {
             return;
           }
 
-          setQuestionPrefill({
-            requestId: crypto.randomUUID(),
-            text: suggestion.prompt,
-          });
+          setIsResolvingIntent(true);
+          setIntentResolutionError(null);
+          setLastIntentResolution(null);
+          setLastOrchestrationResult(null);
+
+          const request: ResolveIntentRequest = {
+            actionId: suggestion.id,
+            requestedIntent: suggestion.intent,
+            message: suggestion.prompt,
+            clientTimestamp: new Date().toISOString(),
+            contextSummary: {
+              dashboardName: contextPreview.dashboard.name,
+              workbookName: contextPreview.workbook.name ?? undefined,
+              viewName: contextPreview.view.name ?? undefined,
+              hasSelectedMarks: contextPreview.selectedMarks.totalCount > 0,
+              selectedMarkCount: contextPreview.selectedMarks.totalCount,
+              worksheetNames: contextPreview.selectedMarks.items.map(
+                (item) => item.worksheetName,
+              ),
+            },
+            metadata: {
+              sourceKind: contextPreview.metadata.sourceKind,
+              sourceVersion: contextPreview.metadata.sourceVersion,
+              previewVersion: contextPreview.previewVersion,
+              generatedAt: contextPreview.generatedAt,
+              lastChangedWorksheet: contextPreview.lastChangedWorksheet,
+              selectedMarksTruncated: contextPreview.selectedMarks.truncated,
+            },
+          };
+
+          try {
+            const response = await runSelectedMarkExplanationOrchestration(
+              request,
+              authToken,
+            );
+            setLastIntentResolution(response.result);
+            setLastOrchestrationResult(response.orchestration ?? null);
+          } catch (unknownError) {
+            setLastIntentResolution(null);
+            setLastOrchestrationResult(null);
+            setIntentResolutionError(
+              unknownError instanceof Error
+                ? unknownError.message
+                : "Selected-mark orchestration failed.",
+            );
+          } finally {
+            setIsResolvingIntent(false);
+          }
         }}
       />
       <ChatPanel
@@ -180,7 +271,6 @@ function DashboardExtensionApp() {
               }
             : undefined
         }
-        questionPrefill={questionPrefill}
         onDashboardContextPatch={(patch) => {
           setDashboardContext((current) => {
             if (!current) {
