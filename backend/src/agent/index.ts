@@ -50,6 +50,20 @@ export {
   createToolDefinitionSummary,
   isToolDefinitionJsonSafe,
 } from "./toolDefinition";
+export { createToolRegistry, InMemoryToolRegistry } from "./toolRegistry";
+export type {
+  ToolAvailabilityResult,
+  ToolLookupResult,
+  ToolLookupStatus,
+  ToolListOptions,
+  ToolListResult,
+  ToolPolicy,
+  ToolRegistrationResult,
+  ToolRegistrationStatus,
+  ToolRegistry,
+  ToolUnregistrationResult,
+  ToolUnregistrationStatus,
+} from "./toolRegistry";
 export {
   buildIntentResolutionTraceMetadata,
   createFallbackIntentResolution,

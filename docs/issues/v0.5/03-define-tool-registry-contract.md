@@ -2,11 +2,11 @@
 
 ## Background
 
-ToolDefinition が定義されても、登録・lookup・availability を統一的に扱う層が必要。
+ToolDefinition is now defined, but v0.5.0 still needs a registry layer that can register, look up, list, and report availability for tools without executing them.
 
 ## Goal
 
-ToolRegistry の最小 contract を定義し、tool の register / lookup / list / availability を安全に扱える形にする。
+Define the minimal ToolRegistry contract so ToolDefinition instances can be managed consistently before execution is introduced.
 
 ## Scope
 
@@ -14,29 +14,31 @@ ToolRegistry の最小 contract を定義し、tool の register / lookup / list
 - register / unregister
 - lookup / list
 - availability
-- allowed / disallowed との照合
+- allowedTools / disallowedTools filtering
+- missing / unavailable handling
 
 ## Out of scope
 
 - tool execution
-- registry discovery の自動化
-- tool precondition のフル評価
+- registry discovery automation
+- full tool precondition evaluation
 
 ## Tasks
 
-- registry API を定義する
-- lookup 結果の shape を定義する
-- missing / unavailable の扱いを決める
+- define registry APIs and lookup result shapes
+- define missing / unavailable / disallowed behavior
+- confirm selected_mark_explanation can look up the minimal context tools it needs
 
 ## Acceptance criteria
 
-- registry contract が backend から参照できる
-- selected_mark_explanation に必要な最低限の tool lookup が表現できる
+- the registry contract is available from backend agent code
+- selected_mark_explanation can express the minimal lookup flow it needs
+- registry results are JSON-safe and do not execute tools
 
 ## Validation
 
-- contract test が通る
-- 実装コードの大規模変更をしていない
+- contract tests pass
+- no execution code is added
 
 ## Related
 
