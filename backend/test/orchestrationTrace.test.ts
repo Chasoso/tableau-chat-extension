@@ -170,6 +170,7 @@ function createExecutionResult(): ExecutionResult {
       },
     ],
     fallbackReason: "Step execution is still a skeleton.",
+    traceEvents: [],
     traceMetadata: {
       source: "unit-test",
     },

@@ -228,9 +228,9 @@ const DEFAULT_SELECTED_MARK_EXPLANATION_PLAN: PlanDefinition = {
       type: "call_tool",
       required: true,
       description:
-        "Route the selected marks context through the structured orchestration path.",
-      toolName: "context",
-      outputKey: "selectedMarksContext",
+        "Execute the selected marks context tool through the structured orchestration path.",
+      toolName: "context.selectedMarks",
+      outputKey: "selectedMarks",
       metadata: {
         routeTarget: "selected_marks",
       },
@@ -240,11 +240,39 @@ const DEFAULT_SELECTED_MARK_EXPLANATION_PLAN: PlanDefinition = {
       type: "call_tool",
       required: false,
       description:
-        "Route the summary data preview if it is available in the context snapshot.",
-      toolName: "context",
+        "Execute the summary data preview tool if it is available in the context snapshot.",
+      toolName: "context.summaryDataPreview",
       outputKey: "summaryDataPreview",
       metadata: {
         routeTarget: "summary_data_preview",
+        optional: true,
+      },
+      onFailure: "skip",
+    },
+    {
+      id: "route-filters-context",
+      type: "call_tool",
+      required: false,
+      description:
+        "Execute the filter summary tool if filter information is available in the context snapshot.",
+      toolName: "context.filters",
+      outputKey: "filters",
+      metadata: {
+        routeTarget: "filters",
+        optional: true,
+      },
+      onFailure: "skip",
+    },
+    {
+      id: "route-parameters-context",
+      type: "call_tool",
+      required: false,
+      description:
+        "Execute the parameter summary tool if parameter information is available in the context snapshot.",
+      toolName: "context.parameters",
+      outputKey: "parameters",
+      metadata: {
+        routeTarget: "parameters",
         optional: true,
       },
       onFailure: "skip",
@@ -255,7 +283,7 @@ const DEFAULT_SELECTED_MARK_EXPLANATION_PLAN: PlanDefinition = {
       required: true,
       description:
         "Compose a safe placeholder response while the structured path is being wired.",
-      outputKey: "response",
+      outputKey: "responseMaterial",
       metadata: {
         responseStrategy: "explain_selection",
       },
@@ -263,7 +291,7 @@ const DEFAULT_SELECTED_MARK_EXPLANATION_PLAN: PlanDefinition = {
   ],
   budget: {
     maxModelCalls: 0,
-    maxToolCalls: 2,
+    maxToolCalls: 4,
     timeoutMs: 15_000,
   },
   responseStrategy: "explain_selection",

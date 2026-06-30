@@ -225,6 +225,61 @@ function DashboardExtensionApp() {
               worksheetNames: contextPreview.selectedMarks.items.map(
                 (item) => item.worksheetName,
               ),
+              summaryDataPreview:
+                contextPreview.summaryDataPreview.status === "available"
+                  ? {
+                      available: true,
+                      rowCount: contextPreview.summaryDataPreview.items.reduce(
+                        (total, item) => total + item.totalRowCount,
+                        0,
+                      ),
+                      columnCount:
+                        contextPreview.summaryDataPreview.items.reduce(
+                          (total, item) => total + item.totalColumnCount,
+                          0,
+                        ),
+                      columnNames: Array.from(
+                        new Set(
+                          contextPreview.summaryDataPreview.items.flatMap(
+                            (item) =>
+                              item.columns
+                                .map((column) => column.name)
+                                .filter((name): name is string =>
+                                  Boolean(name),
+                                ),
+                          ),
+                        ),
+                      ),
+                      truncated: contextPreview.summaryDataPreview.truncated,
+                    }
+                  : {
+                      available: false,
+                      truncated: contextPreview.summaryDataPreview.truncated,
+                    },
+              filters:
+                contextPreview.filters.length > 0
+                  ? {
+                      count: contextPreview.filters.length,
+                      names: contextPreview.filters.map(
+                        (filter) => filter.fieldName,
+                      ),
+                    }
+                  : {
+                      count: 0,
+                      names: [],
+                    },
+              parameters:
+                contextPreview.parameters.length > 0
+                  ? {
+                      count: contextPreview.parameters.length,
+                      names: contextPreview.parameters.map(
+                        (parameter) => parameter.name,
+                      ),
+                    }
+                  : {
+                      count: 0,
+                      names: [],
+                    },
             },
             metadata: {
               sourceKind: contextPreview.metadata.sourceKind,

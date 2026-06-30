@@ -208,6 +208,43 @@ export async function handler(
                     truncated: false,
                     worksheetNames: intentRequest.contextSummary.worksheetNames,
                   },
+                  ...(intentRequest.contextSummary.summaryDataPreview
+                    ? {
+                        summaryDataPreview: {
+                          available:
+                            intentRequest.contextSummary.summaryDataPreview
+                              .available,
+                          rowCount:
+                            intentRequest.contextSummary.summaryDataPreview
+                              .rowCount,
+                          columnCount:
+                            intentRequest.contextSummary.summaryDataPreview
+                              .columnCount,
+                          columnNames:
+                            intentRequest.contextSummary.summaryDataPreview
+                              .columnNames,
+                          truncated:
+                            intentRequest.contextSummary.summaryDataPreview
+                              .truncated,
+                        },
+                      }
+                    : {}),
+                  ...(intentRequest.contextSummary.filters
+                    ? {
+                        filters: {
+                          count: intentRequest.contextSummary.filters.count,
+                          names: intentRequest.contextSummary.filters.names,
+                        },
+                      }
+                    : {}),
+                  ...(intentRequest.contextSummary.parameters
+                    ? {
+                        parameters: {
+                          count: intentRequest.contextSummary.parameters.count,
+                          names: intentRequest.contextSummary.parameters.names,
+                        },
+                      }
+                    : {}),
                 }
               : undefined,
             metadata: intentRequest.metadata
@@ -406,6 +443,37 @@ function buildIntentResolutionInput(
             truncated: false,
             worksheetNames: request.contextSummary.worksheetNames,
           },
+          ...(request.contextSummary.summaryDataPreview
+            ? {
+                summaryDataPreview: {
+                  available:
+                    request.contextSummary.summaryDataPreview.available,
+                  rowCount: request.contextSummary.summaryDataPreview.rowCount,
+                  columnCount:
+                    request.contextSummary.summaryDataPreview.columnCount,
+                  columnNames:
+                    request.contextSummary.summaryDataPreview.columnNames,
+                  truncated:
+                    request.contextSummary.summaryDataPreview.truncated,
+                },
+              }
+            : {}),
+          ...(request.contextSummary.filters
+            ? {
+                filters: {
+                  count: request.contextSummary.filters.count,
+                  names: request.contextSummary.filters.names,
+                },
+              }
+            : {}),
+          ...(request.contextSummary.parameters
+            ? {
+                parameters: {
+                  count: request.contextSummary.parameters.count,
+                  names: request.contextSummary.parameters.names,
+                },
+              }
+            : {}),
         }
       : undefined,
     resolverMode: "deterministic",
@@ -438,6 +506,33 @@ function buildOrchestrationContextSummary(
       truncated: false,
       worksheetNames: contextSummary.worksheetNames,
     },
+    ...(contextSummary.summaryDataPreview
+      ? {
+          summaryDataPreview: {
+            available: contextSummary.summaryDataPreview.available,
+            rowCount: contextSummary.summaryDataPreview.rowCount,
+            columnCount: contextSummary.summaryDataPreview.columnCount,
+            columnNames: contextSummary.summaryDataPreview.columnNames,
+            truncated: contextSummary.summaryDataPreview.truncated,
+          },
+        }
+      : {}),
+    ...(contextSummary.filters
+      ? {
+          filters: {
+            count: contextSummary.filters.count,
+            names: contextSummary.filters.names,
+          },
+        }
+      : {}),
+    ...(contextSummary.parameters
+      ? {
+          parameters: {
+            count: contextSummary.parameters.count,
+            names: contextSummary.parameters.names,
+          },
+        }
+      : {}),
   };
 }
 

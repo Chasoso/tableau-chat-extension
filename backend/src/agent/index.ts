@@ -142,6 +142,21 @@ export type {
   SelectedMarkOrchestrationResponse,
 } from "./selectedMarkOrchestration";
 export {
+  buildSelectedMarkExplanationPlaceholderResponse,
+  buildSelectedMarkExplanationResponseMaterial,
+  createSelectedMarkExplanationContextToolDefinitions,
+  createSelectedMarkExplanationContextToolHandlers,
+  createSelectedMarkExplanationContextToolRegistry,
+  createSelectedMarkExplanationToolRuntime,
+} from "./selectedMarkContextTools";
+export type {
+  SelectedMarkExplanationContextSummary,
+  SelectedMarkExplanationContextToolName,
+  SelectedMarkExplanationContextToolOutputs,
+  SelectedMarkExplanationResponseMaterial,
+  SelectedMarkExplanationToolRuntime,
+} from "./selectedMarkContextTools";
+export {
   buildBudgetTraceMetadata,
   buildExecutionTraceMetadata as buildOrchestrationExecutionTraceMetadata,
   buildFallbackTraceMetadata,

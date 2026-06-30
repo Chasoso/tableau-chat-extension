@@ -242,7 +242,7 @@ describe("chatHandler", () => {
       status: "resolved",
     });
     expect(body.orchestration).toMatchObject({
-      status: "completed",
+      status: "partial",
       planSelection: {
         selectedPlan: {
           id: "selected_mark_explanation-v1",
