@@ -148,6 +148,9 @@ export {
   buildIntentResolutionTraceMetadata as buildOrchestrationIntentResolutionTraceMetadata,
   buildPlanSelectionTraceMetadata,
   buildPlanStepTraceMetadata,
+  buildToolExecutionTraceEventMetadata,
+  buildToolPreconditionTraceMetadata,
+  buildToolRegistryTraceMetadata,
   buildToolRoutingTraceMetadata as buildOrchestrationToolRoutingTraceMetadata,
   createBudgetTraceEvent,
   createFallbackTraceEvent,
@@ -158,6 +161,9 @@ export {
   createOrchestrationTraceEvent,
   createPlanSelectionTraceEvent,
   createPlanStepTraceEvent,
+  createToolExecutionTraceEvent,
+  createToolPreconditionTraceEvent,
+  createToolRegistryTraceEvent,
   createToolRoutingTraceEvent,
 } from "./orchestrationTrace";
 export type {
@@ -225,6 +231,7 @@ export type {
   OrchestrationTraceSelectionSummary,
   OrchestrationTraceStage,
   OrchestrationTraceStepSummary,
+  ToolTraceMetadata,
 } from "./orchestrationTrace";
 export { createTraceError, createTraceEvent, createTraceStep } from "./trace";
 export {
