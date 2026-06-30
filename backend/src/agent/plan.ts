@@ -189,43 +189,72 @@ const DEFAULT_SELECTED_MARK_EXPLANATION_PLAN: PlanDefinition = {
       fallbackReason: "No selected marks are available.",
     },
   ],
-  allowedTools: [],
-  disallowedTools: [...ALL_TOOL_KINDS],
+  allowedTools: ["context"],
+  disallowedTools: [
+    "tableau-extension",
+    "tableau-rest",
+    "tableau-mcp",
+    "notion",
+    "llm",
+  ],
   toolPolicy: {
-    mode: "denylist",
-    allowedTools: [],
-    disallowedTools: [...ALL_TOOL_KINDS],
+    mode: "allowlist",
+    allowedTools: ["context"],
+    disallowedTools: [
+      "tableau-extension",
+      "tableau-rest",
+      "tableau-mcp",
+      "notion",
+      "llm",
+    ],
   },
   steps: [
-    {
-      id: "collect-context",
-      type: "collect_context",
-      required: true,
-      description:
-        "Collect the dashboard context and the selected mark snapshot.",
-      input: {
-        source: "context_pack",
-      },
-      outputKey: "context",
-      metadata: {
-        contextPacks: ["dashboard_context", "selected_marks"],
-      },
-    },
     {
       id: "validate-context",
       type: "validate_context",
       required: true,
-      description: "Validate that selected marks are present before answering.",
+      description:
+        "Validate that the dashboard context and selected marks are available.",
+      input: {
+        source: "context_pack",
+      },
       outputKey: "validation",
       metadata: {
-        minSelectedMarks: 1,
+        requiredContextPacks: ["dashboard_context", "selected_marks"],
       },
+    },
+    {
+      id: "route-selected-marks-context",
+      type: "call_tool",
+      required: true,
+      description:
+        "Route the selected marks context through the structured orchestration path.",
+      toolName: "context",
+      outputKey: "selectedMarksContext",
+      metadata: {
+        routeTarget: "selected_marks",
+      },
+    },
+    {
+      id: "route-summary-data-preview",
+      type: "call_tool",
+      required: false,
+      description:
+        "Route the summary data preview if it is available in the context snapshot.",
+      toolName: "context",
+      outputKey: "summaryDataPreview",
+      metadata: {
+        routeTarget: "summary_data_preview",
+        optional: true,
+      },
+      onFailure: "skip",
     },
     {
       id: "compose-response",
       type: "compose_response",
       required: true,
-      description: "Explain the selected marks using the collected context.",
+      description:
+        "Compose a safe placeholder response while the structured path is being wired.",
       outputKey: "response",
       metadata: {
         responseStrategy: "explain_selection",
@@ -233,8 +262,8 @@ const DEFAULT_SELECTED_MARK_EXPLANATION_PLAN: PlanDefinition = {
     },
   ],
   budget: {
-    maxModelCalls: 1,
-    maxToolCalls: 0,
+    maxModelCalls: 0,
+    maxToolCalls: 2,
     timeoutMs: 15_000,
   },
   responseStrategy: "explain_selection",

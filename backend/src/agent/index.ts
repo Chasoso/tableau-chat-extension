@@ -73,6 +73,15 @@ export {
   MinimalExecutionEngine,
 } from "./execution";
 export {
+  runSelectedMarkExplanationOrchestration,
+  selectFixedPlanForIntent,
+} from "./selectedMarkOrchestration";
+export type {
+  SelectedMarkOrchestrationInput,
+  SelectedMarkPlanSelection,
+  SelectedMarkOrchestrationResponse,
+} from "./selectedMarkOrchestration";
+export {
   buildBudgetTraceMetadata,
   buildExecutionTraceMetadata as buildOrchestrationExecutionTraceMetadata,
   buildFallbackTraceMetadata,

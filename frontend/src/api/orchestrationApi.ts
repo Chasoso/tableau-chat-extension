@@ -30,6 +30,19 @@ export async function resolveIntent(
   return response.json() as Promise<ResolveIntentResponse>;
 }
 
+export async function runSelectedMarkExplanationOrchestration(
+  request: ResolveIntentRequest,
+  accessToken?: string,
+): Promise<ResolveIntentResponse> {
+  return resolveIntent(
+    {
+      ...request,
+      runMode: "resolve_and_execute_fixed_plan",
+    },
+    accessToken,
+  );
+}
+
 function buildJsonHeaders(accessToken?: string) {
   return {
     "Content-Type": "application/json",

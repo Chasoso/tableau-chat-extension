@@ -19,6 +19,7 @@ const mocks = vi.hoisted(() => {
   const getDashboardContextMock = vi.fn();
   const buildContextPreviewModelMock = vi.fn();
   const resolveIntentMock = vi.fn();
+  const runSelectedMarkExplanationOrchestrationMock = vi.fn();
   const aiContextPreviewPanelMock = vi.fn(() => (
     <div data-testid="context-preview-panel" />
   ));
@@ -39,6 +40,7 @@ const mocks = vi.hoisted(() => {
     getDashboardContextMock,
     buildContextPreviewModelMock,
     resolveIntentMock,
+    runSelectedMarkExplanationOrchestrationMock,
     aiContextPreviewPanelMock,
     registerMarkSelectionChangedListenersMock,
     chatPanelMock,
@@ -84,6 +86,8 @@ vi.mock("./tableau/contextPreview", () => ({
 
 vi.mock("./api/orchestrationApi", () => ({
   resolveIntent: mocks.resolveIntentMock,
+  runSelectedMarkExplanationOrchestration:
+    mocks.runSelectedMarkExplanationOrchestrationMock,
 }));
 
 vi.mock("./tableau/markSelectionListener", () => ({
@@ -104,6 +108,7 @@ describe("App", () => {
     mocks.getDashboardContextMock.mockReset();
     mocks.buildContextPreviewModelMock.mockReset();
     mocks.resolveIntentMock.mockReset();
+    mocks.runSelectedMarkExplanationOrchestrationMock.mockReset();
     mocks.aiContextPreviewPanelMock.mockClear();
     mocks.registerMarkSelectionChangedListenersMock.mockClear();
     mocks.chatPanelMock.mockClear();
@@ -291,7 +296,7 @@ describe("App", () => {
   });
 
   it("resolves selected-mark actions without auto-submitting chat jobs", async () => {
-    mocks.resolveIntentMock.mockResolvedValue({
+    mocks.runSelectedMarkExplanationOrchestrationMock.mockResolvedValue({
       result: {
         agentRunId: "agent-run-1",
         status: "resolved",
@@ -301,6 +306,75 @@ describe("App", () => {
         reason: "Resolved from UI action.",
         evidence: [],
         warnings: [],
+      },
+      orchestration: {
+        mode: "resolve_and_execute_fixed_plan",
+        status: "completed",
+        message:
+          "Structured orchestration is connected for selected_mark_explanation. Actual AI response generation is not connected yet.",
+        placeholderResponse:
+          "Structured orchestration is connected for selected_mark_explanation. Actual AI response generation is not connected yet.",
+        intentResolution: {
+          agentRunId: "agent-run-1",
+          status: "resolved",
+          resolvedIntentId: "selected_mark_explanation",
+          confidence: 0.99,
+          source: "ui_action",
+          warnings: [],
+          evidence: [],
+        },
+        planSelection: {
+          status: "selected",
+          matched: true,
+          resolvedIntentId: "selected_mark_explanation",
+          selectedPlan: {
+            id: "selected_mark_explanation-v1",
+            title: "Selected mark explanation",
+            responseStrategy: "explain_selection",
+            budget: {
+              maxModelCalls: 0,
+              maxToolCalls: 2,
+              timeoutMs: 15000,
+            },
+          },
+          preconditions: [],
+          reasonBrief: "Selected the selected-mark explanation plan.",
+        },
+        execution: {
+          status: "partial",
+          planId: "selected_mark_explanation-v1",
+          intentId: "selected_mark_explanation",
+          executedSteps: ["route-selected-marks", "route-summary-data-preview"],
+          skippedSteps: [],
+          blockedSteps: [],
+          stepResults: [],
+          budgetUsage: {
+            toolCallsUsed: 2,
+            modelCallsUsed: 0,
+            maxToolCalls: 2,
+            maxModelCalls: 0,
+            timeoutMs: 15000,
+            startedAt: "2026-06-07T00:00:00.000Z",
+            completedAt: "2026-06-07T00:00:01.000Z",
+            durationMs: 1000,
+          },
+          warnings: [],
+          errors: [],
+        },
+        traceEvents: [],
+        contextSummary: {
+          dashboardName: "Executive Overview",
+          workbookName: "Sales Workbook",
+          viewName: "Executive Overview",
+          worksheetNames: ["Sales Trend"],
+          selectedMarks: {
+            hasSelectedMarks: true,
+            totalCount: 3,
+            previewCount: 1,
+            truncated: false,
+            worksheetNames: ["Sales Trend"],
+          },
+        },
       },
     });
     mocks.buildContextPreviewModelMock.mockImplementationOnce(
@@ -420,7 +494,9 @@ describe("App", () => {
       });
     });
 
-    expect(mocks.resolveIntentMock).toHaveBeenCalledWith(
+    expect(
+      mocks.runSelectedMarkExplanationOrchestrationMock,
+    ).toHaveBeenCalledWith(
       expect.objectContaining({
         actionId: "explain_selection",
         requestedIntent: "selected_mark_explanation",
@@ -443,6 +519,16 @@ describe("App", () => {
 
     expect(
       screen.getByText(/Resolved intent: selected_mark_explanation/),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        /Orchestration: completed \/ Plan: selected_mark_explanation-v1 \/ Execution: partial/,
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        /Structured orchestration is connected for selected_mark_explanation/,
+      ),
     ).toBeInTheDocument();
 
     const chatPanelProps = (

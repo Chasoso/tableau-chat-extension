@@ -4,6 +4,7 @@ import {
   createAgentRunId,
   buildOrchestrationIntentResolutionTraceMetadata,
   createDefaultIntentResolver,
+  runSelectedMarkExplanationOrchestration,
   type JsonObject,
   type IntentId,
   type IntentResolutionInput,
@@ -183,9 +184,54 @@ export async function handler(
       }
 
       const resolver = createDefaultIntentResolver();
-      const result = await resolver.resolve(
-        buildIntentResolutionInput(intentRequest),
-      );
+      const intentResolutionInput = buildIntentResolutionInput(intentRequest);
+      const shouldRunOrchestration =
+        intentRequest.runMode === "resolve_and_execute_fixed_plan";
+
+      if (shouldRunOrchestration) {
+        const orchestrationResult =
+          await runSelectedMarkExplanationOrchestration({
+            agentRunId: intentResolutionInput.agentRunId,
+            intentResolutionInput,
+            contextSummary: intentRequest.contextSummary
+              ? {
+                  dashboardName: intentRequest.contextSummary.dashboardName,
+                  workbookName: intentRequest.contextSummary.workbookName,
+                  viewName: intentRequest.contextSummary.viewName,
+                  worksheetNames: intentRequest.contextSummary.worksheetNames,
+                  selectedMarks: {
+                    hasSelectedMarks:
+                      intentRequest.contextSummary.hasSelectedMarks,
+                    totalCount: intentRequest.contextSummary.selectedMarkCount,
+                    previewCount:
+                      intentRequest.contextSummary.selectedMarkCount,
+                    truncated: false,
+                    worksheetNames: intentRequest.contextSummary.worksheetNames,
+                  },
+                }
+              : undefined,
+            metadata: intentRequest.metadata
+              ? ({ ...intentRequest.metadata } as JsonObject)
+              : undefined,
+          });
+        const response: ResolveIntentResponse = {
+          result: orchestrationResult.intentResolution,
+          orchestration: orchestrationResult,
+        };
+
+        logInfo("chat.intent_orchestration.completed", {
+          requestId,
+          agentRunId: orchestrationResult.intentResolution.agentRunId,
+          resolvedIntentId:
+            orchestrationResult.intentResolution.resolvedIntentId,
+          status: orchestrationResult.status,
+          planId: orchestrationResult.planSelection?.selectedPlan.id,
+          executionStatus: orchestrationResult.execution?.status,
+        });
+        return jsonResponse(200, response);
+      }
+
+      const result = await resolver.resolve(intentResolutionInput);
       const response: ResolveIntentResponse = {
         result: {
           ...result,
