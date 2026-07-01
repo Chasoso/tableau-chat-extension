@@ -4,11 +4,18 @@ import {
   createAgentRunId,
   buildOrchestrationIntentResolutionTraceMetadata,
   createDefaultIntentResolver,
+  createLambdaAgentRunner,
   runSelectedMarkExplanationOrchestration,
+  type AgentIntent,
+  type AgentRunInput,
+  type AgentRunResult,
+  type AgentPlan,
+  type ContextPack,
   type JsonObject,
   type IntentId,
   type IntentResolutionInput,
   type OrchestrationTraceContextSummary,
+  type TraceEvent,
 } from "../agent";
 import {
   logError,
@@ -33,6 +40,9 @@ import { handleNotionRoute } from "./notionHandler";
 import { handleCognitoPopupAuthRoute } from "./cognitoPopupAuthHandler";
 
 const chatJobService = new ChatJobService();
+type SelectedMarkOrchestrationResult = Awaited<
+  ReturnType<typeof runSelectedMarkExplanationOrchestration>
+>;
 
 export async function handler(
   event: ApiGatewayProxyEvent,
@@ -189,71 +199,95 @@ export async function handler(
         intentRequest.runMode === "resolve_and_execute_fixed_plan";
 
       if (shouldRunOrchestration) {
-        const orchestrationResult =
-          await runSelectedMarkExplanationOrchestration({
-            agentRunId: intentResolutionInput.agentRunId,
+        const agentRunInput = buildSelectedMarkAgentRunInput(
+          intentRequest,
+          intentResolutionInput,
+        );
+        let orchestrationResult: SelectedMarkOrchestrationResult | undefined;
+        const runner = createLambdaAgentRunner({
+          runSelectedMarkExplanation: async (input) => {
+            orchestrationResult =
+              await runSelectedMarkExplanationOrchestration(input);
+            return orchestrationResult;
+          },
+        });
+        const agentRunResult = await runner.run(agentRunInput);
+        if (!orchestrationResult) {
+          orchestrationResult = buildSelectedMarkFallbackOrchestrationResult(
             intentResolutionInput,
-            contextSummary: intentRequest.contextSummary
-              ? {
-                  dashboardName: intentRequest.contextSummary.dashboardName,
-                  workbookName: intentRequest.contextSummary.workbookName,
-                  viewName: intentRequest.contextSummary.viewName,
-                  worksheetNames: intentRequest.contextSummary.worksheetNames,
-                  selectedMarks: {
-                    hasSelectedMarks:
-                      intentRequest.contextSummary.hasSelectedMarks,
-                    totalCount: intentRequest.contextSummary.selectedMarkCount,
-                    previewCount:
-                      intentRequest.contextSummary.selectedMarkCount,
-                    truncated: false,
-                    worksheetNames: intentRequest.contextSummary.worksheetNames,
-                  },
-                  ...(intentRequest.contextSummary.summaryDataPreview
-                    ? {
-                        summaryDataPreview: {
-                          available:
-                            intentRequest.contextSummary.summaryDataPreview
-                              .available,
-                          rowCount:
-                            intentRequest.contextSummary.summaryDataPreview
-                              .rowCount,
-                          columnCount:
-                            intentRequest.contextSummary.summaryDataPreview
-                              .columnCount,
-                          columnNames:
-                            intentRequest.contextSummary.summaryDataPreview
-                              .columnNames,
-                          truncated:
-                            intentRequest.contextSummary.summaryDataPreview
-                              .truncated,
-                        },
-                      }
-                    : {}),
-                  ...(intentRequest.contextSummary.filters
-                    ? {
-                        filters: {
-                          count: intentRequest.contextSummary.filters.count,
-                          names: intentRequest.contextSummary.filters.names,
-                        },
-                      }
-                    : {}),
-                  ...(intentRequest.contextSummary.parameters
-                    ? {
-                        parameters: {
-                          count: intentRequest.contextSummary.parameters.count,
-                          names: intentRequest.contextSummary.parameters.names,
-                        },
-                      }
-                    : {}),
-                }
-              : undefined,
-            metadata: intentRequest.metadata
-              ? ({ ...intentRequest.metadata } as JsonObject)
-              : undefined,
-          });
+            intentRequest,
+            agentRunInput,
+            agentRunResult,
+          );
+        }
         const response: ResolveIntentResponse = {
-          result: orchestrationResult.intentResolution,
-          orchestration: orchestrationResult,
+          result: {
+            ...orchestrationResult.intentResolution,
+            traceMetadata: {
+              ...(orchestrationResult.intentResolution.traceMetadata ?? {}),
+              ...(agentRunResult.runner
+                ? {
+                    runner: {
+                      kind: agentRunResult.runner.kind,
+                      name: agentRunResult.runner.name ?? null,
+                      version: agentRunResult.runner.version ?? null,
+                      implementation:
+                        agentRunResult.runner.implementation ?? null,
+                    },
+                  }
+                : {}),
+              ...(agentRunResult.observability
+                ? {
+                    observability: {
+                      startedAt: agentRunResult.observability.startedAt ?? null,
+                      completedAt:
+                        agentRunResult.observability.completedAt ?? null,
+                      durationMs:
+                        agentRunResult.observability.durationMs ?? null,
+                      traceId: agentRunResult.observability.traceId ?? null,
+                      correlationId:
+                        agentRunResult.observability.correlationId ?? null,
+                    },
+                  }
+                : {}),
+              agentRun: {
+                status: agentRunResult.status,
+                fallbackReason: agentRunResult.fallbackReason ?? null,
+                finalMessage: agentRunResult.finalMessage ?? null,
+                traceSummary: agentRunResult.traceSummary ?? null,
+                budgetUsage: agentRunResult.budgetUsage ?? null,
+              },
+            },
+          },
+          orchestration: {
+            ...orchestrationResult,
+            status:
+              agentRunResult.status === "failed" ||
+              agentRunResult.status === "timed_out"
+                ? "failed"
+                : orchestrationResult.status,
+            message: agentRunResult.finalMessage ?? orchestrationResult.message,
+            placeholderResponse:
+              agentRunResult.response?.message ??
+              orchestrationResult.placeholderResponse,
+            traceEvents: agentRunResult.trace,
+            traceMetadata: {
+              ...(orchestrationResult.traceMetadata ?? {}),
+              runner: agentRunResult.runner ?? null,
+              observability: agentRunResult.observability ?? null,
+              agentRun: {
+                status: agentRunResult.status,
+                fallbackReason: agentRunResult.fallbackReason ?? null,
+                finalMessage: agentRunResult.finalMessage ?? null,
+                traceSummary: agentRunResult.traceSummary ?? null,
+                budgetUsage: agentRunResult.budgetUsage ?? null,
+              },
+            },
+            responseMaterial:
+              orchestrationResult.responseMaterial ??
+              agentRunResult.response?.summary ??
+              undefined,
+          },
         };
 
         logInfo("chat.intent_orchestration.completed", {
@@ -264,6 +298,8 @@ export async function handler(
           status: orchestrationResult.status,
           planId: orchestrationResult.planSelection?.selectedPlan.id,
           executionStatus: orchestrationResult.execution?.status,
+          runnerKind: agentRunResult.runner?.kind,
+          runnerStatus: agentRunResult.status,
         });
         return jsonResponse(200, response);
       }
@@ -484,6 +520,290 @@ function buildIntentResolutionInput(
     metadata: request.metadata
       ? ({ ...request.metadata } as JsonObject)
       : undefined,
+  };
+}
+
+function buildSelectedMarkAgentRunInput(
+  request: ResolveIntentRequest,
+  intentResolutionInput: IntentResolutionInput,
+): AgentRunInput {
+  const selectedMarkLegacyIntent = buildSelectedMarkLegacyIntent(request);
+  const selectedMarkLegacyPlan = buildSelectedMarkLegacyPlan(
+    intentResolutionInput.agentRunId,
+    selectedMarkLegacyIntent,
+  );
+  return {
+    agentRunId: intentResolutionInput.agentRunId,
+    userMessage: request.message ?? "Explain the selected marks.",
+    contextPack: buildSelectedMarkLegacyContextPack(
+      request,
+      intentResolutionInput.agentRunId,
+    ),
+    trace: [] as TraceEvent[],
+    intent: selectedMarkLegacyIntent,
+    plan: selectedMarkLegacyPlan,
+    runMode: "selected_mark_explanation",
+    requestedIntent: "selected_mark_explanation",
+    actionId: request.actionId,
+    context: buildSelectedMarkAgentRunContextSummary(request.contextSummary),
+    planHint: {
+      planId: "selected_mark_explanation-v1",
+      planName: "Selected mark explanation fixed plan",
+      fixed: true,
+      reason: "Explicit selected-mark action path.",
+    },
+    toolPolicy: {
+      allowedTools: [
+        "context.selectedMarks",
+        "context.summaryDataPreview",
+        "context.filters",
+        "context.parameters",
+      ],
+      safeForPreviewOnly: true,
+      requiresExplicitActionAllowed: false,
+    },
+    modelPolicy: {
+      provider: "none",
+      modelId: "none",
+      maxModelCalls: 0,
+      allowLlmGeneration: false,
+    },
+    budget: {
+      maxModelCalls: 0,
+      maxToolCalls: 4,
+      timeoutMs: 15_000,
+      maxDurationMs: 20_000,
+      maxEstimatedCostUsd: 0,
+    },
+    traceOptions: {
+      traceId: intentResolutionInput.agentRunId,
+      correlationId:
+        request.clientTimestamp ??
+        request.actionId ??
+        intentResolutionInput.agentRunId,
+      captureEvents: true,
+      captureSummary: true,
+      includeMetadata: true,
+      metadata: {
+        actionId: request.actionId ?? null,
+        clientTimestamp: request.clientTimestamp ?? null,
+      },
+    },
+    locale:
+      request.metadata && typeof request.metadata.locale === "string"
+        ? request.metadata.locale
+        : "en",
+    metadata: request.metadata
+      ? ({ ...request.metadata } as JsonObject)
+      : undefined,
+  };
+}
+
+function buildSelectedMarkAgentRunContextSummary(
+  contextSummary: ResolveIntentRequest["contextSummary"],
+): AgentRunInput["context"] {
+  if (!contextSummary) {
+    return undefined;
+  }
+
+  return {
+    dashboardName: contextSummary.dashboardName,
+    workbookName: contextSummary.workbookName,
+    viewName: contextSummary.viewName,
+    worksheetNames: contextSummary.worksheetNames,
+    selectedMarks: {
+      available: Boolean(
+        contextSummary.hasSelectedMarks ??
+        (contextSummary.selectedMarkCount ?? 0) > 0,
+      ),
+      count: contextSummary.selectedMarkCount ?? 0,
+      worksheetNames: contextSummary.worksheetNames,
+      fieldNames: [],
+      summary:
+        contextSummary.hasSelectedMarks &&
+        (contextSummary.selectedMarkCount ?? 0) > 0
+          ? `Selected ${contextSummary.selectedMarkCount} mark(s).`
+          : "No selected marks are available.",
+      truncated: false,
+    },
+    summaryDataPreview: contextSummary.summaryDataPreview
+      ? {
+          available: contextSummary.summaryDataPreview.available ?? false,
+          rowCount: contextSummary.summaryDataPreview.rowCount,
+          columnCount: contextSummary.summaryDataPreview.columnCount,
+          columnNames: contextSummary.summaryDataPreview.columnNames,
+          truncated: contextSummary.summaryDataPreview.truncated,
+        }
+      : undefined,
+    filters: contextSummary.filters
+      ? {
+          available: (contextSummary.filters.count ?? 0) > 0,
+          count: contextSummary.filters.count,
+          names: contextSummary.filters.names,
+          truncated: false,
+        }
+      : undefined,
+    parameters: contextSummary.parameters
+      ? {
+          available: (contextSummary.parameters.count ?? 0) > 0,
+          count: contextSummary.parameters.count,
+          names: contextSummary.parameters.names,
+          truncated: false,
+        }
+      : undefined,
+  };
+}
+
+function buildSelectedMarkLegacyIntent(
+  request: ResolveIntentRequest,
+): AgentIntent {
+  return {
+    name: "data_analysis",
+    confidence: 0.99,
+    reasonBrief:
+      request.message ?? "Explicit selected-mark explanation request.",
+    answerableFromContext: true,
+    needsMcp: false,
+    maxToolCalls: 4,
+    normalizedQuestion: request.message ?? "Explain the selected marks.",
+  };
+}
+
+function buildSelectedMarkLegacyPlan(
+  agentRunId: AgentRunInput["agentRunId"],
+  intent: AgentIntent,
+): AgentPlan {
+  return {
+    agentRunId,
+    intent,
+    fixed: true,
+    reasonBrief: "Explicit selected-mark action path.",
+    requiredEvidence: [
+      "selected_marks",
+      "summary_data_preview",
+      "filters",
+      "parameters",
+    ],
+    steps: [
+      {
+        type: "inspect_context",
+        description: "Inspect the selected marks context.",
+      },
+    ],
+    maxToolCalls: 4,
+  };
+}
+
+function buildSelectedMarkLegacyContextPack(
+  request: ResolveIntentRequest,
+  agentRunId: AgentRunInput["agentRunId"],
+): ContextPack {
+  const contextSummary = request.contextSummary;
+  const selectedMarkCount = contextSummary?.selectedMarkCount ?? 0;
+  const worksheetNames = contextSummary?.worksheetNames ?? [];
+
+  return {
+    agentRunId,
+    createdAt: request.clientTimestamp ?? new Date().toISOString(),
+    question: request.message ?? "Explain the selected marks.",
+    dashboardContext: {
+      dashboardName: contextSummary?.dashboardName ?? "Selected marks",
+      workbookName: contextSummary?.workbookName ?? null,
+      viewName: contextSummary?.viewName ?? null,
+      worksheets: worksheetNames.map((name) => ({ name })),
+      filters: (contextSummary?.filters?.names ?? []).map((fieldName) => ({
+        fieldName,
+      })),
+      parameters: (contextSummary?.parameters?.names ?? []).map((name) => ({
+        name,
+      })),
+      selectedMarks:
+        selectedMarkCount > 0
+          ? [
+              {
+                worksheetName: worksheetNames[0] ?? "Selected marks",
+                columns: [],
+                rowCount: selectedMarkCount,
+                status: "available",
+              },
+            ]
+          : [],
+      capturedAt: request.clientTimestamp ?? new Date().toISOString(),
+    },
+  };
+}
+
+function buildSelectedMarkFallbackOrchestrationResult(
+  intentResolutionInput: IntentResolutionInput,
+  request: ResolveIntentRequest,
+  agentRunInput: AgentRunInput,
+  agentRunResult: AgentRunResult,
+): SelectedMarkOrchestrationResult {
+  const contextSummary = buildOrchestrationContextSummary(
+    request.contextSummary,
+  );
+  const fallbackReason =
+    agentRunResult.fallbackReason ??
+    "LambdaAgentRunner returned a fallback selected-mark result.";
+  const resultStatus =
+    agentRunResult.status === "failed" || agentRunResult.status === "timed_out"
+      ? "failed"
+      : "fallback";
+  const selectedMarkCount = request.contextSummary?.selectedMarkCount ?? 0;
+
+  return {
+    mode: "resolve_and_execute_fixed_plan",
+    status: resultStatus,
+    message:
+      agentRunResult.finalMessage ??
+      fallbackReason ??
+      "Selected-mark orchestration failed.",
+    placeholderResponse:
+      agentRunResult.response?.message ??
+      agentRunResult.finalMessage ??
+      "Selected-mark orchestration failed.",
+    intentResolution: {
+      agentRunId: intentResolutionInput.agentRunId,
+      status: "resolved",
+      resolvedIntentId: "selected_mark_explanation",
+      confidence: 0.99,
+      source: "ui_action",
+      reason:
+        request.message ??
+        "Explicit selected-mark explanation request routed through LambdaAgentRunner.",
+      warnings: agentRunResult.warnings.map((warning) => warning.message),
+      evidence: [],
+      traceMetadata: {
+        ...(intentResolutionInput.traceMetadata ?? {}),
+        agentRun: {
+          status: agentRunResult.status,
+          fallbackReason: fallbackReason ?? null,
+          finalMessage: agentRunResult.finalMessage ?? null,
+          budgetUsage: agentRunResult.budgetUsage ?? null,
+        },
+      },
+      metadata: {
+        ...(intentResolutionInput.metadata ?? {}),
+        runnerKind: agentRunResult.runner?.kind ?? null,
+        selectedMarkCount,
+      },
+    },
+    traceEvents: agentRunResult.trace,
+    traceMetadata: {
+      runner: agentRunResult.runner ?? null,
+      observability: agentRunResult.observability ?? null,
+      agentRun: {
+        status: agentRunResult.status,
+        fallbackReason: fallbackReason ?? null,
+        finalMessage: agentRunResult.finalMessage ?? null,
+        traceSummary: agentRunResult.traceSummary ?? null,
+        budgetUsage: agentRunResult.budgetUsage ?? null,
+      },
+      ...(agentRunInput.traceOptions?.metadata
+        ? { traceOptions: agentRunInput.traceOptions.metadata }
+        : {}),
+    },
+    contextSummary,
   };
 }
 

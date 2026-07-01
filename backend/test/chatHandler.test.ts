@@ -234,6 +234,14 @@ describe("chatHandler", () => {
           };
         };
         traceEvents?: unknown[];
+        traceMetadata?: {
+          runner?: {
+            kind?: string;
+          };
+          agentRun?: {
+            status?: string;
+          };
+        };
       };
     };
 
@@ -256,6 +264,20 @@ describe("chatHandler", () => {
       "Structured orchestration",
     );
     expect(Array.isArray(body.orchestration?.traceEvents)).toBe(true);
+    expect(body.orchestration?.traceEvents).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ type: "run_started" }),
+        expect.objectContaining({ type: "run_completed" }),
+      ]),
+    );
+    expect(body.orchestration?.traceMetadata).toMatchObject({
+      runner: {
+        kind: "lambda",
+      },
+      agentRun: {
+        status: "partial",
+      },
+    });
     expect(mocks.createChatServiceMock).not.toHaveBeenCalled();
     expect(
       mocks.chatJobServiceImplementation.createChatJob,
