@@ -3,11 +3,11 @@ import type { DashboardContext, SelectedMarkSummary } from "../types/tableau";
 import { createDefaultExecutionEngine } from "./execution";
 import { createDefaultIntentResolver } from "./minimalIntentResolver";
 import {
-  buildSelectedMarkExplanationPlaceholderResponse,
   buildSelectedMarkExplanationResponseMaterial,
   createSelectedMarkExplanationToolRuntime,
   type SelectedMarkExplanationResponseMaterial,
 } from "./selectedMarkContextTools";
+import { composeSelectedMarkExplanationResponse } from "./responseComposer";
 import type {
   IntentResolutionContextSummary,
   IntentResolutionInput,
@@ -213,6 +213,28 @@ export async function runSelectedMarkExplanationOrchestration(
       contextSummary: input.contextSummary,
       warnings: execution.warnings,
     });
+  const responseComposition = composeSelectedMarkExplanationResponse({
+    agentRunId,
+    intentId: intentResolution.resolvedIntentId,
+    planId: selection.planSelection.selectedPlan.id,
+    executionStatus: execution.status,
+    responseStrategy: selection.planSelection.selectedPlan.responseStrategy,
+    responseMaterial,
+    warnings: execution.warnings,
+    errors: execution.errors.map((error) => ({
+      message: error.message,
+      ...(error.stepId ? { code: error.stepId } : {}),
+    })),
+    fallbackReason: execution.fallbackReason,
+    locale: "en",
+    metadata: input.metadata,
+    traceMetadata: {
+      stage: "response_composition",
+      executionStatus: execution.status,
+      planId: selection.planSelection.selectedPlan.id,
+      intentId: intentResolution.resolvedIntentId,
+    },
+  });
 
   traceEvents.push(...execution.traceEvents);
 
@@ -224,9 +246,8 @@ export async function runSelectedMarkExplanationOrchestration(
         : execution.status === "partial"
           ? "partial"
           : "completed",
-    message: buildSelectedMarkExplanationPlaceholderResponse(responseMaterial),
-    placeholderResponse:
-      buildSelectedMarkExplanationPlaceholderResponse(responseMaterial),
+    message: responseComposition.message,
+    placeholderResponse: responseComposition.message,
     intentResolution,
     planSelection: selection.planSelection,
     execution,
@@ -266,6 +287,7 @@ export async function runSelectedMarkExplanationOrchestration(
       execution: buildExecutionTraceMetadata(execution, {
         contextSummary,
       }),
+      responseComposer: responseComposition.traceMetadata,
     },
     contextSummary,
   };
