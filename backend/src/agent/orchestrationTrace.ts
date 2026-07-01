@@ -26,6 +26,20 @@ import type {
   ToolRoutingResult,
   ToolRoutingStatus,
 } from "./toolRouter";
+import type { ToolExecutionResult } from "./toolExecutionWrapper";
+import type {
+  ToolAvailabilityStatus,
+  ToolCapability,
+  ToolCategory,
+  ToolSafety,
+  ToolSafetyLevel,
+} from "./toolDefinition";
+import type { ToolLookupResult, ToolLookupStatus } from "./toolRegistry";
+import type {
+  ToolPreconditionResult,
+  ToolPreconditionStatus,
+  ToolPreconditionType,
+} from "./toolPreconditions";
 import type {
   JsonObject,
   TraceEvent,
@@ -59,12 +73,22 @@ export type OrchestrationTraceContextSummary = {
     worksheetNames?: string[];
   };
   summaryDataPreview?: {
+    available?: boolean;
     worksheetCount?: number;
     rowCount?: number;
     columnCount?: number;
     previewRowCount?: number;
     previewColumnCount?: number;
+    columnNames?: string[];
     truncated?: boolean;
+  };
+  filters?: {
+    count?: number;
+    names?: string[];
+  };
+  parameters?: {
+    count?: number;
+    names?: string[];
   };
   contextPackId?: string;
   source?: string;
@@ -170,6 +194,72 @@ export type OrchestrationTraceMetadata = {
   resultStatus?: string;
   traceMetadata?: JsonObject;
   metadata?: JsonObject;
+};
+
+export type ToolTraceMetadata = {
+  agentRunId?: AgentRunId;
+  toolName?: string;
+  contextSummary?: OrchestrationTraceContextSummary;
+  category?: ToolCategory;
+  capabilities?: ToolCapability[];
+  safety?: {
+    level?: ToolSafetyLevel;
+    safeForPreview?: boolean;
+    requiresExplicitAction?: boolean;
+    requiresAuthentication?: boolean;
+    externalAccess?: boolean;
+    mayAccessWorkbookContext?: boolean;
+    mayAccessSelectedMarks?: boolean;
+    mayAccessSummaryData?: boolean;
+    mayCallMcp?: boolean;
+    mayCallExternalApi?: boolean;
+  };
+  lookupStatus?: ToolLookupStatus;
+  availabilityStatus?: ToolAvailabilityStatus;
+  preconditionId?: string;
+  preconditionType?: ToolPreconditionType;
+  preconditionStatus?: ToolPreconditionStatus;
+  required?: boolean;
+  toolExecutionStatus?: ToolExecutionResult["status"];
+  durationMs?: number;
+  timeoutMs?: number;
+  budgetUsage?: {
+    toolCallsUsed?: number;
+    toolCallsRemaining?: number;
+    maxToolCalls?: number;
+  };
+  outputSummary?: {
+    kind?: string;
+    itemCount?: number;
+    truncated?: boolean;
+    jsonSafe?: boolean;
+    preview?: string;
+    normalization?: {
+      jsonSafe?: boolean;
+      truncated?: boolean;
+      circularReferenceCount?: number;
+      depthExceeded?: boolean;
+      replacedValueCount?: number;
+    };
+  };
+  jsonSafe?: boolean;
+  normalization?: {
+    jsonSafe?: boolean;
+    truncated?: boolean;
+    circularReferenceCount?: number;
+    depthExceeded?: boolean;
+    replacedValueCount?: number;
+  };
+  errorSummary?: {
+    name?: string;
+    message?: string;
+    stackPreview?: string;
+  };
+  warnings?: string[];
+  reason?: string;
+  policyDecision?: string;
+  metadata?: JsonObject;
+  traceMetadata?: JsonObject;
 };
 
 export type OrchestrationTraceEventInput = {
@@ -366,6 +456,91 @@ export function createToolRoutingTraceEvent(input: {
       input.message ?? defaultToolRoutingMessage(input.type, input.result),
     severity: input.severity,
     metadata: buildToolRoutingTraceMetadata(input.result, {
+      contextSummary: input.contextSummary,
+      metadata: input.metadata,
+    }),
+    at: input.at,
+    eventId: input.eventId,
+  });
+}
+
+export function createToolRegistryTraceEvent(input: {
+  agentRunId: AgentRunId;
+  type: "tool_registry.lookup";
+  result: ToolLookupResult;
+  contextSummary?: OrchestrationTraceContextSummary;
+  message?: string;
+  severity?: TraceEventSeverity;
+  metadata?: JsonObject;
+  at?: string;
+  eventId?: string;
+}): TraceEvent {
+  return createOrchestrationTraceEvent({
+    agentRunId: input.agentRunId,
+    type: input.type,
+    message:
+      input.message ?? defaultToolRegistryMessage(input.type, input.result),
+    severity: input.severity,
+    metadata: buildToolRegistryTraceMetadata(input.result, {
+      contextSummary: input.contextSummary,
+      metadata: input.metadata,
+    }),
+    at: input.at,
+    eventId: input.eventId,
+  });
+}
+
+export function createToolPreconditionTraceEvent(input: {
+  agentRunId: AgentRunId;
+  type: "tool_precondition.passed" | "tool_precondition.failed";
+  result: ToolPreconditionResult;
+  toolName?: string;
+  contextSummary?: OrchestrationTraceContextSummary;
+  message?: string;
+  severity?: TraceEventSeverity;
+  metadata?: JsonObject;
+  at?: string;
+  eventId?: string;
+}): TraceEvent {
+  return createOrchestrationTraceEvent({
+    agentRunId: input.agentRunId,
+    type: input.type,
+    message:
+      input.message ?? defaultToolPreconditionMessage(input.type, input.result),
+    severity: input.severity,
+    metadata: buildToolPreconditionTraceMetadata(input.result, {
+      toolName: input.toolName,
+      contextSummary: input.contextSummary,
+      metadata: input.metadata,
+    }),
+    at: input.at,
+    eventId: input.eventId,
+  });
+}
+
+export function createToolExecutionTraceEvent(input: {
+  agentRunId: AgentRunId;
+  type:
+    | "tool_execution.started"
+    | "tool_execution.completed"
+    | "tool_execution.failed";
+  result?: ToolExecutionResult;
+  toolName?: string;
+  contextSummary?: OrchestrationTraceContextSummary;
+  message?: string;
+  severity?: TraceEventSeverity;
+  metadata?: JsonObject;
+  at?: string;
+  eventId?: string;
+}): TraceEvent {
+  return createOrchestrationTraceEvent({
+    agentRunId: input.agentRunId,
+    type: input.type,
+    message:
+      input.message ?? defaultToolExecutionMessage(input.type, input.result),
+    severity: input.severity,
+    metadata: buildToolExecutionTraceEventMetadata(input.result, {
+      toolName: input.toolName,
       contextSummary: input.contextSummary,
       metadata: input.metadata,
     }),
@@ -591,6 +766,147 @@ export function buildToolRoutingTraceMetadata(
   };
 }
 
+export function buildToolRegistryTraceMetadata(
+  result: ToolLookupResult,
+  extras?: {
+    contextSummary?: OrchestrationTraceContextSummary;
+    metadata?: JsonObject;
+  },
+): ToolTraceMetadata {
+  const tool = result.tool;
+  const metadata = mergeJsonObjects(result.metadata, extras?.metadata);
+  const traceMetadata = mergeJsonObjects(result.traceMetadata, metadata);
+  const redactedMetadata = redactSensitiveJsonObject(metadata);
+  const redactedTraceMetadata = redactSensitiveJsonObject(traceMetadata);
+
+  return {
+    toolName: result.toolName,
+    ...(extras?.contextSummary
+      ? { contextSummary: summarizeContextSummary(extras.contextSummary) }
+      : {}),
+    category: tool?.category,
+    capabilities: tool?.capabilities ? [...tool.capabilities] : undefined,
+    safety: tool ? summarizeToolSafety(tool.safety) : undefined,
+    lookupStatus: result.status,
+    availabilityStatus: tool?.availability.status,
+    reason: result.reason,
+    ...(result.warnings?.length ? { warnings: [...result.warnings] } : {}),
+    ...(redactedMetadata ? { metadata: redactedMetadata } : {}),
+    ...(redactedTraceMetadata ? { traceMetadata: redactedTraceMetadata } : {}),
+    policyDecision:
+      typeof metadata?.policyDecision === "string"
+        ? metadata.policyDecision
+        : typeof metadata?.policy === "string"
+          ? metadata.policy
+          : undefined,
+  };
+}
+
+export function buildToolPreconditionTraceMetadata(
+  result: ToolPreconditionResult,
+  extras?: {
+    toolName?: string;
+    contextSummary?: OrchestrationTraceContextSummary;
+    metadata?: JsonObject;
+  },
+): ToolTraceMetadata {
+  const metadata = mergeJsonObjects(result.metadata, extras?.metadata);
+  const redactedMetadata = redactSensitiveJsonObject(metadata);
+
+  return {
+    toolName: extras?.toolName,
+    ...(extras?.contextSummary
+      ? { contextSummary: summarizeContextSummary(extras.contextSummary) }
+      : {}),
+    preconditionId: result.id,
+    preconditionType: result.type,
+    preconditionStatus: result.status,
+    required: result.required,
+    reason: result.reason,
+    ...(result.warnings?.length ? { warnings: [...result.warnings] } : {}),
+    ...(redactedMetadata ? { metadata: redactedMetadata } : {}),
+    ...(result.evaluatedAt
+      ? { traceMetadata: { evaluatedAt: result.evaluatedAt } }
+      : {}),
+    ...(extras?.contextSummary
+      ? {
+          traceMetadata: mergeJsonObjects(
+            result.evaluatedAt
+              ? { evaluatedAt: result.evaluatedAt }
+              : undefined,
+            {
+              contextSummary: summarizeContextSummary(extras.contextSummary),
+            },
+          ),
+        }
+      : {}),
+  };
+}
+
+export function buildToolExecutionTraceEventMetadata(
+  result: ToolExecutionResult | undefined,
+  extras?: {
+    toolName?: string;
+    contextSummary?: OrchestrationTraceContextSummary;
+    metadata?: JsonObject;
+  },
+): ToolTraceMetadata {
+  if (!result) {
+    return {
+      toolName: extras?.toolName,
+      ...(extras?.contextSummary
+        ? { contextSummary: summarizeContextSummary(extras.contextSummary) }
+        : {}),
+      traceMetadata: extras?.contextSummary
+        ? { contextSummary: summarizeContextSummary(extras.contextSummary) }
+        : undefined,
+    };
+  }
+
+  const metadata = mergeJsonObjects(result.metadata, extras?.metadata);
+  const traceMetadata = mergeJsonObjects(result.traceMetadata, metadata);
+  const outputSummary = summarizeToolExecutionOutput(result);
+  const redactedMetadata = redactSensitiveJsonObject(metadata);
+  const redactedTraceMetadata = redactSensitiveJsonObject(traceMetadata);
+  const metadataSummary = result.preconditionSummary
+    ? mergeJsonObjects(redactedMetadata, {
+        preconditionSummary: cloneJsonObject(result.preconditionSummary)!,
+      })
+    : redactedMetadata;
+  const traceMetadataSummary = result.routingSummary
+    ? mergeJsonObjects(redactedTraceMetadata, {
+        routingSummary: cloneJsonObject(result.routingSummary)!,
+      })
+    : redactedTraceMetadata;
+
+  return {
+    toolName: extras?.toolName ?? result.toolName,
+    ...(extras?.contextSummary
+      ? { contextSummary: summarizeContextSummary(extras.contextSummary) }
+      : {}),
+    toolExecutionStatus: result.status,
+    durationMs: result.durationMs,
+    timeoutMs: result.timeoutMs,
+    budgetUsage: result.budgetUsage
+      ? {
+          toolCallsUsed: result.budgetUsage.toolCallsUsed,
+          toolCallsRemaining: result.budgetUsage.toolCallsRemaining,
+          maxToolCalls: result.budgetUsage.maxToolCalls,
+        }
+      : undefined,
+    reason: result.reason,
+    warnings: result.warnings?.length ? [...result.warnings] : undefined,
+    outputSummary,
+    errorSummary: result.error
+      ? summarizeToolExecutionError(result.error)
+      : undefined,
+    ...(metadataSummary ? { metadata: metadataSummary } : {}),
+    ...(traceMetadataSummary ? { traceMetadata: traceMetadataSummary } : {}),
+    jsonSafe: result.jsonSafe,
+    normalization: summarizeToolExecutionNormalization(result),
+  };
+}
+
 export function buildBudgetTraceMetadata(input: {
   agentRunId: AgentRunId;
   budget?: OrchestrationTraceBudgetSnapshot;
@@ -695,6 +1011,269 @@ export function buildFallbackTraceMetadata(input: {
   };
 }
 
+function summarizeToolSafety(safety: ToolSafety): ToolTraceMetadata["safety"] {
+  return {
+    level: safety.level,
+    safeForPreview: safety.safeForPreview,
+    requiresExplicitAction: safety.requiresExplicitAction,
+    ...(safety.requiresAuthentication !== undefined
+      ? { requiresAuthentication: safety.requiresAuthentication }
+      : {}),
+    ...(safety.externalAccess !== undefined
+      ? { externalAccess: safety.externalAccess }
+      : {}),
+    ...(safety.mayAccessWorkbookContext !== undefined
+      ? { mayAccessWorkbookContext: safety.mayAccessWorkbookContext }
+      : {}),
+    ...(safety.mayAccessSelectedMarks !== undefined
+      ? { mayAccessSelectedMarks: safety.mayAccessSelectedMarks }
+      : {}),
+    ...(safety.mayAccessSummaryData !== undefined
+      ? { mayAccessSummaryData: safety.mayAccessSummaryData }
+      : {}),
+    ...(safety.mayCallMcp !== undefined
+      ? { mayCallMcp: safety.mayCallMcp }
+      : {}),
+    ...(safety.mayCallExternalApi !== undefined
+      ? { mayCallExternalApi: safety.mayCallExternalApi }
+      : {}),
+  };
+}
+
+function summarizeToolExecutionOutput(
+  result: ToolExecutionResult,
+): ToolTraceMetadata["outputSummary"] {
+  const value = result.normalizedOutput ?? result.output;
+  if (value === undefined) {
+    return undefined;
+  }
+
+  return summarizeJsonValue(value, result.normalization);
+}
+
+function summarizeJsonValue(
+  value: unknown,
+  normalization?: ToolExecutionResult["normalization"],
+): NonNullable<ToolTraceMetadata["outputSummary"]> {
+  if (value === null) {
+    return {
+      kind: "null",
+      preview: "null",
+      jsonSafe: true,
+      normalization:
+        summarizeToolExecutionNormalizationFromValue(normalization),
+    };
+  }
+
+  if (typeof value === "string") {
+    return {
+      kind: "string",
+      truncated: value.length > 120,
+      preview: truncateText(value, 120),
+      jsonSafe: true,
+      normalization:
+        summarizeToolExecutionNormalizationFromValue(normalization),
+    };
+  }
+
+  if (typeof value === "number" || typeof value === "boolean") {
+    return {
+      kind: typeof value,
+      preview: String(value),
+      jsonSafe: true,
+      normalization:
+        summarizeToolExecutionNormalizationFromValue(normalization),
+    };
+  }
+
+  if (Array.isArray(value)) {
+    return {
+      kind: "array",
+      itemCount: value.length,
+      truncated:
+        value.length > 10 ||
+        Boolean(normalization?.truncated) ||
+        Boolean(normalization?.depthExceeded),
+      preview: `array(${value.length})`,
+      jsonSafe: normalization?.jsonSafe ?? true,
+      normalization:
+        summarizeToolExecutionNormalizationFromValue(normalization),
+    };
+  }
+
+  if (typeof value === "object") {
+    const objectValue = value as Record<string, unknown>;
+    const keys = Object.keys(objectValue);
+    return {
+      kind: "object",
+      itemCount: keys.length,
+      truncated:
+        keys.length > 10 ||
+        Boolean(normalization?.truncated) ||
+        Boolean(normalization?.depthExceeded),
+      preview: `object(${keys.slice(0, 5).join(",")})`,
+      jsonSafe: normalization?.jsonSafe ?? true,
+      normalization:
+        summarizeToolExecutionNormalizationFromValue(normalization),
+    };
+  }
+
+  return {
+    kind: typeof value,
+    preview: String(value),
+    jsonSafe: normalization?.jsonSafe ?? true,
+    normalization: summarizeToolExecutionNormalizationFromValue(normalization),
+  };
+}
+
+function summarizeToolExecutionError(
+  error: NonNullable<ToolExecutionResult["error"]>,
+): NonNullable<ToolTraceMetadata["errorSummary"]> {
+  return {
+    name: error.name,
+    message: error.message,
+    ...(error.stack
+      ? { stackPreview: error.stack.split("\n").slice(0, 3).join("\n") }
+      : {}),
+  };
+}
+
+function summarizeToolExecutionNormalization(
+  result: ToolExecutionResult,
+): NonNullable<ToolTraceMetadata["outputSummary"]>["normalization"] {
+  return summarizeToolExecutionNormalizationFromValue(result.normalization);
+}
+
+function summarizeToolExecutionNormalizationFromValue(
+  normalization?: ToolExecutionResult["normalization"],
+): NonNullable<ToolTraceMetadata["outputSummary"]>["normalization"] {
+  if (!normalization) {
+    return undefined;
+  }
+
+  return {
+    jsonSafe: normalization.jsonSafe,
+    truncated: normalization.truncated,
+    circularReferenceCount: normalization.circularReferenceCount,
+    depthExceeded: normalization.depthExceeded,
+    replacedValueCount: normalization.replacedValueCount,
+  };
+}
+
+function redactSensitiveJsonObject(value?: JsonObject): JsonObject | undefined {
+  if (!value) {
+    return undefined;
+  }
+
+  const redacted = sanitizeJsonValue(value) as JsonObject | undefined;
+  return redacted;
+}
+
+function sanitizeJsonValue(value: unknown): unknown {
+  if (
+    value === null ||
+    typeof value === "string" ||
+    typeof value === "number" ||
+    typeof value === "boolean"
+  ) {
+    return value;
+  }
+
+  if (Array.isArray(value)) {
+    return value.slice(0, 20).map((item) => {
+      const sanitized = sanitizeJsonValue(item);
+      return sanitized === undefined ? null : sanitized;
+    });
+  }
+
+  if (value && typeof value === "object") {
+    const objectValue = value as Record<string, unknown>;
+    const sanitized: Record<string, unknown> = {};
+    for (const [key, item] of Object.entries(objectValue)) {
+      if (isSensitiveKey(key)) {
+        sanitized[key] = "[REDACTED]";
+        continue;
+      }
+      const sanitizedValue = sanitizeJsonValue(item);
+      if (sanitizedValue !== undefined) {
+        sanitized[key] = sanitizedValue;
+      }
+    }
+    return sanitized;
+  }
+
+  return undefined;
+}
+
+function isSensitiveKey(key: string): boolean {
+  return /(?:token|secret|password|authorization|auth|cookie|credential|api[-_]?key|session|bearer)/i.test(
+    key,
+  );
+}
+
+function truncateText(value: string, maxLength: number): string {
+  if (value.length <= maxLength) {
+    return value;
+  }
+
+  return `${value.slice(0, Math.max(0, maxLength - 1))}…`;
+}
+
+function defaultToolRegistryMessage(
+  type: "tool_registry.lookup",
+  result: ToolLookupResult,
+): string {
+  if (type !== "tool_registry.lookup") {
+    return "Tool registry event.";
+  }
+
+  switch (result.status) {
+    case "found":
+      return `Tool registry lookup found ${result.toolName}.`;
+    case "missing":
+      return `Tool registry lookup missed ${result.toolName}.`;
+    case "unavailable":
+      return `Tool registry lookup marked ${result.toolName} unavailable.`;
+    case "disallowed":
+      return `Tool registry lookup disallowed ${result.toolName}.`;
+    default:
+      return "Tool registry lookup completed.";
+  }
+}
+
+function defaultToolPreconditionMessage(
+  type: "tool_precondition.passed" | "tool_precondition.failed",
+  result: ToolPreconditionResult,
+): string {
+  return type === "tool_precondition.passed"
+    ? `Tool precondition ${result.id} passed.`
+    : `Tool precondition ${result.id} failed.`;
+}
+
+function defaultToolExecutionMessage(
+  type:
+    | "tool_execution.started"
+    | "tool_execution.completed"
+    | "tool_execution.failed",
+  result: ToolExecutionResult | undefined,
+): string {
+  if (type === "tool_execution.started") {
+    return result?.toolName
+      ? `Tool execution started for ${result.toolName}.`
+      : "Tool execution started.";
+  }
+
+  if (type === "tool_execution.completed") {
+    return result?.toolName
+      ? `Tool execution completed for ${result.toolName}.`
+      : "Tool execution completed.";
+  }
+
+  return result?.toolName
+    ? `Tool execution failed for ${result.toolName}.`
+    : "Tool execution failed.";
+}
+
 function defaultTraceMessage(type: OrchestrationTraceEventType): string {
   switch (type) {
     case "orchestration.started":
@@ -741,6 +1320,18 @@ function defaultTraceMessage(type: OrchestrationTraceEventType): string {
       return "Tool routing skipped.";
     case "tool_routing.failed":
       return "Tool routing failed.";
+    case "tool_registry.lookup":
+      return "Tool registry lookup.";
+    case "tool_precondition.passed":
+      return "Tool precondition passed.";
+    case "tool_precondition.failed":
+      return "Tool precondition failed.";
+    case "tool_execution.started":
+      return "Tool execution started.";
+    case "tool_execution.completed":
+      return "Tool execution completed.";
+    case "tool_execution.failed":
+      return "Tool execution failed.";
     case "budget.updated":
       return "Budget usage updated.";
     case "fallback.selected":

@@ -2,12 +2,14 @@ import { describe, expect, it } from "vitest";
 import {
   buildToolRoutingTraceMetadata,
   createAgentRunId,
+  InMemoryToolRegistry,
   createMinimalToolRouter,
   createSelectedMarkExplanationPlanDefinition,
   createUnsupportedPlanDefinition,
   type ToolRoutingInput,
   type ToolRoutingPreconditionResult,
   type ToolRoutingResult,
+  type ToolDefinition,
 } from "../src/agent";
 import type { PlanStep } from "../src/agent";
 import type { ContextPack } from "../src/agent";
@@ -62,6 +64,53 @@ function createPreconditionResult(
     required: true,
     status: "passed",
     reasonBrief: "Selected marks are available.",
+    ...overrides,
+  };
+}
+
+function createContextToolDefinition(
+  overrides: Partial<ToolDefinition> = {},
+): ToolDefinition {
+  return {
+    name: "context.selectedMarks",
+    description: "Reads selected mark summaries from orchestration context.",
+    category: "context",
+    capabilities: ["read_context", "read_selected_marks"],
+    safety: {
+      level: "read_only",
+      safeForPreview: true,
+      requiresExplicitAction: false,
+      externalAccess: false,
+      mayAccessWorkbookContext: true,
+      mayAccessSelectedMarks: true,
+    },
+    availability: { status: "available" },
+    inputSchema: { kind: "none" },
+    outputSchema: { kind: "typescript_contract" },
+    version: "v1",
+    ...overrides,
+  };
+}
+
+function createUnsafeContextToolDefinition(
+  overrides: Partial<ToolDefinition> = {},
+): ToolDefinition {
+  return {
+    name: "context.summaryDataPreview",
+    description: "Reads summary data preview references from context.",
+    category: "context",
+    capabilities: ["read_context", "read_summary_data"],
+    safety: {
+      level: "read_only",
+      safeForPreview: false,
+      requiresExplicitAction: false,
+      externalAccess: false,
+      mayAccessSummaryData: true,
+    },
+    availability: { status: "available" },
+    inputSchema: { kind: "none" },
+    outputSchema: { kind: "typescript_contract" },
+    version: "v1",
     ...overrides,
   };
 }
@@ -238,6 +287,108 @@ describe("MinimalToolRouter", () => {
     expect(traceMetadata.status).toBe("allowed");
     expect(JSON.parse(JSON.stringify(result))).toEqual(result);
     expect(JSON.parse(JSON.stringify(traceMetadata))).toEqual(traceMetadata);
+  });
+
+  it("uses registry lookup when available and allows context pseudo tools", async () => {
+    const registry = new InMemoryToolRegistry([
+      createContextToolDefinition(),
+      createUnsafeContextToolDefinition(),
+    ]);
+    const router = createMinimalToolRouter({ registry });
+
+    const selectedMarksResult = await router.route(createInput());
+    const summaryPreviewResult = await router.route(
+      createInput({
+        requestedToolName: "context.summaryDataPreview",
+        step: createStep({
+          toolName: "context.summaryDataPreview",
+        }),
+      }),
+    );
+
+    expect(selectedMarksResult.status).toBe("allowed");
+    expect(selectedMarksResult.traceMetadata?.registryLookup).toMatchObject({
+      lookupStatus: "found",
+      toolName: "context.selectedMarks",
+    });
+    expect(summaryPreviewResult.status).toBe("allowed");
+    expect(summaryPreviewResult.traceMetadata?.registryLookup).toMatchObject({
+      lookupStatus: "found",
+      toolName: "context.summaryDataPreview",
+    });
+    expect(JSON.parse(JSON.stringify(selectedMarksResult))).toEqual(
+      selectedMarksResult,
+    );
+  });
+
+  it("maps registry lookup statuses to routing statuses", async () => {
+    const registry = new InMemoryToolRegistry([
+      createContextToolDefinition(),
+      createUnsafeContextToolDefinition({
+        availability: { status: "unavailable", reason: "Preview is disabled." },
+      }),
+    ]);
+    const router = createMinimalToolRouter({ registry });
+
+    const missing = await router.route(
+      createInput({
+        requestedToolName: "context.filters",
+        step: createStep({ toolName: "context.filters" }),
+      }),
+    );
+    const unavailable = await router.route(
+      createInput({
+        requestedToolName: "context.summaryDataPreview",
+        step: createStep({ toolName: "context.summaryDataPreview" }),
+      }),
+    );
+    const blocked = await router.route(
+      createInput({
+        allowedTools: ["context.selectedMarks"],
+        disallowedTools: ["context.selectedMarks"],
+        toolPolicy: {
+          mode: "denylist",
+          allowedTools: ["context.selectedMarks"],
+          disallowedTools: ["context.selectedMarks"],
+        },
+        requestedToolName: "context.selectedMarks",
+        step: createStep({ toolName: "context.selectedMarks" }),
+      }),
+    );
+
+    expect(missing.status).toBe("unavailable");
+    expect(missing.reason).toContain("missing");
+    expect(unavailable.status).toBe("unavailable");
+    expect(unavailable.reason).toContain("unavailable");
+    expect(blocked.status).toBe("blocked");
+    expect(blocked.reason).toContain("disallowed");
+  });
+
+  it("blocks unsafe preview tools when safeForPreviewOnly is requested", async () => {
+    const registry = new InMemoryToolRegistry([
+      createUnsafeContextToolDefinition(),
+    ]);
+    const router = createMinimalToolRouter({ registry });
+
+    const result = await router.route(
+      createInput({
+        requestedToolName: "context.summaryDataPreview",
+        step: createStep({ toolName: "context.summaryDataPreview" }),
+        toolPolicy: {
+          mode: "allowlist",
+          allowedTools: ["context.summaryDataPreview"],
+          disallowedTools: [],
+          safeForPreviewOnly: true,
+        },
+      }),
+    );
+
+    expect(result.status).toBe("blocked");
+    expect(result.reason).toContain("preview");
+    expect(result.traceMetadata?.registryLookup).toMatchObject({
+      lookupStatus: "disallowed",
+      toolName: "context.summaryDataPreview",
+    });
   });
 
   it("does not execute any tools or call orchestration services", async () => {

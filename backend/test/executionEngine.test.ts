@@ -32,19 +32,44 @@ function createPlan(overrides: Partial<PlanDefinition> = {}): PlanDefinition {
     id: "selected_mark_explanation-v1",
     steps: [
       {
-        id: "collect-context",
-        type: "collect_context",
+        id: "validate-context",
+        type: "validate_context",
         required: true,
-        description: "Collect the dashboard context snapshot.",
-        outputKey: "context",
+        description: "Validate the dashboard context snapshot.",
+        outputKey: "validation",
       },
-      createStep(),
+      createStep({
+        id: "route-selected-marks-context",
+        toolName: "context.selectedMarks",
+        outputKey: "selectedMarks",
+      }),
+      createStep({
+        id: "route-summary-data-preview",
+        toolName: "context.summaryDataPreview",
+        required: false,
+        outputKey: "summaryDataPreview",
+        onFailure: "skip",
+      }),
+      createStep({
+        id: "route-filters-context",
+        toolName: "context.filters",
+        required: false,
+        outputKey: "filters",
+        onFailure: "skip",
+      }),
+      createStep({
+        id: "route-parameters-context",
+        toolName: "context.parameters",
+        required: false,
+        outputKey: "parameters",
+        onFailure: "skip",
+      }),
       {
         id: "compose-response",
         type: "compose_response",
         required: true,
         description: "Compose the response from the selected marks.",
-        outputKey: "response",
+        outputKey: "responseMaterial",
       },
     ],
     ...overrides,
@@ -178,16 +203,24 @@ describe("MinimalExecutionEngine", () => {
 
     const result = await engine.execute(createExecutionInput());
 
-    expect(routeCalls).toHaveLength(1);
-    expect(routeCalls[0].step.id).toBe("route-tool");
+    expect(routeCalls).toHaveLength(4);
+    expect(routeCalls[0].step.id).toBe("route-selected-marks-context");
     expect(result.planId).toBe("selected_mark_explanation-v1");
     expect(result.intentId).toBe("selected_mark_explanation");
     expectStepStatuses(result.stepResults, [
       "not_executed",
       "routed",
+      "routed",
+      "routed",
+      "routed",
       "not_executed",
     ]);
-    expect(result.executedSteps).toEqual(["route-tool"]);
+    expect(result.executedSteps).toEqual([
+      "route-selected-marks-context",
+      "route-summary-data-preview",
+      "route-filters-context",
+      "route-parameters-context",
+    ]);
     expect(result.status).toBe("partial");
   });
 
@@ -273,7 +306,7 @@ describe("MinimalExecutionEngine", () => {
 
     const result = await engine.execute(createExecutionInput());
     const routedStep = result.stepResults.find(
-      (step) => step.stepId === "route-tool",
+      (step) => step.stepId === "route-selected-marks-context",
     );
 
     expect(routedStep?.status).toBe("routed");
@@ -286,7 +319,7 @@ describe("MinimalExecutionEngine", () => {
     const result = await engine.execute(createExecutionInput());
     const traceMetadata = buildExecutionTraceMetadata(result);
 
-    expect(result.budgetUsage.maxToolCalls).toBe(2);
+    expect(result.budgetUsage.maxToolCalls).toBe(4);
     expect(result.budgetUsage.maxModelCalls).toBe(0);
     expect(result.budgetUsage.timeoutMs).toBe(15_000);
     expect(traceMetadata.planId).toBe("selected_mark_explanation-v1");
@@ -305,9 +338,11 @@ describe("MinimalExecutionEngine", () => {
     );
 
     expect(result.planId).toBe("selected_mark_explanation-v1");
-    expect(result.stepResults).toHaveLength(4);
+    expect(result.stepResults).toHaveLength(6);
     expect(result.stepResults.map((step) => step.status)).toEqual([
       "not_executed",
+      "routed",
+      "routed",
       "routed",
       "routed",
       "not_executed",
@@ -328,7 +363,7 @@ describe("MinimalExecutionEngine", () => {
     );
 
     expect(result.status).toBe("failed");
-    expect(result.blockedSteps).toContain("route-tool");
+    expect(result.stepResults[1]?.status).toBe("blocked");
   });
 
   it("remains JSON-safe for the full execution result", async () => {

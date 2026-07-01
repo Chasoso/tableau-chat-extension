@@ -80,12 +80,14 @@ describe("plan execution contract", () => {
       "validate_context",
       "call_tool",
       "call_tool",
+      "call_tool",
+      "call_tool",
       "compose_response",
     ]);
     expect(plan.allowedTools).toEqual(["context"]);
     expect(plan.budget).toMatchObject({
       maxModelCalls: 0,
-      maxToolCalls: 2,
+      maxToolCalls: 4,
       timeoutMs: 15_000,
     });
     expect(preconditions.every((item) => item.satisfied)).toBe(true);

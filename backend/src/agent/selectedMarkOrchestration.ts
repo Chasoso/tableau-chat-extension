@@ -2,6 +2,12 @@ import type { AgentRunId } from "./runId";
 import type { DashboardContext, SelectedMarkSummary } from "../types/tableau";
 import { createDefaultExecutionEngine } from "./execution";
 import { createDefaultIntentResolver } from "./minimalIntentResolver";
+import {
+  buildSelectedMarkExplanationResponseMaterial,
+  createSelectedMarkExplanationToolRuntime,
+  type SelectedMarkExplanationResponseMaterial,
+} from "./selectedMarkContextTools";
+import { composeSelectedMarkExplanationResponse } from "./responseComposer";
 import type {
   IntentResolutionContextSummary,
   IntentResolutionInput,
@@ -14,7 +20,6 @@ import {
   buildExecutionTraceMetadata,
   buildIntentResolutionTraceMetadata,
   buildPlanSelectionTraceMetadata,
-  createBudgetTraceEvent,
   createFallbackTraceEvent,
   createIntentResolutionTraceEvent,
   createOrchestrationCompletedTraceEvent,
@@ -22,11 +27,8 @@ import {
   createOrchestrationStartedTraceEvent,
   createOrchestrationTraceEvent,
   createPlanSelectionTraceEvent,
-  createPlanStepTraceEvent,
-  createToolRoutingTraceEvent,
   type OrchestrationTraceContextSummary,
 } from "./orchestrationTrace";
-import type { ToolRoutingResult } from "./toolRouter";
 
 export type SelectedMarkOrchestrationResponse = {
   mode: "resolve_and_execute_fixed_plan";
@@ -36,6 +38,7 @@ export type SelectedMarkOrchestrationResponse = {
   intentResolution: IntentResolutionResult;
   planSelection?: PlanSelectionResult;
   execution?: ExecutionResult;
+  responseMaterial?: SelectedMarkExplanationResponseMaterial;
   traceEvents: TraceEvent[];
   traceMetadata?: Record<string, unknown>;
   contextSummary?: OrchestrationTraceContextSummary;
@@ -54,8 +57,6 @@ export type SelectedMarkPlanSelection = {
   reasonBrief: string;
 };
 
-const STRUCTURED_ORCHESTRATION_MESSAGE =
-  "Structured orchestration is connected for selected_mark_explanation. Actual AI response generation is not connected yet.";
 const SELECT_MARKS_FIRST_MESSAGE =
   "Please select one or more marks before asking for an explanation.";
 
@@ -169,7 +170,13 @@ export async function runSelectedMarkExplanationOrchestration(
     }),
   );
 
-  const executionEngine = createDefaultExecutionEngine();
+  const selectedMarkToolRuntime = createSelectedMarkExplanationToolRuntime(
+    input.contextSummary,
+  );
+  const executionEngine = createDefaultExecutionEngine({
+    toolRegistry: selectedMarkToolRuntime.registry,
+    toolExecutionWrapper: selectedMarkToolRuntime.executionWrapper,
+  });
   traceEvents.push(
     createOrchestrationTraceEvent({
       agentRunId,
@@ -198,24 +205,53 @@ export async function runSelectedMarkExplanationOrchestration(
     },
   });
 
-  traceEvents.push(
-    ...buildExecutionTraceEvents({
-      agentRunId,
-      intentResolution,
-      selection: selection.planSelection,
-      execution,
-      contextSummary,
-    }),
-  );
+  const responseMaterial =
+    (execution.responseMaterial as
+      | SelectedMarkExplanationResponseMaterial
+      | undefined) ??
+    buildSelectedMarkExplanationResponseMaterial({
+      contextSummary: input.contextSummary,
+      warnings: execution.warnings,
+    });
+  const responseComposition = composeSelectedMarkExplanationResponse({
+    agentRunId,
+    intentId: intentResolution.resolvedIntentId,
+    planId: selection.planSelection.selectedPlan.id,
+    executionStatus: execution.status,
+    responseStrategy: selection.planSelection.selectedPlan.responseStrategy,
+    responseMaterial,
+    warnings: execution.warnings,
+    errors: execution.errors.map((error) => ({
+      message: error.message,
+      ...(error.stepId ? { code: error.stepId } : {}),
+    })),
+    fallbackReason: execution.fallbackReason,
+    locale: "en",
+    metadata: input.metadata,
+    traceMetadata: {
+      stage: "response_composition",
+      executionStatus: execution.status,
+      planId: selection.planSelection.selectedPlan.id,
+      intentId: intentResolution.resolvedIntentId,
+    },
+  });
+
+  traceEvents.push(...execution.traceEvents);
 
   const response: SelectedMarkOrchestrationResponse = {
     mode: "resolve_and_execute_fixed_plan",
-    status: execution.status === "failed" ? "failed" : "completed",
-    message: STRUCTURED_ORCHESTRATION_MESSAGE,
-    placeholderResponse: STRUCTURED_ORCHESTRATION_MESSAGE,
+    status:
+      execution.status === "failed"
+        ? "failed"
+        : execution.status === "partial"
+          ? "partial"
+          : "completed",
+    message: responseComposition.message,
+    placeholderResponse: responseComposition.message,
     intentResolution,
     planSelection: selection.planSelection,
     execution,
+    responseMaterial,
     traceEvents: [
       ...traceEvents,
       execution.status === "failed"
@@ -251,6 +287,7 @@ export async function runSelectedMarkExplanationOrchestration(
       execution: buildExecutionTraceMetadata(execution, {
         contextSummary,
       }),
+      responseComposer: responseComposition.traceMetadata,
     },
     contextSummary,
   };
@@ -346,89 +383,6 @@ function buildFallbackResponse(input: {
   };
 }
 
-function buildExecutionTraceEvents(input: {
-  agentRunId: AgentRunId;
-  intentResolution: IntentResolutionResult;
-  selection: PlanSelectionResult;
-  execution: ExecutionResult;
-  contextSummary?: OrchestrationTraceContextSummary;
-}): TraceEvent[] {
-  const events: TraceEvent[] = [];
-
-  for (const stepResult of input.execution.stepResults) {
-    events.push(
-      createPlanStepTraceEvent({
-        agentRunId: input.agentRunId,
-        type: mapPlanStepStatusToTraceEventType(stepResult.status),
-        planId: input.selection.selectedPlan.id,
-        intentId: input.intentResolution.resolvedIntentId,
-        stepId: stepResult.stepId,
-        stepType: stepResult.stepType,
-        toolName: stepResult.toolName,
-        reason: stepResult.reason,
-        warnings: stepResult.warnings,
-        contextSummary: input.contextSummary,
-        metadata: stepResult.traceMetadata ?? stepResult.metadata,
-      }),
-    );
-
-    if (
-      stepResult.stepType === "call_tool" &&
-      stepResult.routingStatus &&
-      stepResult.toolName
-    ) {
-      const routingResult: ToolRoutingResult = {
-        agentRunId: input.agentRunId,
-        intentId: input.intentResolution.resolvedIntentId,
-        planId: input.selection.selectedPlan.id,
-        stepId: stepResult.stepId,
-        status: mapRoutingStatus(stepResult.status, stepResult.routingStatus),
-        toolName: stepResult.toolName,
-        reason: stepResult.reason ?? "Tool routing completed.",
-        warnings: [...stepResult.warnings],
-        preconditionStatus: "unknown",
-        budgetStatus: {
-          exceeded: false,
-          maxToolCalls: input.execution.budgetUsage.maxToolCalls,
-          toolCallsUsed: input.execution.budgetUsage.toolCallsUsed,
-        },
-        ...(stepResult.traceMetadata
-          ? { traceMetadata: { ...stepResult.traceMetadata } }
-          : {}),
-        ...(stepResult.metadata
-          ? { metadata: { ...stepResult.metadata } }
-          : {}),
-      };
-
-      events.push(
-        createToolRoutingTraceEvent({
-          agentRunId: input.agentRunId,
-          type: mapRoutingTraceEventType(routingResult.status),
-          result: routingResult,
-          contextSummary: input.contextSummary,
-        }),
-      );
-    }
-  }
-
-  events.push(
-    createBudgetTraceEvent({
-      agentRunId: input.agentRunId,
-      budget: {
-        maxModelCalls: input.execution.budgetUsage.maxModelCalls,
-        maxToolCalls: input.execution.budgetUsage.maxToolCalls,
-        timeoutMs: input.execution.budgetUsage.timeoutMs,
-      },
-      budgetUsage: input.execution.budgetUsage,
-      ...(input.contextSummary
-        ? { metadata: { contextSummary: input.contextSummary } }
-        : {}),
-    }),
-  );
-
-  return events;
-}
-
 function buildTraceContextSummary(
   contextSummary?: IntentResolutionContextSummary,
 ): OrchestrationTraceContextSummary | undefined {
@@ -450,6 +404,26 @@ function buildTraceContextSummary(
           worksheetNames: contextSummary.selectedMarks.worksheetNames,
         }
       : undefined,
+    summaryDataPreview: contextSummary.summaryDataPreview
+      ? {
+          rowCount: contextSummary.summaryDataPreview.rowCount,
+          columnCount: contextSummary.summaryDataPreview.columnCount,
+          columnNames: contextSummary.summaryDataPreview.columnNames,
+          truncated: contextSummary.summaryDataPreview.truncated,
+        }
+      : undefined,
+    filters: contextSummary.filters
+      ? {
+          count: contextSummary.filters.count,
+          names: contextSummary.filters.names,
+        }
+      : undefined,
+    parameters: contextSummary.parameters
+      ? {
+          count: contextSummary.parameters.count,
+          names: contextSummary.parameters.names,
+        }
+      : undefined,
   };
 }
 
@@ -469,6 +443,11 @@ function serializeOrchestrationContextSummary(
     ...(traceSummary.selectedMarks
       ? { selectedMarks: traceSummary.selectedMarks }
       : {}),
+    ...(traceSummary.summaryDataPreview
+      ? { summaryDataPreview: traceSummary.summaryDataPreview }
+      : {}),
+    ...(traceSummary.filters ? { filters: traceSummary.filters } : {}),
+    ...(traceSummary.parameters ? { parameters: traceSummary.parameters } : {}),
   };
 }
 
@@ -516,57 +495,4 @@ function createSelectedMarkSummary(
     rowCount: 1,
     status: "available",
   };
-}
-
-function mapPlanStepStatusToTraceEventType(
-  status: ExecutionResult["stepResults"][number]["status"],
-): Parameters<typeof createPlanStepTraceEvent>[0]["type"] {
-  switch (status) {
-    case "routed":
-      return "plan_step.completed";
-    case "skipped":
-      return "plan_step.skipped";
-    case "blocked":
-      return "plan_step.blocked";
-    case "failed":
-      return "plan_step.failed";
-    case "not_executed":
-    default:
-      return "plan_step.started";
-  }
-}
-
-function mapRoutingStatus(
-  stepStatus: ExecutionResult["stepResults"][number]["status"],
-  routingStatus: string,
-): ToolRoutingResult["status"] {
-  if (routingStatus === "allowed") {
-    return "allowed";
-  }
-  if (routingStatus === "skipped") {
-    return "skipped";
-  }
-  if (routingStatus === "unavailable") {
-    return "unavailable";
-  }
-  if (stepStatus === "blocked") {
-    return "blocked";
-  }
-  return "allowed";
-}
-
-function mapRoutingTraceEventType(
-  status: ToolRoutingResult["status"],
-): Parameters<typeof createToolRoutingTraceEvent>[0]["type"] {
-  switch (status) {
-    case "allowed":
-      return "tool_routing.completed";
-    case "skipped":
-      return "tool_routing.skipped";
-    case "blocked":
-      return "tool_routing.blocked";
-    case "unavailable":
-    default:
-      return "tool_routing.failed";
-  }
 }

@@ -38,6 +38,21 @@ export type IntentResolutionContextSummary = {
   viewName?: string;
   worksheetNames?: string[];
   selectedMarks?: IntentResolutionSelectedMarksSummary;
+  summaryDataPreview?: {
+    available?: boolean;
+    rowCount?: number;
+    columnCount?: number;
+    columnNames?: string[];
+    truncated?: boolean;
+  };
+  filters?: {
+    count?: number;
+    names?: string[];
+  };
+  parameters?: {
+    count?: number;
+    names?: string[];
+  };
 };
 
 export type IntentResolutionContextPackRef = {

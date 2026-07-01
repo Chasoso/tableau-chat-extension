@@ -5,6 +5,21 @@ export type ResolveIntentContextSummary = {
   hasSelectedMarks?: boolean;
   selectedMarkCount?: number;
   worksheetNames?: string[];
+  summaryDataPreview?: {
+    available?: boolean;
+    rowCount?: number;
+    columnCount?: number;
+    columnNames?: string[];
+    truncated?: boolean;
+  };
+  filters?: {
+    count?: number;
+    names?: string[];
+  };
+  parameters?: {
+    count?: number;
+    names?: string[];
+  };
 };
 
 export type ResolveIntentRunMode =
@@ -79,6 +94,16 @@ export type SelectedMarkExecutionResult = {
     routingStatus?: "allowed" | "skipped" | "blocked" | "unavailable";
     reason?: string;
     warnings: string[];
+    lookupResult?: Record<string, unknown>;
+    preconditionResults?: Array<Record<string, unknown>>;
+    toolExecutionResult?: Record<string, unknown>;
+    output?: Record<string, unknown> | string | number | boolean | null;
+    normalizedOutput?:
+      | Record<string, unknown>
+      | string
+      | number
+      | boolean
+      | null;
   }>;
   budgetUsage: {
     toolCallsUsed: number;
@@ -97,6 +122,7 @@ export type SelectedMarkExecutionResult = {
     stepType?: string;
   }>;
   fallbackReason?: string;
+  responseMaterial?: Record<string, unknown>;
 };
 
 export type SelectedMarkOrchestrationResponse = {
@@ -118,6 +144,7 @@ export type SelectedMarkOrchestrationResponse = {
       worksheetNames?: string[];
     };
   };
+  responseMaterial?: Record<string, unknown>;
 };
 
 export type ResolveIntentResponse = {

@@ -34,6 +34,49 @@ export type {
   TraceStepStatus,
   TraceStepType,
 } from "./types";
+export type {
+  ToolAvailability,
+  ToolAvailabilityStatus,
+  ToolCapability,
+  ToolCategory,
+  ToolDefinition,
+  ToolDefinitionSummary,
+  ToolSafety,
+  ToolSafetyLevel,
+  ToolSchemaPolicy,
+  ToolSchemaPolicyKind,
+} from "./toolDefinition";
+export {
+  createToolDefinitionSummary,
+  isToolDefinitionJsonSafe,
+} from "./toolDefinition";
+export {
+  evaluateToolPrecondition,
+  evaluateToolPreconditions,
+  selectedMarkExplanationPreconditions,
+} from "./toolPreconditions";
+export type {
+  ToolPrecondition,
+  ToolPreconditionEvaluationContext,
+  ToolPreconditionResult,
+  ToolPreconditionSeverity,
+  ToolPreconditionStatus,
+  ToolPreconditionType,
+} from "./toolPreconditions";
+export { createToolRegistry, InMemoryToolRegistry } from "./toolRegistry";
+export type {
+  ToolAvailabilityResult,
+  ToolLookupResult,
+  ToolLookupStatus,
+  ToolListOptions,
+  ToolListResult,
+  ToolPolicy,
+  ToolRegistrationResult,
+  ToolRegistrationStatus,
+  ToolRegistry,
+  ToolUnregistrationResult,
+  ToolUnregistrationStatus,
+} from "./toolRegistry";
 export {
   buildIntentResolutionTraceMetadata,
   createFallbackIntentResolution,
@@ -73,6 +116,39 @@ export {
   MinimalExecutionEngine,
 } from "./execution";
 export {
+  composeResponse,
+  composeSelectedMarkExplanationResponse,
+  createDefaultResponseComposer,
+  createMinimalResponseComposer,
+  MinimalResponseComposer,
+} from "./responseComposer";
+export type {
+  MinimalResponseComposerOptions,
+  ResponseComposer,
+  ResponseComposerInput,
+  ResponseComposerNormalizationSummary,
+  ResponseComposerResult,
+  ResponseComposerStatus,
+  ResponseType,
+} from "./responseComposer";
+export {
+  buildToolExecutionTraceMetadata,
+  createDefaultToolExecutionWrapper,
+  createMinimalToolExecutionWrapper,
+  MinimalToolExecutionWrapper,
+} from "./toolExecutionWrapper";
+export type {
+  MinimalToolExecutionWrapperOptions,
+  ToolExecutionBudgetUsage,
+  ToolExecutionHandler,
+  ToolExecutionInput,
+  ToolExecutionNormalizationSummary,
+  ToolExecutionResult,
+  ToolExecutionStatus,
+  ToolExecutionWrapper,
+  ToolExecutionWrapperOptions,
+} from "./toolExecutionWrapper";
+export {
   runSelectedMarkExplanationOrchestration,
   selectFixedPlanForIntent,
 } from "./selectedMarkOrchestration";
@@ -82,12 +158,30 @@ export type {
   SelectedMarkOrchestrationResponse,
 } from "./selectedMarkOrchestration";
 export {
+  buildSelectedMarkExplanationPlaceholderResponse,
+  buildSelectedMarkExplanationResponseMaterial,
+  createSelectedMarkExplanationContextToolDefinitions,
+  createSelectedMarkExplanationContextToolHandlers,
+  createSelectedMarkExplanationContextToolRegistry,
+  createSelectedMarkExplanationToolRuntime,
+} from "./selectedMarkContextTools";
+export type {
+  SelectedMarkExplanationContextSummary,
+  SelectedMarkExplanationContextToolName,
+  SelectedMarkExplanationContextToolOutputs,
+  SelectedMarkExplanationResponseMaterial,
+  SelectedMarkExplanationToolRuntime,
+} from "./selectedMarkContextTools";
+export {
   buildBudgetTraceMetadata,
   buildExecutionTraceMetadata as buildOrchestrationExecutionTraceMetadata,
   buildFallbackTraceMetadata,
   buildIntentResolutionTraceMetadata as buildOrchestrationIntentResolutionTraceMetadata,
   buildPlanSelectionTraceMetadata,
   buildPlanStepTraceMetadata,
+  buildToolExecutionTraceEventMetadata,
+  buildToolPreconditionTraceMetadata,
+  buildToolRegistryTraceMetadata,
   buildToolRoutingTraceMetadata as buildOrchestrationToolRoutingTraceMetadata,
   createBudgetTraceEvent,
   createFallbackTraceEvent,
@@ -98,6 +192,9 @@ export {
   createOrchestrationTraceEvent,
   createPlanSelectionTraceEvent,
   createPlanStepTraceEvent,
+  createToolExecutionTraceEvent,
+  createToolPreconditionTraceEvent,
+  createToolRegistryTraceEvent,
   createToolRoutingTraceEvent,
 } from "./orchestrationTrace";
 export type {
@@ -165,6 +262,7 @@ export type {
   OrchestrationTraceSelectionSummary,
   OrchestrationTraceStage,
   OrchestrationTraceStepSummary,
+  ToolTraceMetadata,
 } from "./orchestrationTrace";
 export { createTraceError, createTraceEvent, createTraceStep } from "./trace";
 export {

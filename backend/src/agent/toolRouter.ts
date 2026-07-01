@@ -7,6 +7,11 @@ import type {
   PlanId,
   PlanMetadata,
 } from "./plan";
+import type {
+  ToolLookupResult,
+  ToolPolicy,
+  ToolRegistry,
+} from "./toolRegistry";
 import type { JsonObject } from "./types";
 
 export type ToolRoutingStatus =
@@ -19,6 +24,7 @@ export type ToolRoutingPreconditionStatus =
   | "passed"
   | "failed"
   | "skipped"
+  | "blocked"
   | "unknown";
 
 export type ToolRoutingBudgetStatus = {
@@ -31,6 +37,8 @@ export type ToolRoutingPolicy = {
   mode: "allowlist" | "denylist";
   allowedTools: readonly string[];
   disallowedTools: readonly string[];
+  safeForPreviewOnly?: boolean;
+  requiresExplicitActionAllowed?: boolean;
 };
 
 export type ToolRoutingFallbackBehavior =
@@ -108,6 +116,7 @@ export interface ToolRouter {
 
 export type MinimalToolRouterOptions = {
   defaultFallbackBehavior?: ToolRoutingFallbackBehavior;
+  registry?: ToolRegistry;
 };
 
 export class MinimalToolRouter implements ToolRouter {
@@ -121,6 +130,7 @@ export class MinimalToolRouter implements ToolRouter {
     const preconditionStatus = buildPreconditionStatus(input.preconditions);
     const isRequiredStep = input.step.required;
     const warnings: string[] = [];
+    const registryPolicy = buildRegistryPolicy(input);
 
     if (budgetStatus.exceeded) {
       return createBlockedRoutingResult({
@@ -137,7 +147,7 @@ export class MinimalToolRouter implements ToolRouter {
       });
     }
 
-    if (preconditionStatus === "failed") {
+    if (preconditionStatus === "failed" || preconditionStatus === "blocked") {
       if (isRequiredStep) {
         return createBlockedRoutingResult({
           input,
@@ -192,54 +202,97 @@ export class MinimalToolRouter implements ToolRouter {
       });
     }
 
-    if (isDisallowedTool(toolName, input.disallowedTools, input.toolPolicy)) {
-      return createBlockedRoutingResult({
+    const registry = this.options.registry;
+    if (!registry) {
+      return this.routeWithoutRegistry({
         input,
         toolName,
-        reason: `Tool '${toolName}' is disallowed by the current policy.`,
-        warnings: ["tool_disallowed"],
-        preconditionStatus,
+        warnings,
         budgetStatus,
+        preconditionStatus,
+        isRequiredStep,
+      });
+    }
+
+    const lookup = registry.lookup(toolName, registryPolicy);
+    return mapToolLookupToRoutingResult({
+      lookup,
+      input,
+      toolName,
+      warnings,
+      budgetStatus,
+      preconditionStatus,
+    });
+  }
+
+  private routeWithoutRegistry(input: {
+    input: ToolRoutingInput;
+    toolName: string;
+    warnings: string[];
+    budgetStatus: ToolRoutingBudgetStatus;
+    preconditionStatus: ToolRoutingPreconditionStatus;
+    isRequiredStep: boolean;
+  }): ToolRoutingResult {
+    if (
+      isDisallowedTool(
+        input.toolName,
+        input.input.disallowedTools,
+        input.input.toolPolicy,
+      )
+    ) {
+      return createBlockedRoutingResult({
+        input: input.input,
+        toolName: input.toolName,
+        reason: `Tool '${input.toolName}' is disallowed by the current policy.`,
+        warnings: ["tool_disallowed"],
+        preconditionStatus: input.preconditionStatus,
+        budgetStatus: input.budgetStatus,
         fallbackBehavior: {
           kind: "block",
-          reasonBrief: `Tool '${toolName}' is disallowed by the current policy.`,
+          reasonBrief: `Tool '${input.toolName}' is disallowed by the current policy.`,
         },
       });
     }
 
-    if (isAllowlistedTool(toolName, input.allowedTools, input.toolPolicy)) {
+    if (
+      isAllowlistedTool(
+        input.toolName,
+        input.input.allowedTools,
+        input.input.toolPolicy,
+      )
+    ) {
       return createAllowedRoutingResult({
-        input,
-        toolName,
-        reason: `Tool '${toolName}' is allowed by the current plan.`,
-        warnings,
-        preconditionStatus,
-        budgetStatus,
+        input: input.input,
+        toolName: input.toolName,
+        reason: `Tool '${input.toolName}' is allowed by the current plan.`,
+        warnings: input.warnings,
+        preconditionStatus: input.preconditionStatus,
+        budgetStatus: input.budgetStatus,
       });
     }
 
-    if (hasAllowlist(input.allowedTools, input.toolPolicy)) {
+    if (hasAllowlist(input.input.allowedTools, input.input.toolPolicy)) {
       return createBlockedRoutingResult({
-        input,
-        toolName,
-        reason: `Tool '${toolName}' is not present in the allowlist.`,
+        input: input.input,
+        toolName: input.toolName,
+        reason: `Tool '${input.toolName}' is not present in the allowlist.`,
         warnings: ["tool_not_allowlisted"],
-        preconditionStatus,
-        budgetStatus,
+        preconditionStatus: input.preconditionStatus,
+        budgetStatus: input.budgetStatus,
         fallbackBehavior: {
           kind: "block",
-          reasonBrief: `Tool '${toolName}' is not present in the allowlist.`,
+          reasonBrief: `Tool '${input.toolName}' is not present in the allowlist.`,
         },
       });
     }
 
     return createAllowedRoutingResult({
-      input,
-      toolName,
-      reason: `Tool '${toolName}' can proceed under the current policy.`,
-      warnings,
-      preconditionStatus,
-      budgetStatus,
+      input: input.input,
+      toolName: input.toolName,
+      reason: `Tool '${input.toolName}' can proceed under the current policy.`,
+      warnings: input.warnings,
+      preconditionStatus: input.preconditionStatus,
+      budgetStatus: input.budgetStatus,
     });
   }
 }
@@ -250,8 +303,198 @@ export function createMinimalToolRouter(
   return new MinimalToolRouter(options);
 }
 
-export function createDefaultToolRouter(): ToolRouter {
-  return createMinimalToolRouter();
+export function createDefaultToolRouter(
+  options?: MinimalToolRouterOptions,
+): ToolRouter {
+  return createMinimalToolRouter(options);
+}
+
+function mapToolLookupToRoutingResult(input: {
+  lookup: ToolLookupResult;
+  input: ToolRoutingInput;
+  toolName: string;
+  warnings: string[];
+  budgetStatus: ToolRoutingBudgetStatus;
+  preconditionStatus: ToolRoutingPreconditionStatus;
+}): ToolRoutingResult {
+  const lookupMetadata = buildRegistryLookupMetadata(input.lookup);
+  const routingWarnings = [
+    ...input.warnings,
+    ...(input.lookup.warnings ? input.lookup.warnings : []),
+  ];
+
+  switch (input.lookup.status) {
+    case "found": {
+      const result = createAllowedRoutingResult({
+        input: input.input,
+        toolName: input.toolName,
+        reason:
+          input.lookup.reason ??
+          `Tool '${input.toolName}' is registered and available.`,
+        warnings: routingWarnings,
+        preconditionStatus: input.preconditionStatus,
+        budgetStatus: input.budgetStatus,
+      });
+      return mergeRoutingResultMetadata(result, lookupMetadata);
+    }
+    case "missing": {
+      const result = createUnavailableRoutingResult({
+        input: input.input,
+        reason:
+          input.lookup.reason !== undefined
+            ? `Tool '${input.toolName}' is missing from the registry. ${input.lookup.reason}`
+            : `Tool '${input.toolName}' is missing from the registry.`,
+        warnings:
+          routingWarnings.length > 0 ? routingWarnings : ["missing_tool"],
+        preconditionStatus: input.preconditionStatus,
+        budgetStatus: input.budgetStatus,
+      });
+      return mergeRoutingResultMetadata(result, lookupMetadata);
+    }
+    case "unavailable": {
+      const result = createUnavailableRoutingResult({
+        input: input.input,
+        reason:
+          input.lookup.reason !== undefined
+            ? `Tool '${input.toolName}' is unavailable. ${input.lookup.reason}`
+            : `Tool '${input.toolName}' is unavailable.`,
+        warnings:
+          routingWarnings.length > 0 ? routingWarnings : ["tool_unavailable"],
+        preconditionStatus: input.preconditionStatus,
+        budgetStatus: input.budgetStatus,
+      });
+      return mergeRoutingResultMetadata(result, lookupMetadata);
+    }
+    case "disallowed": {
+      const result = createBlockedRoutingResult({
+        input: input.input,
+        toolName: input.toolName,
+        reason:
+          input.lookup.reason ?? `Tool '${input.toolName}' is disallowed.`,
+        warnings:
+          routingWarnings.length > 0
+            ? routingWarnings
+            : ["tool_disallowed_by_registry"],
+        preconditionStatus: input.preconditionStatus,
+        budgetStatus: input.budgetStatus,
+        fallbackBehavior: {
+          kind: "block",
+          reasonBrief:
+            input.lookup.reason ?? `Tool '${input.toolName}' is disallowed.`,
+        },
+      });
+      return mergeRoutingResultMetadata(result, lookupMetadata);
+    }
+  }
+}
+
+function mergeRoutingResultMetadata(
+  result: ToolRoutingResult,
+  metadata: JsonObject,
+): ToolRoutingResult {
+  return {
+    ...result,
+    metadata: {
+      ...(result.metadata ?? {}),
+      routingDecision: metadata,
+    },
+    traceMetadata: {
+      ...(result.traceMetadata ?? {}),
+      registryLookup: metadata,
+    },
+  };
+}
+
+function buildRegistryLookupMetadata(lookup: ToolLookupResult): JsonObject {
+  const metadata: JsonObject = {
+    lookupStatus: lookup.status,
+    toolName: lookup.toolName,
+  };
+
+  if (lookup.reason) {
+    metadata.reason = lookup.reason;
+  }
+  if (lookup.warnings && lookup.warnings.length > 0) {
+    metadata.warnings = [...lookup.warnings];
+  }
+  if (lookup.tool) {
+    metadata.tool = buildToolSummaryMetadata(lookup.tool);
+  }
+  if (lookup.metadata) {
+    metadata.metadata = { ...lookup.metadata };
+  }
+  if (lookup.traceMetadata) {
+    metadata.traceMetadata = { ...lookup.traceMetadata };
+  }
+
+  return metadata;
+}
+
+function buildToolSummaryMetadata(
+  tool: NonNullable<ToolLookupResult["tool"]>,
+): JsonObject {
+  const metadata: JsonObject = {
+    name: tool.name,
+    description: tool.description,
+    category: tool.category,
+    capabilities: [...tool.capabilities],
+    safety: buildToolSafetyMetadata(tool.safety),
+    availability: buildToolAvailabilityMetadata(tool.availability),
+  };
+
+  if (tool.version !== undefined) {
+    metadata.version = tool.version;
+  }
+
+  return metadata;
+}
+
+function buildToolSafetyMetadata(
+  toolSafety: NonNullable<ToolLookupResult["tool"]>["safety"],
+): JsonObject {
+  const metadata: JsonObject = {
+    level: toolSafety.level,
+    safeForPreview: toolSafety.safeForPreview,
+    requiresExplicitAction: toolSafety.requiresExplicitAction,
+  };
+
+  if (toolSafety.requiresAuthentication !== undefined) {
+    metadata.requiresAuthentication = toolSafety.requiresAuthentication;
+  }
+  if (toolSafety.externalAccess !== undefined) {
+    metadata.externalAccess = toolSafety.externalAccess;
+  }
+  if (toolSafety.mayCallMcp !== undefined) {
+    metadata.mayCallMcp = toolSafety.mayCallMcp;
+  }
+  if (toolSafety.mayCallExternalApi !== undefined) {
+    metadata.mayCallExternalApi = toolSafety.mayCallExternalApi;
+  }
+  if (toolSafety.mayAccessWorkbookContext !== undefined) {
+    metadata.mayAccessWorkbookContext = toolSafety.mayAccessWorkbookContext;
+  }
+  if (toolSafety.mayAccessSelectedMarks !== undefined) {
+    metadata.mayAccessSelectedMarks = toolSafety.mayAccessSelectedMarks;
+  }
+  if (toolSafety.mayAccessSummaryData !== undefined) {
+    metadata.mayAccessSummaryData = toolSafety.mayAccessSummaryData;
+  }
+
+  return metadata;
+}
+
+function buildToolAvailabilityMetadata(
+  toolAvailability: NonNullable<ToolLookupResult["tool"]>["availability"],
+): JsonObject {
+  const metadata: JsonObject = {
+    status: toolAvailability.status,
+  };
+
+  if (toolAvailability.reason !== undefined) {
+    metadata.reason = toolAvailability.reason;
+  }
+
+  return metadata;
 }
 
 export function buildToolRoutingTraceMetadata(
@@ -472,6 +715,10 @@ function buildPreconditionStatus(
     return "unknown";
   }
 
+  if (preconditions.some((precondition) => precondition.status === "blocked")) {
+    return "blocked";
+  }
+
   if (preconditions.some((precondition) => precondition.status === "failed")) {
     return "failed";
   }
@@ -486,6 +733,30 @@ function buildPreconditionStatus(
   }
 
   return "skipped";
+}
+
+function buildRegistryPolicy(input: ToolRoutingInput): ToolPolicy {
+  return {
+    allowedTools: input.allowedTools?.length
+      ? [...input.allowedTools]
+      : input.toolPolicy?.mode === "allowlist"
+        ? [...input.toolPolicy.allowedTools]
+        : undefined,
+    disallowedTools: input.disallowedTools?.length
+      ? [...input.disallowedTools]
+      : input.toolPolicy?.mode === "denylist"
+        ? [...input.toolPolicy.disallowedTools]
+        : undefined,
+    ...(input.toolPolicy?.safeForPreviewOnly !== undefined
+      ? { safeForPreviewOnly: input.toolPolicy.safeForPreviewOnly }
+      : {}),
+    ...(input.toolPolicy?.requiresExplicitActionAllowed !== undefined
+      ? {
+          requiresExplicitActionAllowed:
+            input.toolPolicy.requiresExplicitActionAllowed,
+        }
+      : {}),
+  };
 }
 
 function isAllowlistedTool(

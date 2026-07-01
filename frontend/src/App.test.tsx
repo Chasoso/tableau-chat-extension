@@ -508,6 +508,18 @@ describe("App", () => {
           dashboardName: "Executive Overview",
           workbookName: "Sales Workbook",
           viewName: "Executive Overview",
+          summaryDataPreview: {
+            available: false,
+            truncated: false,
+          },
+          filters: {
+            count: 0,
+            names: [],
+          },
+          parameters: {
+            count: 0,
+            names: [],
+          },
         }),
         metadata: expect.objectContaining({
           previewVersion: "v1",

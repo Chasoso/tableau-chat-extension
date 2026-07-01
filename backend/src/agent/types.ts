@@ -131,6 +131,12 @@ export type OrchestrationTraceEventType =
   | "tool_routing.blocked"
   | "tool_routing.skipped"
   | "tool_routing.failed"
+  | "tool_registry.lookup"
+  | "tool_precondition.passed"
+  | "tool_precondition.failed"
+  | "tool_execution.started"
+  | "tool_execution.completed"
+  | "tool_execution.failed"
   | "budget.updated"
   | "fallback.selected";
 
