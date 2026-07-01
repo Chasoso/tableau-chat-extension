@@ -284,6 +284,23 @@ export type {
 } from "./fixedPlans";
 export { LambdaAgentRunner, createLambdaAgentRunner } from "./lambdaRunner";
 export type {
+  AgentRunBudgetUsage,
+  AgentRunContextSummary,
+  AgentRunError,
+  AgentRunExecutionResult,
+  AgentRunIntentResult,
+  AgentRunMode,
+  AgentRunModelPolicy,
+  AgentRunObservability,
+  AgentRunPlanHint,
+  AgentRunPlanResult,
+  AgentRunResponseResult,
+  AgentRunResultStatus,
+  AgentRunTraceOptions,
+  AgentRunTraceResult,
+  AgentRunToolPolicy,
+  AgentRunnerKind,
+  AgentRunnerMetadata,
   AgentRunBudget,
   AgentRunInput,
   AgentRunOptions,
