@@ -1,5 +1,9 @@
 import { createDefaultToolExecutionWrapper } from "./toolExecutionWrapper";
 import { InMemoryToolRegistry } from "./toolRegistry";
+import {
+  composeSelectedMarkExplanationResponse,
+  type ResponseComposerInput,
+} from "./responseComposer";
 import type {
   ToolCapability,
   ToolCategory,
@@ -257,24 +261,10 @@ export function buildSelectedMarkExplanationResponseMaterial(input: {
 export function buildSelectedMarkExplanationPlaceholderResponse(
   material: SelectedMarkExplanationResponseMaterial,
 ): string {
-  const summaryDataPreviewStatus = material.summaryDataPreview
-    ? material.summaryDataPreview.available
-      ? "available"
-      : "unavailable"
-    : "unavailable";
-
-  const filterCount = material.filters?.count ?? 0;
-  const parameterCount = material.parameters?.count ?? 0;
-  const lines = [
-    "Structured orchestration is connected for selected_mark_explanation.",
-    "Selected mark context has been collected; actual AI response generation is not connected yet.",
-    `Selected marks: ${material.selectedMarks.count}`,
-    `Summary data preview: ${summaryDataPreviewStatus}`,
-    `Filters: ${filterCount}`,
-    `Parameters: ${parameterCount}`,
-  ];
-
-  return lines.join("\n");
+  return composeSelectedMarkExplanationResponse({
+    intentId: "selected_mark_explanation",
+    responseMaterial: material,
+  } satisfies ResponseComposerInput).message;
 }
 
 function createContextToolDefinition(input: {

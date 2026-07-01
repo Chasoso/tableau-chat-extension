@@ -116,6 +116,22 @@ export {
   MinimalExecutionEngine,
 } from "./execution";
 export {
+  composeResponse,
+  composeSelectedMarkExplanationResponse,
+  createDefaultResponseComposer,
+  createMinimalResponseComposer,
+  MinimalResponseComposer,
+} from "./responseComposer";
+export type {
+  MinimalResponseComposerOptions,
+  ResponseComposer,
+  ResponseComposerInput,
+  ResponseComposerNormalizationSummary,
+  ResponseComposerResult,
+  ResponseComposerStatus,
+  ResponseType,
+} from "./responseComposer";
+export {
   buildToolExecutionTraceMetadata,
   createDefaultToolExecutionWrapper,
   createMinimalToolExecutionWrapper,

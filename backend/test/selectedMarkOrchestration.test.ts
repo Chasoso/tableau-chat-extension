@@ -153,6 +153,13 @@ describe("selected-mark explanation orchestration", () => {
         (event) => event.type === "tool_execution.completed",
       ),
     ).toBe(true);
+    expect(response.traceMetadata?.responseComposer).toMatchObject({
+      composerType: "minimal",
+      responseType: "deterministic_summary",
+      responseStatus: "composed",
+      intentId: "selected_mark_explanation",
+      planId: "selected_mark_explanation-v1",
+    });
     expect(JSON.parse(JSON.stringify(response.responseMaterial))).toEqual(
       response.responseMaterial,
     );
