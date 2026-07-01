@@ -27,6 +27,12 @@ Add a `LambdaAgentRunner` skeleton that wraps the existing structured orchestrat
 - preserve current behavior
 - normalize runner output
 
+Implementation note:
+
+- this issue introduces a thin wrapper around `runSelectedMarkExplanationOrchestration()`
+- `selected_mark_explanation` remains the only supported run mode for now
+- `ChatService` and `runLightweightAgentLoop` are not switched over yet
+
 ## Acceptance criteria
 
 - selected_mark_explanation can run through the wrapper
@@ -39,3 +45,4 @@ Add a `LambdaAgentRunner` skeleton that wraps the existing structured orchestrat
 ## Related
 
 - #02 Define AgentRunner contract
+- #04 Route selected_mark_explanation through LambdaAgentRunner
