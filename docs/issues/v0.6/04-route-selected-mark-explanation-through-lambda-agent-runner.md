@@ -13,6 +13,7 @@ Route only selected_mark_explanation through `LambdaAgentRunner` for comparison 
 - selected_mark_explanation routing
 - runner-level request / response normalization
 - trace and fallback preservation
+- the explicit selected-mark action path is wrapped by `LambdaAgentRunner`
 
 ## Out of scope
 
@@ -28,7 +29,7 @@ Route only selected_mark_explanation through `LambdaAgentRunner` for comparison 
 
 ## Acceptance criteria
 
-- selected_mark_explanation runs through LambdaAgentRunner
+- selected_mark_explanation explicit action runs through LambdaAgentRunner
 - existing chat flow is unchanged
 
 ## Validation
