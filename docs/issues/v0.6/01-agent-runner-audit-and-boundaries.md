@@ -3,7 +3,7 @@
 ## Background
 
 The current backend still splits responsibilities across `ChatService`, `runLightweightAgentLoop`, structured orchestration, and the v0.5 Tool Layer.
-Before introducing a runner abstraction, we need to map those responsibilities into clear boundaries.
+Before introducing a stronger runner abstraction, we need to map those responsibilities into clear boundaries.
 
 ## Goal
 
@@ -41,4 +41,5 @@ Document the current runtime responsibilities and the boundary where an `AgentRu
 
 ## Related
 
-- #00 v0.6.0 AgentCore Spike
+- #99 v0.6.0 AgentCore Spike
+- docs/v0.6-agentcore-spike-plan.md
