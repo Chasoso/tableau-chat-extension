@@ -2,34 +2,45 @@
 
 ## Background
 
-selected_mark_explanation is the first path intended for AgentCore comparison, but it should be audited before any implementation work begins.
+`selected_mark_explanation` is the first concrete comparison path for the v0.6 AgentCore spike, but it is already a deterministic, context-heavy flow with a working Lambda runner wrapper. Before any AgentCore implementation is started, we should document whether AgentCore is actually a good fit for this path.
 
 ## Goal
 
-Determine whether AgentCore is a good fit for selected_mark_explanation and what remains custom.
+Assess whether AgentCore is worth introducing for `selected_mark_explanation`, and identify what should remain custom in the current Lambda-backed architecture.
 
 ## Scope
 
 - selected_mark_explanation fit analysis
+- current LambdaAgentRunner vs intended AgentCore shape comparison
 - observability comparison
-- latency and timeout comparison
+- latency / timeout comparison
 - operational trade-off analysis
+- custom responsibility boundaries
+- risk and constraint recording
 
 ## Out of scope
 
 - AgentCore implementation
+- AgentCoreRunner implementation
 - AgentRunner implementation
+- selected_mark_explanation route changes
+- free-form chat migration
+- Tableau MCP tool migration
+- LLM ResponseComposer implementation
 
 ## Tasks
 
-- compare the current runtime with the intended AgentCore shape
+- compare the current LambdaAgentRunner path with an intended AgentCore path
 - identify what should remain custom
+- identify what AgentCore may improve
 - record risks and constraints
+- determine the recommended next step
 
 ## Acceptance criteria
 
 - a written fit assessment exists
-- the decision can inform the next implementation step
+- the assessment is specific to `selected_mark_explanation`
+- the assessment can inform the next implementation step
 
 ## Validation
 
@@ -37,4 +48,9 @@ Determine whether AgentCore is a good fit for selected_mark_explanation and what
 
 ## Related
 
-- #00 v0.6.0 AgentCore Spike
+- [AgentCore Fit Assessment for selected_mark_explanation](../../v0.6-agentcore-fit-selected-mark-explanation.md)
+- #99 v0.6.0 AgentCore Spike
+- #100 Agent runner audit and boundaries
+- #101 Define AgentRunner contract
+- #102 Add LambdaAgentRunner skeleton
+- #103 Route selected_mark_explanation through LambdaAgentRunner
