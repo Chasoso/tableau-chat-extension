@@ -44,6 +44,7 @@ Register the metadata tools in ToolRegistry and add fake / no-network handlers s
 
 ## Related issues
 
-- Parent: #{{PARENT_ISSUE_NUMBER}} v0.7.0 Hosted Tableau MCP Migration Foundation
+- Parent: #125 v0.7.0 Hosted Tableau MCP Migration Foundation
 - docs/roadmap-v0.7-to-v0.10.md
+- docs/v0.7-metadata-tools-fake-no-network-handlers.md
 
