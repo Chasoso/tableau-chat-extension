@@ -2,11 +2,11 @@
 
 ## Background
 
-The roadmap assumes Hosted / remote Tableau MCP will become a future target, but the access model and runtime constraints still need to be understood before implementation can start.
+The roadmap assumes Hosted / remote Tableau MCP is a future target, but the access model, site settings, and runtime constraints still need to be understood before implementation starts.
 
 ## Goal
 
-Document the requirements, constraints, and open questions for using Hosted Tableau MCP in this repository.
+Document the requirements, constraints, and unknowns for using Hosted Tableau MCP in this repository.
 
 ## Scope
 
@@ -15,7 +15,7 @@ Document the requirements, constraints, and open questions for using Hosted Tabl
 - OAuth / user-context requirements
 - token handling boundary
 - backend Lambda connectivity assumptions
-- local development strategy
+- local development and CI strategy
 - security / governance notes
 - unknowns and open questions
 
@@ -27,7 +27,7 @@ Document the requirements, constraints, and open questions for using Hosted Tabl
 
 ## Tasks
 
-- identify the hosted access model assumptions
+- identify hosted access model assumptions
 - capture auth and token boundary questions
 - note backend connectivity and local-dev constraints
 - record unresolved platform questions
@@ -35,8 +35,8 @@ Document the requirements, constraints, and open questions for using Hosted Tabl
 ## Acceptance criteria
 
 - hosted readiness requirements are documented
-- the unresolved questions are visible
-- the infrastructure boundary is explicit
+- unresolved questions are visible
+- infrastructure boundary is explicit
 
 ## Validation
 
@@ -44,6 +44,8 @@ Document the requirements, constraints, and open questions for using Hosted Tabl
 
 ## Related issues
 
-- Parent: #{{PARENT_ISSUE_NUMBER}} v0.7.0 Hosted Tableau MCP Migration Foundation
-- docs/roadmap-v0.7-to-v0.10.md
+- Parent: #125 v0.7.0 Hosted Tableau MCP Migration Foundation
+- docs/v0.7-plan.md
+- docs/v0.7-hosted-tableau-mcp-requirements-audit.md
+- docs/v0.7-stdio-tableau-mcp-usage-audit.md
 
