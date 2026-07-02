@@ -45,6 +45,7 @@ Define the preconditions and governance checks that must pass before metadata to
 
 ## Related issues
 
-- Parent: #{{PARENT_ISSUE_NUMBER}} v0.7.0 Hosted Tableau MCP Migration Foundation
+- Parent: #125 v0.7.0 Hosted Tableau MCP Migration Foundation
 - docs/roadmap-v0.7-to-v0.10.md
+- Main doc: docs/v0.7-metadata-tool-preconditions-governance.md
 

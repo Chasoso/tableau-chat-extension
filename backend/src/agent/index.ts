@@ -69,6 +69,31 @@ export {
   isTableauMetadataJsonSafe,
   normalizeMaxItems,
 } from "./tableauMetadataSchemas";
+export {
+  TABLEAU_METADATA_ALLOWED_TOOL_NAMES,
+  TABLEAU_METADATA_PRECONDITION_USER_MESSAGES,
+  evaluateTableauMetadataToolPreconditions,
+} from "./tableauMetadataPreconditions";
+export type {
+  TableauMetadataAuthenticatedContext,
+  TableauMetadataBudgetState,
+  TableauMetadataGovernanceDecision,
+  TableauMetadataIdentifierResolutionState,
+  TableauMetadataPermissionState,
+  TableauMetadataPreconditionInput,
+  TableauMetadataPreconditionFailureCode,
+  TableauMetadataPreconditionFallback,
+  TableauMetadataPreconditionFallbackAction,
+  TableauMetadataPreconditionResult,
+  TableauMetadataPreconditionStatus,
+  TableauMetadataPreconditionWarning,
+  TableauMetadataPreconditionWarningCode,
+  TableauMetadataSiteSettingsState,
+  TableauMetadataToolName,
+  TableauMetadataToolPolicy,
+  TableauMetadataTransportKind,
+  TableauMetadataTransportState,
+} from "./tableauMetadataPreconditions";
 export type {
   ToolAvailability,
   ToolAvailabilityStatus,
