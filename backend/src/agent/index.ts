@@ -241,6 +241,15 @@ export {
   TABLEAU_METADATA_TOOL_CAPABILITY,
   TABLEAU_METADATA_TOOL_CATEGORY,
 } from "./tableauMetadataTools";
+export type {
+  TableauMetadataFakeExecutionContext,
+  TableauMetadataToolRuntime,
+} from "./tableauMetadataToolRuntime";
+export {
+  createTableauMetadataToolHandlers,
+  createTableauMetadataToolRegistry,
+  createTableauMetadataToolRuntime,
+} from "./tableauMetadataToolRuntime";
 export {
   buildBudgetTraceMetadata,
   buildExecutionTraceMetadata as buildOrchestrationExecutionTraceMetadata,
