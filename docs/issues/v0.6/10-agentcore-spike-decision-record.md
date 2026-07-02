@@ -2,11 +2,11 @@
 
 ## Background
 
-After the comparison work, the project needs a decision record for whether AgentCore should be adopted, partially adopted, or deferred.
+The v0.6 AgentCore spike has produced boundary audits, runner contracts, comparison metrics, and follow-up plans. We need a reviewable decision record that states how AgentCore should be handled now.
 
 ## Goal
 
-Record the AgentCore spike decision and the reasoning behind it.
+Record the AgentCore spike decision and its reasoning.
 
 ## Scope
 
@@ -14,16 +14,21 @@ Record the AgentCore spike decision and the reasoning behind it.
 - partial adoption decision
 - deferral decision
 - reasoning summary
+- next follow-up path
 
 ## Out of scope
 
-- implementation work
+- AgentCore implementation
+- AgentCoreRunner implementation
+- benchmarking infrastructure
+- Tableau MCP migration implementation
+- LLM ResponseComposer implementation
 
 ## Tasks
 
-- collect the comparison findings
+- summarize comparison findings
 - write the decision record
-- define the next follow-up path
+- define the revisit conditions
 
 ## Acceptance criteria
 
@@ -35,4 +40,14 @@ Record the AgentCore spike decision and the reasoning behind it.
 
 ## Related
 
-- #00 v0.6.0 AgentCore Spike
+- [AgentCore Spike Decision Record](../../v0.6-agentcore-spike-decision-record.md)
+- #99 v0.6.0 AgentCore Spike
+- #100 Agent runner audit and boundaries
+- #101 Define AgentRunner contract
+- #102 Add LambdaAgentRunner skeleton
+- #103 Route selected_mark_explanation through LambdaAgentRunner
+- #104 Audit AgentCore fit for selected_mark_explanation
+- #105 Define AgentCoreRunner design
+- #106 Define AgentRunner comparison metrics
+- #107 Define Tableau MCP tool-layer next step
+- #108 Define LLM ResponseComposer next step
