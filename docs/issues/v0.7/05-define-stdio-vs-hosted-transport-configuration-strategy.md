@@ -2,11 +2,11 @@
 
 ## Background
 
-Once the transport abstraction exists, the next question is how the repo should choose between stdio, hosted, and fake transports in development, CI, and runtime.
+The transport abstraction is defined, so v0.7.0 now needs a safe strategy for choosing among stdio, hosted, fake, and disabled transport modes without breaking local development or CI.
 
 ## Goal
 
-Define the configuration strategy that selects the transport safely and predictably.
+Document the configuration strategy for selecting Tableau MCP transport safely and predictably.
 
 ## Scope
 
@@ -14,7 +14,7 @@ Define the configuration strategy that selects the transport safely and predicta
 - feature flag strategy
 - default transport choice
 - local development mode
-- CI/no-network mode
+- CI / no-network mode
 - fallback strategy
 - safe misconfiguration handling
 
@@ -26,15 +26,15 @@ Define the configuration strategy that selects the transport safely and predicta
 
 ## Tasks
 
-- define how transport selection is configured
-- document the default and fallback rules
-- define the safe behavior for misconfiguration
-- keep CI and local no-network paths explicit
+- define transport selection settings
+- document default and fallback rules
+- define safe misconfiguration behavior
+- make CI and local no-network behavior explicit
 
 ## Acceptance criteria
 
-- the transport selection strategy is documented
-- the default and fallback behavior are safe
+- transport selection strategy is documented
+- default / fallback behavior is safe
 - CI and local modes are covered
 
 ## Validation
@@ -43,6 +43,9 @@ Define the configuration strategy that selects the transport safely and predicta
 
 ## Related issues
 
-- Parent: #{{PARENT_ISSUE_NUMBER}} v0.7.0 Hosted Tableau MCP Migration Foundation
-- docs/roadmap-v0.7-to-v0.10.md
+- Parent: #125 v0.7.0 Hosted Tableau MCP Migration Foundation
+- docs/v0.7-plan.md
+- docs/v0.7-tableau-mcp-transport-abstraction.md
+- docs/v0.7-tableau-mcp-transport-configuration-strategy.md
+- docs/v0.7-hosted-tableau-mcp-requirements-audit.md
 
