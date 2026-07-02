@@ -2,11 +2,11 @@
 
 ## Background
 
-v0.7.0 should treat transport as a first-class boundary so the Tool Layer can stay independent from stdio, hosted, and fake/no-network execution paths.
+v0.7.0 treats Tableau MCP transport as a first-class boundary so future stdio, hosted / remote, and fake / no-network paths can be selected without exposing transport details to the Tool Layer.
 
 ## Goal
 
-Define a transport boundary that can switch between stdio, hosted / remote, and fake transports without exposing transport details to higher layers.
+Define a normalized Tableau MCP transport contract and the associated request, result, error, warning, trace, and timing shapes.
 
 ## Scope
 
@@ -27,14 +27,15 @@ Define a transport boundary that can switch between stdio, hosted / remote, and 
 ## Tasks
 
 - define the transport contract
-- define the normalized result and error shape
+- define normalized request and result shapes
+- define normalized error and warning shapes
 - separate trace metadata from transport internals
-- document how fake transport should behave in no-network mode
+- document fake transport behavior in no-network mode
 
 ## Acceptance criteria
 
-- the transport boundary is explicit
-- stdio, hosted, and fake candidates are documented
+- transport boundary is explicit
+- stdio / hosted / fake candidates are documented
 - result and error normalization are defined
 
 ## Validation
@@ -44,6 +45,9 @@ Define a transport boundary that can switch between stdio, hosted / remote, and 
 
 ## Related issues
 
-- Parent: #{{PARENT_ISSUE_NUMBER}} v0.7.0 Hosted Tableau MCP Migration Foundation
-- docs/roadmap-v0.7-to-v0.10.md
+- Parent: #125 v0.7.0 Hosted Tableau MCP Migration Foundation
+- docs/v0.7-plan.md
+- docs/v0.7-tableau-mcp-transport-abstraction.md
+- docs/v0.7-stdio-tableau-mcp-usage-audit.md
+- docs/v0.7-hosted-tableau-mcp-requirements-audit.md
 
