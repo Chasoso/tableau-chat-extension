@@ -48,7 +48,7 @@ Define the first read-only Tableau metadata tools that can be registered in Tool
 
 ## Related issues
 
-- Parent: #{{PARENT_ISSUE_NUMBER}} v0.7.0 Hosted Tableau MCP Migration Foundation
+- Parent: #125 v0.7.0 Hosted Tableau MCP Migration Foundation
 - docs/roadmap-v0.7-to-v0.10.md
 - docs/v0.6-tableau-mcp-tool-layer-next-step.md
-
+- docs/v0.7-read-only-tableau-metadata-tool-definitions.md
