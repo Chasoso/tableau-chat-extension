@@ -173,6 +173,15 @@ export type {
   SelectedMarkExplanationToolRuntime,
 } from "./selectedMarkContextTools";
 export {
+  createTableauMetadataToolDefinitions,
+  TABLEAU_METADATA_DESCRIBE_DATASOURCE_TOOL_DEFINITION,
+  TABLEAU_METADATA_DESCRIBE_DATASOURCE_TOOL_NAME,
+  TABLEAU_METADATA_LIST_FIELDS_TOOL_DEFINITION,
+  TABLEAU_METADATA_LIST_FIELDS_TOOL_NAME,
+  TABLEAU_METADATA_TOOL_CAPABILITY,
+  TABLEAU_METADATA_TOOL_CATEGORY,
+} from "./tableauMetadataTools";
+export {
   buildBudgetTraceMetadata,
   buildExecutionTraceMetadata as buildOrchestrationExecutionTraceMetadata,
   buildFallbackTraceMetadata,
