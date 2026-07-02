@@ -43,7 +43,8 @@ Document the current stdio Tableau MCP call sites, responsibilities, and failure
 
 ## Related issues
 
-- Parent: #{{PARENT_ISSUE_NUMBER}} v0.7.0 Hosted Tableau MCP Migration Foundation
+- Parent: #125 v0.7.0 Hosted Tableau MCP Migration Foundation
 - docs/roadmap-v0.7-to-v0.10.md
+- docs/v0.7-stdio-tableau-mcp-usage-audit.md
 - docs/v0.6-tableau-mcp-tool-layer-next-step.md
 
