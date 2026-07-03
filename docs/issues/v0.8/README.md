@@ -50,6 +50,7 @@ gh milestone create v0.8.0 --description "v0.8.0 Hosted Tableau MCP Metadata Exe
 - `#158` is the Hosted integration test gating issue and feeds `docs/v0.8-hosted-mcp-integration-test-gating.md`.
 - `#159` is the Hosted transport skeleton issue and feeds `docs/v0.8-hosted-tableau-mcp-transport-skeleton.md`.
 - `#160` is the Hosted MCP auth context adapter boundary issue and feeds `docs/v0.8-hosted-mcp-auth-context-adapter-boundary.md`.
+- `#161` is the `describeDatasource` Hosted feature-flag issue and feeds `docs/v0.8-describe-datasource-hosted-feature-flag.md`.
 - `#157` and later child issues should follow the plan in `docs/v0.8-plan.md`.
 - The script keeps Hosted MCP work explicitly gated.
 - The parent and child issue bodies use `{{PARENT_ISSUE_NUMBER}}`, which the script replaces after the parent issue is created.
