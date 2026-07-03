@@ -71,6 +71,19 @@ export type HostedTableauMcpTransportLogger = {
   error?: (message: string, metadata?: JsonObject) => void;
 };
 
+type HostedTableauMcpTransportAuthState =
+  TableauMcpTransportRequest["authContext"] extends {
+    state?: infer S;
+  }
+    ? S
+    :
+        | "ready"
+        | "missing"
+        | "expired"
+        | "unknown"
+        | "not_configured"
+        | undefined;
+
 const HOSTED_TOOL_ALLOWLIST = new Set([
   TABLEAU_METADATA_DESCRIBE_DATASOURCE_TOOL_NAME,
   TABLEAU_METADATA_LIST_FIELDS_TOOL_NAME,
@@ -94,7 +107,10 @@ export class HostedTableauMcpTransport implements TableauMcpTransport {
       request.timeoutMs ?? this.config.timeoutMs,
     );
     const endpointConfigured = isNonEmptyString(this.config.endpoint);
-    const authConfigured = isAuthConfigured(this.config);
+    const authConfigured = isAuthConfigured(
+      this.config,
+      request.authContext?.state,
+    );
     const siteConfigured = isSiteConfigured(this.config);
     const requestClientConfigured = Boolean(this.dependencies.requestClient);
     const networkEnabled = this.config.networkEnabled === true;
@@ -140,11 +156,19 @@ export class HostedTableauMcpTransport implements TableauMcpTransport {
     }
 
     if (!authConfigured) {
+      const authReason =
+        request.authContext?.state === "missing"
+          ? "Hosted auth is missing."
+          : request.authContext?.state === "expired"
+            ? "Hosted auth has expired."
+            : request.authContext?.state === "not_configured"
+              ? "Hosted auth is not configured."
+              : "Hosted auth is not configured.";
       return buildNotConfiguredResult({
         request,
         startedAt,
         timeoutMs,
-        reason: "Hosted auth is not configured.",
+        reason: authReason,
         metadata: safeMetadata,
       });
     }
@@ -598,6 +622,9 @@ function buildSafeMetadata(input: {
     requestId: input.request.requestId,
     toolName: input.request.toolName,
     transportKind: "hosted",
+    requestAuthState: input.request.authContext?.state ?? "unknown",
+    requestAuthMode: input.request.authContext?.mode ?? "unknown",
+    requestAuthReasonCode: input.request.authContext?.reasonCode ?? "unknown",
     endpointConfigured: input.endpointConfigured,
     authConfigured: input.authConfigured,
     siteConfigured: input.siteConfigured,
@@ -618,7 +645,17 @@ function isNonEmptyString(value: unknown): value is string {
   return typeof value === "string" && value.trim().length > 0;
 }
 
-function isAuthConfigured(config: HostedTableauMcpTransportConfig): boolean {
+function isAuthConfigured(
+  config: HostedTableauMcpTransportConfig,
+  requestAuthState?: HostedTableauMcpTransportAuthState,
+): boolean {
+  if (
+    requestAuthState === "missing" ||
+    requestAuthState === "expired" ||
+    requestAuthState === "not_configured"
+  ) {
+    return false;
+  }
   if (!config.authMode || config.authMode === "unknown") {
     return false;
   }
@@ -827,6 +864,9 @@ function sanitizeAnonymousValue(value: unknown): unknown {
 
 function isSensitiveKey(key: string): boolean {
   const normalized = key.toLowerCase();
+  if (normalized.startsWith("tokenreference")) {
+    return false;
+  }
   return (
     normalized === "raw" ||
     normalized === "rawresult" ||
@@ -840,7 +880,15 @@ function isSensitiveKey(key: string): boolean {
     normalized === "stacktrace" ||
     normalized === "authorization" ||
     normalized === "authorizationheader" ||
-    normalized.includes("token") ||
-    normalized.includes("secret")
+    normalized === "token" ||
+    normalized === "accesstoken" ||
+    normalized === "refreshtoken" ||
+    normalized === "idtoken" ||
+    normalized.endsWith("token") ||
+    normalized.includes("secret") ||
+    normalized.includes("password") ||
+    normalized.includes("cookie") ||
+    normalized === "jwt" ||
+    normalized === "setcookie"
   );
 }
