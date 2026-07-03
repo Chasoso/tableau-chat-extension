@@ -70,6 +70,21 @@ export {
   normalizeMaxItems,
 } from "./tableauMetadataSchemas";
 export {
+  createTableauMetadataToolCompletedEvent,
+  createTableauMetadataToolFailedEvent,
+  createTableauMetadataToolStartedEvent,
+  normalizeTableauMetadataExecutionResult,
+  normalizeTableauMetadataOutput,
+} from "./tableauMetadataOutputNormalization";
+export type {
+  TableauMetadataNormalizedResult,
+  TableauMetadataNormalizedStatus,
+  TableauMetadataOutputNormalizationInput,
+  TableauMetadataTraceEvent,
+  TableauMetadataTraceEventName,
+  TableauMetadataTraceSummary,
+} from "./tableauMetadataOutputNormalization";
+export {
   TABLEAU_METADATA_ALLOWED_TOOL_NAMES,
   TABLEAU_METADATA_PRECONDITION_USER_MESSAGES,
   evaluateTableauMetadataToolPreconditions,

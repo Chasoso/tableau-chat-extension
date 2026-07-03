@@ -17,6 +17,10 @@ import {
   type TableauMetadataWarningSummary,
 } from "./tableauMetadataSchemas";
 import {
+  normalizeTableauMetadataExecutionResult,
+  type TableauMetadataNormalizedResult,
+} from "./tableauMetadataOutputNormalization";
+import {
   createTableauMetadataToolDefinitions,
   TABLEAU_METADATA_DESCRIBE_DATASOURCE_TOOL_NAME,
   TABLEAU_METADATA_LIST_FIELDS_TOOL_NAME,
@@ -469,7 +473,7 @@ export function createFakeTableauMetadataTransport(
 async function executeDescribeDatasourceViaTransport(
   input: ToolExecutionInput,
   options: TableauMetadataExecutionBoundaryOptions,
-): Promise<TableauDescribeDatasourceOutput> {
+): Promise<TableauMetadataNormalizedResult> {
   return executeTableauMetadataToolViaTransport(
     TABLEAU_METADATA_DESCRIBE_DATASOURCE_TOOL_NAME,
     normalizeDescribeDatasourceInput(input.input, normalizeToolContext(input)),
@@ -483,7 +487,7 @@ async function executeDescribeDatasourceViaTransport(
 async function executeListFieldsViaTransport(
   input: ToolExecutionInput,
   options: TableauMetadataExecutionBoundaryOptions,
-): Promise<TableauListFieldsOutput> {
+): Promise<TableauMetadataNormalizedResult> {
   return executeTableauMetadataToolViaTransport(
     TABLEAU_METADATA_LIST_FIELDS_TOOL_NAME,
     normalizeListFieldsInput(input.input, normalizeToolContext(input)),
@@ -510,7 +514,7 @@ async function executeTableauMetadataToolViaTransport<
     input: TInput,
     precondition: TableauMetadataPreconditionResult,
   ) => TOutput,
-): Promise<TOutput> {
+): Promise<TableauMetadataNormalizedResult> {
   const transport =
     options.transport ?? createFakeTableauMetadataTransport(options);
   const now = options.now ?? (() => new Date());
@@ -524,9 +528,10 @@ async function executeTableauMetadataToolViaTransport<
     executionInput,
     precondition,
   );
+  const fallbackOutput = successBuilder(normalizedInput, precondition);
 
   if (!precondition.canExecute) {
-    return withExecutionMetadata(
+    const fallback = withExecutionMetadata(
       failedBuilder(normalizedInput, precondition),
       buildExecutionMetadata({
         request,
@@ -541,48 +546,78 @@ async function executeTableauMetadataToolViaTransport<
       }),
       precondition.warnings ?? [],
     );
+
+    return normalizeTableauMetadataExecutionResult({
+      toolName,
+      request,
+      precondition,
+      fallbackOutput: fallback,
+      startedAt: startedAt.toISOString(),
+      completedAt: startedAt.toISOString(),
+    });
   }
 
   try {
     const transportResult = await transport.call(request);
     const completedAt = now();
-    const output =
+    const enrichedFallback =
       transportResult.status === "success" ||
       transportResult.status === "partial"
-        ? normalizeSuccessfulTransportOutput(
-            toolName,
-            normalizedInput,
-            precondition,
-            transportResult,
-            successBuilder,
+        ? withExecutionMetadata(
+            fallbackOutput,
+            buildExecutionMetadata({
+              request,
+              transportKind: transportResult.transportKind,
+              transportStatus: transportResult.status,
+              preconditionStatus: precondition.status,
+              startedAt:
+                transportResult.trace?.startedAt ?? startedAt.toISOString(),
+              completedAt:
+                transportResult.trace?.completedAt ?? completedAt.toISOString(),
+              durationMs:
+                transportResult.trace?.durationMs ??
+                Math.max(0, completedAt.getTime() - startedAt.getTime()),
+              timeoutMs: request.timeoutMs,
+              warningCount: transportResult.warnings?.length ?? 0,
+              errorCode: transportResult.error?.code,
+              transportResult,
+            }),
           )
-        : normalizeFailedTransportOutput(
-            normalizedInput,
-            precondition,
-            transportResult,
-            failedBuilder,
+        : withExecutionMetadata(
+            failedBuilder(normalizedInput, precondition),
+            buildExecutionMetadata({
+              request,
+              transportKind: transportResult.transportKind,
+              transportStatus: transportResult.status,
+              preconditionStatus: precondition.status,
+              startedAt:
+                transportResult.trace?.startedAt ?? startedAt.toISOString(),
+              completedAt:
+                transportResult.trace?.completedAt ?? completedAt.toISOString(),
+              durationMs:
+                transportResult.trace?.durationMs ??
+                Math.max(0, completedAt.getTime() - startedAt.getTime()),
+              timeoutMs: request.timeoutMs,
+              warningCount: transportResult.warnings?.length ?? 0,
+              errorCode: transportResult.error?.code,
+              transportResult,
+            }),
+            [
+              ...(precondition.warnings ?? []),
+              ...(transportResult.warnings ?? []),
+            ],
           );
 
-    return withExecutionMetadata(
-      output,
-      buildExecutionMetadata({
-        request,
-        transportKind: transportResult.transportKind,
-        transportStatus: transportResult.status,
-        preconditionStatus: precondition.status,
-        startedAt: transportResult.trace?.startedAt ?? startedAt.toISOString(),
-        completedAt:
-          transportResult.trace?.completedAt ?? completedAt.toISOString(),
-        durationMs:
-          transportResult.trace?.durationMs ??
-          Math.max(0, completedAt.getTime() - startedAt.getTime()),
-        timeoutMs: request.timeoutMs,
-        warningCount: transportResult.warnings?.length ?? 0,
-        errorCode: transportResult.error?.code,
-        transportResult,
-      }),
-      [...(precondition.warnings ?? []), ...(transportResult.warnings ?? [])],
-    );
+    return normalizeTableauMetadataExecutionResult({
+      toolName,
+      request,
+      precondition,
+      transportResult,
+      fallbackOutput: enrichedFallback,
+      startedAt: transportResult.trace?.startedAt ?? startedAt.toISOString(),
+      completedAt:
+        transportResult.trace?.completedAt ?? completedAt.toISOString(),
+    });
   } catch (error) {
     const completedAt = now();
     const transportResult: TableauMcpTransportResult = {
@@ -609,13 +644,8 @@ async function executeTableauMetadataToolViaTransport<
       },
     };
 
-    return withExecutionMetadata(
-      normalizeFailedTransportOutput(
-        normalizedInput,
-        precondition,
-        transportResult,
-        failedBuilder,
-      ),
+    const fallback = withExecutionMetadata(
+      failedBuilder(normalizedInput, precondition),
       buildExecutionMetadata({
         request,
         transportKind: transportResult.transportKind,
@@ -630,111 +660,17 @@ async function executeTableauMetadataToolViaTransport<
         transportResult,
       }),
     );
-  }
-}
 
-function normalizeSuccessfulTransportOutput<
-  TInput extends TableauDescribeDatasourceInput | TableauListFieldsInput,
-  TOutput extends TableauDescribeDatasourceOutput | TableauListFieldsOutput,
->(
-  toolName: string,
-  normalizedInput: TInput,
-  precondition: TableauMetadataPreconditionResult,
-  transportResult: TableauMcpTransportResult,
-  successBuilder: (
-    input: TInput,
-    precondition: TableauMetadataPreconditionResult,
-  ) => TOutput,
-): TOutput {
-  const fallback = successBuilder(normalizedInput, precondition);
-  const rawOutput = isJsonObject(transportResult.data)
-    ? (cloneMetadataJson(
-        transportResult.data as JsonValue,
-      ) as unknown as TOutput)
-    : fallback;
-  const output = rawOutput as TOutput;
-  const warnings = dedupeWarnings([
-    ...(Array.isArray(output.warnings) ? output.warnings : []),
-    ...normalizeTransportWarnings(transportResult.warnings),
-  ]);
-
-  if (warnings.length > 0) {
-    output.warnings = warnings;
+    return normalizeTableauMetadataExecutionResult({
+      toolName,
+      request,
+      precondition,
+      transportResult,
+      fallbackOutput: fallback,
+      startedAt: startedAt.toISOString(),
+      completedAt: completedAt.toISOString(),
+    });
   }
-
-  output.metadata = mergeExecutionMetadata(
-    output.metadata,
-    buildTransportOutputMetadata(transportResult),
-  );
-
-  if (!output.resolution) {
-    output.resolution = preconditionToResolution(precondition);
-  }
-
-  if (toolName === TABLEAU_METADATA_DESCRIBE_DATASOURCE_TOOL_NAME) {
-    const describeOutput = output as TableauDescribeDatasourceOutput;
-    const describeFallback = fallback as TableauDescribeDatasourceOutput;
-    if (!describeOutput.summary) {
-      describeOutput.summary = describeFallback.summary;
-    }
-    if (!describeOutput.fieldsSummary && describeFallback.fieldsSummary) {
-      describeOutput.fieldsSummary = describeFallback.fieldsSummary;
-    }
-    if (
-      !describeOutput.connectionSummary &&
-      describeFallback.connectionSummary
-    ) {
-      describeOutput.connectionSummary = describeFallback.connectionSummary;
-    }
-    describeOutput.status =
-      transportResult.status === "partial" ||
-      describeOutput.status === "partial"
-        ? "partial"
-        : "success";
-    return describeOutput as TOutput;
-  }
-
-  const listOutput = output as TableauListFieldsOutput;
-  const listFallback = fallback as TableauListFieldsOutput;
-  if (!listOutput.datasource) {
-    listOutput.datasource = listFallback.datasource;
-  }
-  if (!listOutput.fields) {
-    listOutput.fields = listFallback.fields;
-  }
-  if (!listOutput.fieldCountSummary) {
-    listOutput.fieldCountSummary = listFallback.fieldCountSummary;
-  }
-  listOutput.status =
-    transportResult.status === "partial" || listOutput.status === "partial"
-      ? "partial"
-      : "success";
-  return listOutput as TOutput;
-}
-
-function normalizeFailedTransportOutput<
-  TInput extends TableauDescribeDatasourceInput | TableauListFieldsInput,
-  TOutput extends TableauDescribeDatasourceOutput | TableauListFieldsOutput,
->(
-  normalizedInput: TInput,
-  precondition: TableauMetadataPreconditionResult,
-  transportResult: TableauMcpTransportResult,
-  failedBuilder: (
-    input: TInput,
-    precondition: TableauMetadataPreconditionResult,
-  ) => TOutput,
-): TOutput {
-  const output = failedBuilder(normalizedInput, precondition);
-  output.error = buildTransportErrorSummary(transportResult);
-  output.warnings = dedupeWarnings([
-    ...(Array.isArray(output.warnings) ? output.warnings : []),
-    ...normalizeTransportWarnings(transportResult.warnings),
-  ]);
-  output.metadata = mergeExecutionMetadata(
-    output.metadata,
-    buildTransportOutputMetadata(transportResult),
-  );
-  return output as TOutput;
 }
 
 function buildTransportRequest<
@@ -797,102 +733,6 @@ function buildTransportRequest<
       ],
     ]),
   };
-}
-
-function buildTransportErrorSummary(
-  transportResult: TableauMcpTransportResult,
-): TableauMetadataErrorSummary {
-  if (transportResult.error) {
-    return {
-      code: mapTransportErrorCode(transportResult.error.code),
-      message: transportResult.error.message,
-      retryable: transportResult.error.retryable,
-      userActionRequired: transportResult.error.userActionRequired,
-      metadata: transportResult.error.metadata
-        ? cloneMetadataJson(transportResult.error.metadata)
-        : buildJsonObjectFromPairs([
-            ["transportKind", transportResult.transportKind],
-            ["transportStatus", transportResult.status],
-          ]),
-    };
-  }
-
-  switch (transportResult.status) {
-    case "timeout":
-      return {
-        code: "TIMEOUT",
-        message: "The Tableau metadata transport timed out.",
-        retryable: true,
-        userActionRequired: true,
-        metadata: buildJsonObjectFromPairs([
-          ["transportKind", transportResult.transportKind],
-          ["transportStatus", transportResult.status],
-        ]),
-      };
-    case "not_configured":
-      return {
-        code: "TRANSPORT_NOT_CONFIGURED",
-        message: "The Tableau metadata transport is not configured.",
-        retryable: false,
-        userActionRequired: true,
-        metadata: buildJsonObjectFromPairs([
-          ["transportKind", transportResult.transportKind],
-          ["transportStatus", transportResult.status],
-        ]),
-      };
-    case "unsupported":
-      return {
-        code: "TRANSPORT_FAILED",
-        message: "The Tableau metadata transport does not support this tool.",
-        retryable: false,
-        userActionRequired: true,
-        metadata: buildJsonObjectFromPairs([
-          ["transportKind", transportResult.transportKind],
-          ["transportStatus", transportResult.status],
-        ]),
-      };
-    case "cancelled":
-      return {
-        code: "TRANSPORT_FAILED",
-        message: "The Tableau metadata transport call was cancelled.",
-        retryable: false,
-        userActionRequired: true,
-        metadata: buildJsonObjectFromPairs([
-          ["transportKind", transportResult.transportKind],
-          ["transportStatus", transportResult.status],
-        ]),
-      };
-    default:
-      return {
-        code: "UNKNOWN_ERROR",
-        message: "The Tableau metadata transport failed.",
-        retryable: false,
-        userActionRequired: true,
-        metadata: buildJsonObjectFromPairs([
-          ["transportKind", transportResult.transportKind],
-          ["transportStatus", transportResult.status],
-        ]),
-      };
-  }
-}
-
-function buildTransportOutputMetadata(
-  transportResult: TableauMcpTransportResult,
-): JsonObject {
-  return buildJsonObjectFromPairs([
-    ["transportKind", transportResult.transportKind],
-    ["transportStatus", transportResult.status],
-    ["transportEventId", transportResult.trace?.transportEventId],
-    ["remoteTraceId", transportResult.trace?.remoteTraceId],
-    ["hostedSessionId", transportResult.trace?.hostedSessionId],
-    ["startedAt", transportResult.timing?.startedAt],
-    ["completedAt", transportResult.timing?.completedAt],
-    ["durationMs", transportResult.timing?.durationMs],
-    ["timeoutMs", transportResult.timing?.timeoutMs],
-    ["timedOut", transportResult.timing?.timedOut],
-    ["warningCount", transportResult.warnings?.length ?? 0],
-    ["errorCode", transportResult.error?.code],
-  ]);
 }
 
 function buildExecutionMetadata(args: {
@@ -980,22 +820,6 @@ function withExecutionMetadata<
 
   cloned.metadata = mergeExecutionMetadata(cloned.metadata, metadata);
   return cloned;
-}
-
-function normalizeTransportWarnings(
-  warnings: readonly TableauMcpTransportWarning[] | undefined,
-): TableauMetadataWarningSummary[] {
-  if (!warnings?.length) {
-    return [];
-  }
-
-  return warnings.map((warning) => ({
-    code: normalizeWarningCode(warning.code ?? "UNKNOWN_WARNING"),
-    message: warning.message,
-    metadata: warning.metadata
-      ? cloneMetadataJson(warning.metadata)
-      : undefined,
-  }));
 }
 
 function dedupeWarnings(
@@ -1107,37 +931,6 @@ function normalizeThrowableToTransportError(
     retryable: false,
     userActionRequired: true,
   };
-}
-
-function mapTransportErrorCode(
-  code: TableauMcpTransportErrorCode,
-): TableauMetadataErrorCode {
-  switch (code) {
-    case "AUTH_REQUIRED":
-      return "AUTH_REQUIRED";
-    case "AUTH_EXPIRED":
-      return "AUTH_REQUIRED";
-    case "PERMISSION_DENIED":
-      return "PERMISSION_DENIED";
-    case "SITE_SETTINGS_DISABLED":
-      return "SITE_SETTINGS_DISABLED";
-    case "TIMEOUT":
-      return "TIMEOUT";
-    case "TRANSPORT_NOT_CONFIGURED":
-      return "TRANSPORT_NOT_CONFIGURED";
-    case "INVALID_TOOL_INPUT":
-      return "INVALID_INPUT";
-    case "TOOL_NOT_FOUND":
-      return "NOT_FOUND";
-    case "UNSUPPORTED_TRANSPORT":
-    case "NETWORK_ERROR":
-    case "MCP_PROTOCOL_ERROR":
-    case "REMOTE_SERVER_ERROR":
-    case "STDIO_PROCESS_ERROR":
-    case "UNKNOWN_ERROR":
-    default:
-      return "TRANSPORT_FAILED";
-  }
 }
 
 function normalizeToolContext(

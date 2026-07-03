@@ -144,13 +144,20 @@ describe("Tableau metadata transport-aware execution boundary", () => {
       expect.objectContaining({
         status: "success",
         summary: expect.objectContaining({
-          datasourceId: "stub-datasource",
-          datasourceName: "Stub Datasource",
+          datasource: expect.objectContaining({
+            datasourceId: "stub-datasource",
+            datasourceName: "Stub Datasource",
+          }),
         }),
         metadata: expect.objectContaining({
           transportKind: "fake",
           transportStatus: "success",
-          source: "fake_no_network",
+        }),
+        trace: expect.objectContaining({
+          eventNames: expect.arrayContaining([
+            "tableau_metadata_tool.started",
+            "tableau_metadata_tool.completed",
+          ]),
         }),
       }),
     );
@@ -248,12 +255,28 @@ describe("Tableau metadata transport-aware execution boundary", () => {
     expect(result.output).toEqual(
       expect.objectContaining({
         status: "partial",
-        fieldCountSummary: expect.objectContaining({
-          returned: 1,
+        summary: expect.objectContaining({
+          datasource: expect.objectContaining({
+            datasourceId: "sales-datasource",
+          }),
+          fields: expect.arrayContaining([
+            expect.objectContaining({
+              fieldName: "Region",
+            }),
+          ]),
+          fieldCountSummary: expect.objectContaining({
+            returned: 1,
+          }),
         }),
         metadata: expect.objectContaining({
           transportKind: "fake",
           transportStatus: "partial",
+        }),
+        trace: expect.objectContaining({
+          eventNames: expect.arrayContaining([
+            "tableau_metadata_tool.started",
+            "tableau_metadata_tool.completed",
+          ]),
         }),
       }),
     );
@@ -324,6 +347,12 @@ describe("Tableau metadata transport-aware execution boundary", () => {
         metadata: expect.objectContaining({
           transportKind: "hosted",
           transportStatus: "timeout",
+        }),
+        trace: expect.objectContaining({
+          eventNames: expect.arrayContaining([
+            "tableau_metadata_tool.started",
+            "tableau_metadata_tool.failed",
+          ]),
         }),
       }),
     );
@@ -424,6 +453,12 @@ describe("Tableau metadata transport-aware execution boundary", () => {
           metadata: expect.objectContaining({
             transportKind: "hosted",
           }),
+          trace: expect.objectContaining({
+            eventNames: expect.arrayContaining([
+              "tableau_metadata_tool.started",
+              "tableau_metadata_tool.failed",
+            ]),
+          }),
         }),
       );
       expect(JSON.stringify(result.output)).not.toContain("stack");
@@ -454,9 +489,15 @@ describe("Tableau metadata transport-aware execution boundary", () => {
     expect(called).toBe(false);
     expect(result.output).toEqual(
       expect.objectContaining({
-        status: "failed",
+        status: "blocked",
         error: expect.objectContaining({
           code: "MISSING_REQUIRED_IDENTIFIER",
+        }),
+        trace: expect.objectContaining({
+          eventNames: expect.arrayContaining([
+            "tableau_metadata_tool.started",
+            "tableau_metadata_tool.failed",
+          ]),
         }),
       }),
     );
