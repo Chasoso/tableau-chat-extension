@@ -81,11 +81,13 @@ describe("Tableau metadata tool runtime", () => {
       expect.objectContaining({
         status: "success",
         summary: expect.objectContaining({
-          datasourceId: "sales-datasource",
-          datasourceName: "Sales Datasource",
-          workbookId: "workbook-1",
-          siteId: "site-1",
-          connectionType: "fake",
+          datasource: expect.objectContaining({
+            datasourceId: "sales-datasource",
+            datasourceName: "Sales Datasource",
+            workbookId: "workbook-1",
+            siteId: "site-1",
+            connectionType: "fake",
+          }),
         }),
         resolution: expect.objectContaining({
           status: "resolved",
@@ -96,6 +98,12 @@ describe("Tableau metadata tool runtime", () => {
             code: "TRANSPORT_WARNING",
           }),
         ]),
+        trace: expect.objectContaining({
+          eventNames: expect.arrayContaining([
+            "tableau_metadata_tool.started",
+            "tableau_metadata_tool.completed",
+          ]),
+        }),
       }),
     );
     expect(JSON.stringify(result.output)).not.toContain("accessToken");
@@ -123,18 +131,28 @@ describe("Tableau metadata tool runtime", () => {
     expect(result.output).toEqual(
       expect.objectContaining({
         status: "success",
-        datasource: expect.objectContaining({
-          datasourceId: "sales-datasource",
-          connectionType: "fake",
-        }),
-        fieldCountSummary: expect.objectContaining({
-          returned: 1,
+        summary: expect.objectContaining({
+          datasource: expect.objectContaining({
+            datasourceId: "sales-datasource",
+            connectionType: "fake",
+          }),
+          fields: expect.arrayContaining([
+            expect.objectContaining({
+              fieldName: "Sales",
+            }),
+          ]),
         }),
         warnings: expect.arrayContaining([
           expect.objectContaining({
             code: "TRANSPORT_WARNING",
           }),
         ]),
+        trace: expect.objectContaining({
+          eventNames: expect.arrayContaining([
+            "tableau_metadata_tool.started",
+            "tableau_metadata_tool.completed",
+          ]),
+        }),
       }),
     );
     expect(JSON.stringify(result.output)).not.toContain("rawMcpResult");
@@ -153,7 +171,7 @@ describe("Tableau metadata tool runtime", () => {
     expect(result.status).toBe("completed");
     expect(result.output).toEqual(
       expect.objectContaining({
-        status: "failed",
+        status: "blocked",
         error: expect.objectContaining({
           code: "MISSING_REQUIRED_IDENTIFIER",
         }),
@@ -191,7 +209,7 @@ describe("Tableau metadata tool runtime", () => {
     expect(result.status).toBe("completed");
     expect(result.output).toEqual(
       expect.objectContaining({
-        status: "failed",
+        status: "blocked",
         error: expect.objectContaining({
           code: "AMBIGUOUS_IDENTIFIER",
         }),
