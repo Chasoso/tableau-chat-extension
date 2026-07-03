@@ -19,6 +19,7 @@ import type {
   TableauMcpTransportStatus,
   TableauMcpTransportError,
 } from "./tableauMetadataToolRuntime";
+import { normalizeHostedMcpMetadataError } from "./hostedMcpMetadataErrorNormalizer";
 
 export type TableauMetadataNormalizedStatus =
   | "success"
@@ -147,6 +148,7 @@ export function normalizeTableauMetadataExecutionResult(
     input.precondition,
     normalizedStatus,
     input.transportResult?.status,
+    input,
   );
   const summary = buildSummary(candidateOutput, input.toolName);
   const resolution =
@@ -444,6 +446,7 @@ function normalizeError(
   precondition: TableauMetadataPreconditionResult,
   status: TableauMetadataNormalizedStatus,
   transportStatus: TableauMcpTransportStatus | undefined,
+  input: TableauMetadataOutputNormalizationInput,
 ): TableauMetadataErrorSummary | undefined {
   if (!error) {
     if (status === "blocked") {
@@ -481,15 +484,49 @@ function normalizeError(
     return undefined;
   }
 
+  const hostedErrorSummary = isHostedTransportKind(
+    input.transportResult?.transportKind,
+  )
+    ? normalizeHostedMcpMetadataError({
+        toolName: input.toolName,
+        operation:
+          input.toolName === "tableau.metadata.listFields"
+            ? "listFields"
+            : input.toolName === "tableau.metadata.describeDatasource"
+              ? "describeDatasource"
+              : "unknown",
+        transportKind: input.transportResult?.transportKind,
+        transportStatus,
+        code: error.code,
+        retryable: error.retryable,
+        userActionRequired: error.userActionRequired,
+        target: "target" in error ? error.target : undefined,
+        requestId: input.request.requestId,
+        correlationId: input.request.correlationId,
+        agentRunId: input.request.agentRunId,
+        metadata: error.metadata,
+      })
+    : undefined;
+
   return {
-    code: normalizeErrorCode(error.code),
-    message: error.message,
-    ...(error.retryable !== undefined ? { retryable: error.retryable } : {}),
-    ...(error.userActionRequired !== undefined
-      ? { userActionRequired: error.userActionRequired }
-      : {}),
-    ...("target" in error && error.target ? { target: error.target } : {}),
-    ...(error.metadata ? { metadata: sanitizeJsonObject(error.metadata) } : {}),
+    ...(hostedErrorSummary
+      ? hostedErrorSummary
+      : {
+          code: normalizeErrorCode(error.code),
+          message: error.message,
+          ...(error.retryable !== undefined
+            ? { retryable: error.retryable }
+            : {}),
+          ...(error.userActionRequired !== undefined
+            ? { userActionRequired: error.userActionRequired }
+            : {}),
+          ...("target" in error && error.target
+            ? { target: error.target }
+            : {}),
+          ...(error.metadata
+            ? { metadata: sanitizeJsonObject(error.metadata) }
+            : {}),
+        }),
   };
 }
 
@@ -665,16 +702,24 @@ function normalizeErrorCode(
     case "AMBIGUOUS_IDENTIFIER":
     case "NOT_FOUND":
     case "AUTH_REQUIRED":
+    case "AUTH_EXPIRED":
     case "PERMISSION_DENIED":
     case "SITE_SETTINGS_DISABLED":
     case "TRANSPORT_NOT_CONFIGURED":
+    case "NETWORK_ERROR":
+    case "MCP_PROTOCOL_ERROR":
+    case "TOOL_NOT_FOUND":
+    case "REMOTE_SERVER_ERROR":
     case "TRANSPORT_FAILED":
     case "TIMEOUT":
     case "UNKNOWN_ERROR":
       return code;
     default:
       switch (code) {
+        case "INVALID_TOOL_INPUT":
+          return "INVALID_INPUT";
         case "AUTH_EXPIRED":
+          return "AUTH_EXPIRED";
         case "AUTH_REQUIRED":
           return "AUTH_REQUIRED";
         case "PERMISSION_DENIED":
@@ -682,17 +727,26 @@ function normalizeErrorCode(
         case "SITE_SETTINGS_DISABLED":
           return "SITE_SETTINGS_DISABLED";
         case "NETWORK_ERROR":
+          return "NETWORK_ERROR";
         case "MCP_PROTOCOL_ERROR":
+          return "MCP_PROTOCOL_ERROR";
         case "REMOTE_SERVER_ERROR":
+          return "REMOTE_SERVER_ERROR";
+        case "TOOL_NOT_FOUND":
+          return "TOOL_NOT_FOUND";
         case "STDIO_PROCESS_ERROR":
         case "UNSUPPORTED_TRANSPORT":
-        case "INVALID_TOOL_INPUT":
-        case "TOOL_NOT_FOUND":
           return "TRANSPORT_FAILED";
         default:
           return "UNKNOWN_ERROR";
       }
   }
+}
+
+function isHostedTransportKind(
+  transportKind: TableauMcpTransportKind | undefined,
+): transportKind is "hosted" | "remote" {
+  return transportKind === "hosted" || transportKind === "remote";
 }
 
 function readTransportKind(
