@@ -35,6 +35,81 @@ export type {
   TraceStepType,
 } from "./types";
 export type {
+  TableauDescribeDatasourceInput,
+  TableauDescribeDatasourceOutput,
+  TableauDatasourceSummary,
+  TableauFieldSummary,
+  TableauListFieldsInput,
+  TableauListFieldsOutput,
+  TableauMetadataAmbiguityStatus,
+  TableauMetadataDatasourceIdentifier,
+  TableauMetadataErrorCode,
+  TableauMetadataErrorSummary,
+  TableauMetadataFieldDataType,
+  TableauMetadataFieldRole,
+  TableauMetadataOutputBase,
+  TableauMetadataOutputStatus,
+  TableauMetadataOmissionReason,
+  TableauMetadataOmissionSummary,
+  TableauMetadataResolutionCandidate,
+  TableauMetadataResolutionSummary,
+  TableauMetadataSiteIdentifier,
+  TableauMetadataTarget,
+  TableauMetadataToolOutput,
+  TableauMetadataToolRequestContext,
+  TableauMetadataTruncationSummary,
+  TableauMetadataWarningCode,
+  TableauMetadataWarningSummary,
+  TableauMetadataWorkbookIdentifier,
+  TableauMetadataViewIdentifier,
+} from "./tableauMetadataSchemas";
+export {
+  cloneMetadataJson,
+  hasForbiddenRuntimeValue,
+  isTableauMetadataJsonSafe,
+  normalizeMaxItems,
+} from "./tableauMetadataSchemas";
+export {
+  createTableauMetadataToolCompletedEvent,
+  createTableauMetadataToolFailedEvent,
+  createTableauMetadataToolStartedEvent,
+  normalizeTableauMetadataExecutionResult,
+  normalizeTableauMetadataOutput,
+} from "./tableauMetadataOutputNormalization";
+export type {
+  TableauMetadataNormalizedResult,
+  TableauMetadataNormalizedStatus,
+  TableauMetadataOutputNormalizationInput,
+  TableauMetadataTraceEvent,
+  TableauMetadataTraceEventName,
+  TableauMetadataTraceSummary,
+} from "./tableauMetadataOutputNormalization";
+export {
+  TABLEAU_METADATA_ALLOWED_TOOL_NAMES,
+  TABLEAU_METADATA_PRECONDITION_USER_MESSAGES,
+  evaluateTableauMetadataToolPreconditions,
+} from "./tableauMetadataPreconditions";
+export type {
+  TableauMetadataAuthenticatedContext,
+  TableauMetadataBudgetState,
+  TableauMetadataGovernanceDecision,
+  TableauMetadataIdentifierResolutionState,
+  TableauMetadataPermissionState,
+  TableauMetadataPreconditionInput,
+  TableauMetadataPreconditionFailureCode,
+  TableauMetadataPreconditionFallback,
+  TableauMetadataPreconditionFallbackAction,
+  TableauMetadataPreconditionResult,
+  TableauMetadataPreconditionStatus,
+  TableauMetadataPreconditionWarning,
+  TableauMetadataPreconditionWarningCode,
+  TableauMetadataSiteSettingsState,
+  TableauMetadataToolName,
+  TableauMetadataToolPolicy,
+  TableauMetadataTransportKind,
+  TableauMetadataTransportState,
+} from "./tableauMetadataPreconditions";
+export type {
   ToolAvailability,
   ToolAvailabilityStatus,
   ToolCapability,
@@ -172,6 +247,38 @@ export type {
   SelectedMarkExplanationResponseMaterial,
   SelectedMarkExplanationToolRuntime,
 } from "./selectedMarkContextTools";
+export {
+  createTableauMetadataToolDefinitions,
+  TABLEAU_METADATA_DESCRIBE_DATASOURCE_TOOL_DEFINITION,
+  TABLEAU_METADATA_DESCRIBE_DATASOURCE_TOOL_NAME,
+  TABLEAU_METADATA_LIST_FIELDS_TOOL_DEFINITION,
+  TABLEAU_METADATA_LIST_FIELDS_TOOL_NAME,
+  TABLEAU_METADATA_TOOL_CAPABILITY,
+  TABLEAU_METADATA_TOOL_CATEGORY,
+} from "./tableauMetadataTools";
+export type {
+  TableauMetadataFakeExecutionContext,
+  TableauMcpAuthContextSummary,
+  TableauMcpTransport,
+  TableauMcpTransportError,
+  TableauMcpTransportErrorCode,
+  TableauMcpTransportKind,
+  TableauMcpTransportRequest,
+  TableauMcpTransportResult,
+  TableauMcpTransportStatus,
+  TableauMcpTransportTiming,
+  TableauMcpTransportTraceMetadata,
+  TableauMcpTransportTraceOptions,
+  TableauMcpTransportWarning,
+  TableauMcpUserContextSummary,
+  TableauMetadataToolRuntime,
+} from "./tableauMetadataToolRuntime";
+export {
+  createFakeTableauMetadataTransport,
+  createTableauMetadataToolHandlers,
+  createTableauMetadataToolRegistry,
+  createTableauMetadataToolRuntime,
+} from "./tableauMetadataToolRuntime";
 export {
   buildBudgetTraceMetadata,
   buildExecutionTraceMetadata as buildOrchestrationExecutionTraceMetadata,
