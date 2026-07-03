@@ -225,6 +225,196 @@ describe("Tableau metadata output normalization and trace events", () => {
     expect(JSON.stringify(result)).not.toContain("stack");
   });
 
+  it("captures hosted trace context and fallback metadata safely", () => {
+    const request = createRequest(
+      TABLEAU_METADATA_DESCRIBE_DATASOURCE_TOOL_NAME,
+    );
+    request.metadata = {
+      transportKind: "hosted",
+      requestedTransportKind: "hosted",
+      selectedTransportKind: "hosted",
+      fallbackUsed: false,
+      hostedFeatureEnabled: true,
+      noNetworkRequested: false,
+    };
+    const transportResult: TableauMcpTransportResult = {
+      requestId: request.requestId,
+      transportKind: "hosted",
+      status: "success",
+      toolName: request.toolName,
+      data: {
+        status: "success",
+        summary: {
+          datasourceId: "datasource-1",
+          datasourceName: "Datasource One",
+          connectionType: "hosted",
+          fieldCount: 1,
+          visibleFieldCount: 1,
+          hiddenFieldCount: 0,
+        },
+      } as unknown as TableauDescribeDatasourceOutput,
+      trace: {
+        correlationId: request.correlationId,
+        agentRunId: request.agentRunId,
+        transportEventId: "transport-event-hosted",
+        startedAt: "2026-07-03T00:00:00.000Z",
+        completedAt: "2026-07-03T00:00:00.005Z",
+        durationMs: 5,
+        transportKind: "hosted",
+        toolName: request.toolName,
+        metadata: {
+          requestedTransportKind: "hosted",
+          selectedTransportKind: "hosted",
+          fallbackUsed: false,
+          hostedFeatureEnabled: true,
+          noNetworkRequested: false,
+        },
+      },
+      timing: {
+        startedAt: "2026-07-03T00:00:00.000Z",
+        completedAt: "2026-07-03T00:00:00.005Z",
+        durationMs: 5,
+        timeoutMs: request.timeoutMs,
+        timedOut: false,
+      },
+      metadata: {
+        requestedTransportKind: "hosted",
+        selectedTransportKind: "hosted",
+        fallbackUsed: false,
+        hostedFeatureEnabled: true,
+        noNetworkRequested: false,
+      },
+    };
+
+    const result = normalizeTableauMetadataExecutionResult({
+      toolName: request.toolName,
+      request,
+      precondition: createPassedPrecondition(),
+      transportResult,
+      fallbackOutput: {
+        status: "success",
+        summary: {
+          datasourceId: "datasource-1",
+          datasourceName: "Datasource One",
+        },
+      } as TableauDescribeDatasourceOutput,
+      startedAt: "2026-07-03T00:00:00.000Z",
+      completedAt: "2026-07-03T00:00:00.005Z",
+    });
+
+    expect(result.trace).toEqual(
+      expect.objectContaining({
+        transportKind: "hosted",
+        transportStatus: "success",
+        requestedTransportKind: "hosted",
+        selectedTransportKind: "hosted",
+        fallbackUsed: false,
+        hostedFeatureEnabled: true,
+        noNetworkRequested: false,
+        durationMs: 5,
+      }),
+    );
+    expect(result.metadata).toEqual(
+      expect.objectContaining({
+        requestedTransportKind: "hosted",
+        selectedTransportKind: "hosted",
+        transportStatus: "success",
+        fallbackUsed: false,
+        hostedFeatureEnabled: true,
+        noNetworkRequested: false,
+      }),
+    );
+    expect(JSON.stringify(result.trace)).not.toContain("accessToken");
+    expect(JSON.stringify(result.trace)).not.toContain("rawMcpResult");
+  });
+
+  it("distinguishes stdio trace context safely", () => {
+    const request = createRequest(
+      TABLEAU_METADATA_DESCRIBE_DATASOURCE_TOOL_NAME,
+    );
+    request.metadata = {
+      transportKind: "stdio",
+      requestedTransportKind: "stdio",
+      selectedTransportKind: "stdio",
+      fallbackUsed: false,
+      noNetworkRequested: false,
+    };
+    const transportResult: TableauMcpTransportResult = {
+      requestId: request.requestId,
+      transportKind: "stdio",
+      status: "success",
+      toolName: request.toolName,
+      data: {
+        status: "success",
+        summary: {
+          datasourceId: "datasource-1",
+          datasourceName: "Datasource One",
+          connectionType: "stdio",
+          fieldCount: 1,
+          visibleFieldCount: 1,
+          hiddenFieldCount: 0,
+        },
+      } as unknown as TableauDescribeDatasourceOutput,
+      trace: {
+        correlationId: request.correlationId,
+        agentRunId: request.agentRunId,
+        transportEventId: "transport-event-stdio",
+        startedAt: "2026-07-03T00:00:00.000Z",
+        completedAt: "2026-07-03T00:00:00.003Z",
+        durationMs: 3,
+        transportKind: "stdio",
+        toolName: request.toolName,
+        metadata: {
+          requestedTransportKind: "stdio",
+          selectedTransportKind: "stdio",
+          fallbackUsed: false,
+          noNetworkRequested: false,
+        },
+      },
+      timing: {
+        startedAt: "2026-07-03T00:00:00.000Z",
+        completedAt: "2026-07-03T00:00:00.003Z",
+        durationMs: 3,
+        timeoutMs: request.timeoutMs,
+        timedOut: false,
+      },
+      metadata: {
+        requestedTransportKind: "stdio",
+        selectedTransportKind: "stdio",
+        fallbackUsed: false,
+        noNetworkRequested: false,
+      },
+    };
+
+    const result = normalizeTableauMetadataExecutionResult({
+      toolName: request.toolName,
+      request,
+      precondition: createPassedPrecondition(),
+      transportResult,
+      fallbackOutput: {
+        status: "success",
+        summary: {
+          datasourceId: "datasource-1",
+          datasourceName: "Datasource One",
+        },
+      } as TableauDescribeDatasourceOutput,
+      startedAt: "2026-07-03T00:00:00.000Z",
+      completedAt: "2026-07-03T00:00:00.003Z",
+    });
+
+    expect(result.trace).toEqual(
+      expect.objectContaining({
+        transportKind: "stdio",
+        transportStatus: "success",
+        requestedTransportKind: "stdio",
+        selectedTransportKind: "stdio",
+        fallbackUsed: false,
+        noNetworkRequested: false,
+      }),
+    );
+    expect(JSON.stringify(result.trace)).not.toContain("refreshToken");
+  });
+
   it("normalizes listFields output with truncation and omission signals", () => {
     const request = createRequest(TABLEAU_METADATA_LIST_FIELDS_TOOL_NAME);
     const transportResult: TableauMcpTransportResult = {

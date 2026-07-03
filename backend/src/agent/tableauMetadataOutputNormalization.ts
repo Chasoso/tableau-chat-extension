@@ -39,7 +39,15 @@ export type TableauMetadataTraceEvent = {
   agentRunId?: string;
   toolName: string;
   status?: TableauMetadataNormalizedStatus;
+  transportStatus?: TableauMcpTransportStatus;
   transportKind?: TableauMcpTransportKind;
+  requestedTransportKind?: TableauMcpTransportKind;
+  selectedTransportKind?: TableauMcpTransportKind;
+  fallbackUsed?: boolean;
+  fallbackFrom?: TableauMcpTransportKind;
+  fallbackTo?: TableauMcpTransportKind;
+  hostedFeatureEnabled?: boolean;
+  noNetworkRequested?: boolean;
   startedAt?: string;
   completedAt?: string;
   durationMs?: number;
@@ -58,7 +66,15 @@ export type TableauMetadataTraceSummary = {
   agentRunId?: string;
   toolName: string;
   status: TableauMetadataNormalizedStatus;
+  transportStatus?: TableauMcpTransportStatus;
   transportKind?: TableauMcpTransportKind;
+  requestedTransportKind?: TableauMcpTransportKind;
+  selectedTransportKind?: TableauMcpTransportKind;
+  fallbackUsed?: boolean;
+  fallbackFrom?: TableauMcpTransportKind;
+  fallbackTo?: TableauMcpTransportKind;
+  hostedFeatureEnabled?: boolean;
+  noNetworkRequested?: boolean;
   startedAt?: string;
   completedAt?: string;
   durationMs?: number;
@@ -178,7 +194,7 @@ export function normalizeTableauMetadataExecutionResult(
       input.transportResult?.transportKind ??
       readTransportKind(input.request.metadata?.transportKind) ??
       "unknown",
-    transportStatus: input.transportResult?.status ?? "failed",
+    transportStatus: trace?.transportStatus ?? input.transportResult?.status,
     preconditionStatus: input.precondition.status,
     warningCount: warnings.length,
     errorCode: error?.code,
@@ -189,6 +205,17 @@ export function normalizeTableauMetadataExecutionResult(
     remoteTraceId: input.transportResult?.trace?.remoteTraceId,
     hostedSessionId: input.transportResult?.trace?.hostedSessionId,
     transportTraceMetadata: input.transportResult?.trace?.metadata,
+    requestedTransportKind: trace?.requestedTransportKind,
+    selectedTransportKind: trace?.selectedTransportKind,
+    fallbackUsed: trace?.fallbackUsed,
+    ...(trace?.fallbackFrom ? { fallbackFrom: trace.fallbackFrom } : {}),
+    ...(trace?.fallbackTo ? { fallbackTo: trace.fallbackTo } : {}),
+    ...(trace?.hostedFeatureEnabled !== undefined
+      ? { hostedFeatureEnabled: trace.hostedFeatureEnabled }
+      : {}),
+    ...(trace?.noNetworkRequested !== undefined
+      ? { noNetworkRequested: trace.noNetworkRequested }
+      : {}),
     ...(isJsonObject(candidateOutput.metadata)
       ? sanitizeJsonObject(candidateOutput.metadata)
       : {}),
@@ -246,6 +273,14 @@ function buildTraceEvent(
     toolName: input.toolName,
     status: input.status,
     transportKind: input.transportKind,
+    transportStatus: input.transportStatus,
+    requestedTransportKind: input.requestedTransportKind,
+    selectedTransportKind: input.selectedTransportKind,
+    fallbackUsed: input.fallbackUsed,
+    fallbackFrom: input.fallbackFrom,
+    fallbackTo: input.fallbackTo,
+    hostedFeatureEnabled: input.hostedFeatureEnabled,
+    noNetworkRequested: input.noNetworkRequested,
     startedAt: input.startedAt,
     completedAt: input.completedAt,
     durationMs: input.durationMs,
@@ -281,6 +316,7 @@ function buildTraceSummary(input: {
     (startedAt && completedAt
       ? Math.max(0, Date.parse(completedAt) - Date.parse(startedAt))
       : undefined);
+  const traceTransportContext = buildTraceTransportContext(input.input);
   const eventNames: TableauMetadataTraceEventName[] = [
     "tableau_metadata_tool.started",
     input.status === "success" || input.status === "partial"
@@ -299,10 +335,18 @@ function buildTraceSummary(input: {
     agentRunId: input.input.request.agentRunId,
     toolName: input.input.toolName,
     status: input.status,
+    transportStatus: input.input.transportResult?.status,
     transportKind:
       input.input.transportResult?.transportKind ??
       readTransportKind(input.input.request.metadata?.transportKind) ??
       "unknown",
+    requestedTransportKind: traceTransportContext.requestedTransportKind,
+    selectedTransportKind: traceTransportContext.selectedTransportKind,
+    fallbackUsed: traceTransportContext.fallbackUsed,
+    fallbackFrom: traceTransportContext.fallbackFrom,
+    fallbackTo: traceTransportContext.fallbackTo,
+    hostedFeatureEnabled: traceTransportContext.hostedFeatureEnabled,
+    noNetworkRequested: traceTransportContext.noNetworkRequested,
     startedAt,
     completedAt,
     durationMs,
@@ -325,8 +369,116 @@ function buildTraceSummary(input: {
       preconditionStatus: input.input.precondition.status,
       warningCount: input.warnings.length,
       ...(input.error?.code ? { errorCode: input.error.code } : {}),
+      ...(traceTransportContext.requestedTransportKind
+        ? {
+            requestedTransportKind:
+              traceTransportContext.requestedTransportKind,
+          }
+        : {}),
+      ...(traceTransportContext.selectedTransportKind
+        ? {
+            selectedTransportKind: traceTransportContext.selectedTransportKind,
+          }
+        : {}),
+      ...(traceTransportContext.fallbackUsed !== undefined
+        ? { fallbackUsed: traceTransportContext.fallbackUsed }
+        : {}),
+      ...(traceTransportContext.fallbackFrom
+        ? { fallbackFrom: traceTransportContext.fallbackFrom }
+        : {}),
+      ...(traceTransportContext.fallbackTo
+        ? { fallbackTo: traceTransportContext.fallbackTo }
+        : {}),
+      ...(traceTransportContext.hostedFeatureEnabled !== undefined
+        ? { hostedFeatureEnabled: traceTransportContext.hostedFeatureEnabled }
+        : {}),
+      ...(traceTransportContext.noNetworkRequested !== undefined
+        ? { noNetworkRequested: traceTransportContext.noNetworkRequested }
+        : {}),
     }),
   };
+}
+
+function buildTraceTransportContext(
+  input: TableauMetadataOutputNormalizationInput,
+): {
+  requestedTransportKind?: TableauMcpTransportKind;
+  selectedTransportKind?: TableauMcpTransportKind;
+  fallbackUsed?: boolean;
+  fallbackFrom?: TableauMcpTransportKind;
+  fallbackTo?: TableauMcpTransportKind;
+  hostedFeatureEnabled?: boolean;
+  noNetworkRequested?: boolean;
+} {
+  const requestMetadata = isJsonObject(input.request.metadata)
+    ? input.request.metadata
+    : undefined;
+  const transportMetadata = isJsonObject(input.transportResult?.metadata)
+    ? input.transportResult?.metadata
+    : undefined;
+  const traceMetadata = isJsonObject(input.transportResult?.trace?.metadata)
+    ? input.transportResult?.trace?.metadata
+    : undefined;
+  const metadataSources = [requestMetadata, transportMetadata, traceMetadata];
+
+  return {
+    requestedTransportKind: readTransportKindFromMetadata(
+      metadataSources,
+      "requestedTransportKind",
+    ),
+    selectedTransportKind: readTransportKindFromMetadata(
+      metadataSources,
+      "selectedTransportKind",
+    ),
+    fallbackUsed: readBooleanFromMetadata(metadataSources, "fallbackUsed"),
+    fallbackFrom: readTransportKindFromMetadata(
+      metadataSources,
+      "fallbackFrom",
+    ),
+    fallbackTo: readTransportKindFromMetadata(metadataSources, "fallbackTo"),
+    hostedFeatureEnabled: readBooleanFromMetadata(
+      metadataSources,
+      "hostedFeatureEnabled",
+    ),
+    noNetworkRequested: readBooleanFromMetadata(
+      metadataSources,
+      "noNetworkRequested",
+    ),
+  };
+}
+
+function readTransportKindFromMetadata(
+  metadataSources: readonly (JsonObject | undefined)[],
+  key: string,
+): TableauMcpTransportKind | undefined {
+  for (const metadata of metadataSources) {
+    if (!metadata) {
+      continue;
+    }
+    const candidate = readTransportKind(metadata[key]);
+    if (candidate) {
+      return candidate;
+    }
+  }
+
+  return undefined;
+}
+
+function readBooleanFromMetadata(
+  metadataSources: readonly (JsonObject | undefined)[],
+  key: string,
+): boolean | undefined {
+  for (const metadata of metadataSources) {
+    if (!metadata) {
+      continue;
+    }
+    const value = metadata[key];
+    if (typeof value === "boolean") {
+      return value;
+    }
+  }
+
+  return undefined;
 }
 
 function buildSummary(
