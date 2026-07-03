@@ -34,13 +34,154 @@ import type {
   ToolExecutionInput,
 } from "./toolExecutionWrapper";
 
+export type TableauMcpTransportKind =
+  | "stdio"
+  | "hosted"
+  | "remote"
+  | "fake"
+  | "unknown";
+
+export type TableauMcpTransportStatus =
+  | "success"
+  | "partial"
+  | "failed"
+  | "timeout"
+  | "cancelled"
+  | "unsupported"
+  | "not_configured";
+
+export type TableauMcpUserContextSummary = {
+  userId?: string;
+  tableauUserId?: string;
+  email?: string;
+  siteId?: string;
+  siteName?: string;
+  source?: "cognito" | "tableau" | "fake" | "unknown";
+};
+
+export type TableauMcpAuthContextSummary = {
+  mode:
+    | "none"
+    | "direct_trust"
+    | "oauth_delegated"
+    | "token_reference"
+    | "fake"
+    | "unknown";
+  tokenReference?: string;
+  scopes?: readonly string[];
+  expiresAt?: string;
+  metadata?: JsonObject;
+};
+
+export type TableauMcpTransportWarning = {
+  code?: string;
+  message: string;
+  source?: string;
+  metadata?: JsonObject;
+};
+
+export type TableauMcpTransportErrorCode =
+  | "TRANSPORT_NOT_CONFIGURED"
+  | "UNSUPPORTED_TRANSPORT"
+  | "AUTH_REQUIRED"
+  | "AUTH_EXPIRED"
+  | "PERMISSION_DENIED"
+  | "SITE_SETTINGS_DISABLED"
+  | "NETWORK_ERROR"
+  | "TIMEOUT"
+  | "MCP_PROTOCOL_ERROR"
+  | "TOOL_NOT_FOUND"
+  | "INVALID_TOOL_INPUT"
+  | "REMOTE_SERVER_ERROR"
+  | "STDIO_PROCESS_ERROR"
+  | "UNKNOWN_ERROR";
+
+export type TableauMcpTransportError = {
+  code: TableauMcpTransportErrorCode;
+  message: string;
+  retryable?: boolean;
+  userActionRequired?: boolean;
+  source?: string;
+  metadata?: JsonObject;
+};
+
+export type TableauMcpTransportTraceMetadata = {
+  correlationId?: string;
+  agentRunId?: string;
+  transportEventId?: string;
+  startedAt?: string;
+  completedAt?: string;
+  durationMs?: number;
+  transportKind?: TableauMcpTransportKind;
+  toolName?: string;
+  attemptCount?: number;
+  remoteTraceId?: string;
+  stdioProcessIdAvailable?: boolean;
+  hostedSessionId?: string;
+  metadata?: JsonObject;
+};
+
+export type TableauMcpTransportTiming = {
+  startedAt?: string;
+  completedAt?: string;
+  durationMs?: number;
+  timeoutMs?: number;
+  timedOut?: boolean;
+};
+
+export type TableauMcpTransportTraceOptions = {
+  correlationId?: string;
+  agentRunId?: string;
+  toolName?: string;
+  metadata?: JsonObject;
+};
+
+export type TableauMcpTransportRequest = {
+  requestId: string;
+  toolName: string;
+  input: JsonObject;
+  timeoutMs?: number;
+  correlationId?: string;
+  agentRunId?: string;
+  userContext?: TableauMcpUserContextSummary;
+  authContext?: TableauMcpAuthContextSummary;
+  trace?: TableauMcpTransportTraceOptions;
+  metadata?: JsonObject;
+};
+
+export type TableauMcpTransportResult = {
+  requestId: string;
+  transportKind: TableauMcpTransportKind;
+  status: TableauMcpTransportStatus;
+  toolName: string;
+  data?: unknown;
+  warnings?: readonly TableauMcpTransportWarning[];
+  error?: TableauMcpTransportError;
+  trace?: TableauMcpTransportTraceMetadata;
+  timing?: TableauMcpTransportTiming;
+  metadata?: JsonObject;
+};
+
+export interface TableauMcpTransport {
+  readonly kind: TableauMcpTransportKind;
+  readonly name?: string;
+  call(request: TableauMcpTransportRequest): Promise<TableauMcpTransportResult>;
+}
+
 export type TableauMetadataFakeExecutionContext = {
   preconditionInput?: Partial<TableauMetadataPreconditionInput>;
+  transport?: TableauMcpTransport;
+  now?: () => Date;
 };
 
 export type TableauMetadataToolRuntime = {
   registry: InMemoryToolRegistry;
   executionWrapper: ReturnType<typeof createDefaultToolExecutionWrapper>;
+};
+
+export type TableauMetadataExecutionBoundaryOptions = {
+  transport?: TableauMcpTransport;
+  now?: () => Date;
 };
 
 const FAKE_TRANSPORT_WARNING: TableauMetadataWarningSummary = {
@@ -145,68 +286,941 @@ export function createTableauMetadataToolRegistry(): InMemoryToolRegistry {
   return new InMemoryToolRegistry(createTableauMetadataToolDefinitions());
 }
 
-export function createTableauMetadataToolRuntime(): TableauMetadataToolRuntime {
+export function createTableauMetadataToolRuntime(
+  options: TableauMetadataExecutionBoundaryOptions = {},
+): TableauMetadataToolRuntime {
   return {
     registry: createTableauMetadataToolRegistry(),
     executionWrapper: createDefaultToolExecutionWrapper({
-      handlers: createTableauMetadataToolHandlers(),
+      handlers: createTableauMetadataToolHandlers(options),
       defaultTimeoutMs: 5_000,
     }),
   };
 }
 
-export function createTableauMetadataToolHandlers(): Record<
-  string,
-  ToolExecutionHandler
-> {
+export function createTableauMetadataToolHandlers(
+  options: TableauMetadataExecutionBoundaryOptions = {},
+): Record<string, ToolExecutionHandler> {
+  const transport = options.transport ?? createFakeTableauMetadataTransport();
+  const now = options.now;
+
   return {
     [TABLEAU_METADATA_DESCRIBE_DATASOURCE_TOOL_NAME]:
-      createDescribeDatasourceFakeHandler(),
-    [TABLEAU_METADATA_LIST_FIELDS_TOOL_NAME]: createListFieldsFakeHandler(),
+      createDescribeDatasourceFakeHandler({ transport, now }),
+    [TABLEAU_METADATA_LIST_FIELDS_TOOL_NAME]: createListFieldsFakeHandler({
+      transport,
+      now,
+    }),
   };
 }
 
-export function createDescribeDatasourceFakeHandler(): ToolExecutionHandler {
+export function createDescribeDatasourceFakeHandler(
+  options: TableauMetadataExecutionBoundaryOptions = {},
+): ToolExecutionHandler {
   return async (input) => {
-    const normalizedInput = normalizeDescribeDatasourceInput(
-      input.input,
-      input.context,
-    );
-    const precondition = evaluateTableauMetadataToolPreconditions(
-      buildPreconditionInput(
-        input,
-        TABLEAU_METADATA_DESCRIBE_DATASOURCE_TOOL_NAME,
-        normalizedInput,
-      ),
-    );
-
-    if (!precondition.canExecute) {
-      return buildDescribeDatasourceFailedOutput(normalizedInput, precondition);
-    }
-
-    return buildDescribeDatasourceSuccessOutput(normalizedInput, precondition);
+    return executeDescribeDatasourceViaTransport(input, options);
   };
 }
 
-export function createListFieldsFakeHandler(): ToolExecutionHandler {
+export function createListFieldsFakeHandler(
+  options: TableauMetadataExecutionBoundaryOptions = {},
+): ToolExecutionHandler {
   return async (input) => {
-    const normalizedInput = normalizeListFieldsInput(
-      input.input,
-      input.context,
+    return executeListFieldsViaTransport(input, options);
+  };
+}
+
+export function createFakeTableauMetadataTransport(
+  options: Pick<TableauMetadataExecutionBoundaryOptions, "now"> = {},
+): TableauMcpTransport {
+  return {
+    kind: "fake",
+    name: "fake-no-network-tableau-mcp-transport",
+    async call(request) {
+      const startedAt = nowIso(options.now);
+      const transportTrace = buildTransportTraceMetadata(
+        request,
+        startedAt,
+        startedAt,
+        0,
+        false,
+      );
+      const toolName = request.toolName;
+
+      if (toolName === TABLEAU_METADATA_DESCRIBE_DATASOURCE_TOOL_NAME) {
+        const input =
+          request.input as unknown as TableauDescribeDatasourceInput;
+        const precondition = createFakeTransportPreconditionResult(
+          request,
+          "resolved",
+        );
+        const output = buildDescribeDatasourceSuccessOutput(
+          input,
+          precondition,
+        );
+
+        return {
+          requestId: request.requestId,
+          transportKind: "fake",
+          status: "success",
+          toolName,
+          data: output,
+          warnings: [FAKE_TRANSPORT_WARNING],
+          trace: transportTrace,
+          timing: {
+            startedAt,
+            completedAt: startedAt,
+            durationMs: 0,
+            timeoutMs: request.timeoutMs,
+            timedOut: false,
+          },
+          metadata: buildExecutionMetadata({
+            request,
+            transportKind: "fake",
+            transportStatus: "success",
+            preconditionStatus: "passed",
+            startedAt,
+            completedAt: startedAt,
+            durationMs: 0,
+            warningCount: 1,
+          }),
+        };
+      }
+
+      if (toolName === TABLEAU_METADATA_LIST_FIELDS_TOOL_NAME) {
+        const input = request.input as unknown as TableauListFieldsInput;
+        const precondition = createFakeTransportPreconditionResult(
+          request,
+          "resolved",
+        );
+        const output = buildListFieldsSuccessOutput(input, precondition);
+
+        return {
+          requestId: request.requestId,
+          transportKind: "fake",
+          status: "success",
+          toolName,
+          data: output,
+          warnings: [FAKE_TRANSPORT_WARNING],
+          trace: transportTrace,
+          timing: {
+            startedAt,
+            completedAt: startedAt,
+            durationMs: 0,
+            timeoutMs: request.timeoutMs,
+            timedOut: false,
+          },
+          metadata: buildExecutionMetadata({
+            request,
+            transportKind: "fake",
+            transportStatus: "success",
+            preconditionStatus: "passed",
+            startedAt,
+            completedAt: startedAt,
+            durationMs: 0,
+            warningCount: 1,
+          }),
+        };
+      }
+
+      return {
+        requestId: request.requestId,
+        transportKind: "fake",
+        status: "unsupported",
+        toolName,
+        warnings: [
+          {
+            code: "TRANSPORT_WARNING",
+            message: `Tool '${toolName}' is not supported by the fake transport.`,
+            source: "fake_no_network",
+          },
+        ],
+        error: {
+          code: "UNSUPPORTED_TRANSPORT",
+          message: `Tool '${toolName}' is not supported by the fake transport.`,
+          retryable: false,
+          userActionRequired: true,
+          source: "fake_no_network",
+        },
+        trace: transportTrace,
+        timing: {
+          startedAt,
+          completedAt: startedAt,
+          durationMs: 0,
+          timeoutMs: request.timeoutMs,
+          timedOut: false,
+        },
+        metadata: buildExecutionMetadata({
+          request,
+          transportKind: "fake",
+          transportStatus: "unsupported",
+          preconditionStatus: "passed",
+          startedAt,
+          completedAt: startedAt,
+          durationMs: 0,
+          warningCount: 1,
+          errorCode: "UNSUPPORTED_TRANSPORT",
+        }),
+      };
+    },
+  };
+}
+
+async function executeDescribeDatasourceViaTransport(
+  input: ToolExecutionInput,
+  options: TableauMetadataExecutionBoundaryOptions,
+): Promise<TableauDescribeDatasourceOutput> {
+  return executeTableauMetadataToolViaTransport(
+    TABLEAU_METADATA_DESCRIBE_DATASOURCE_TOOL_NAME,
+    normalizeDescribeDatasourceInput(input.input, normalizeToolContext(input)),
+    input,
+    options,
+    buildDescribeDatasourceSuccessOutput,
+    buildDescribeDatasourceFailedOutput,
+  );
+}
+
+async function executeListFieldsViaTransport(
+  input: ToolExecutionInput,
+  options: TableauMetadataExecutionBoundaryOptions,
+): Promise<TableauListFieldsOutput> {
+  return executeTableauMetadataToolViaTransport(
+    TABLEAU_METADATA_LIST_FIELDS_TOOL_NAME,
+    normalizeListFieldsInput(input.input, normalizeToolContext(input)),
+    input,
+    options,
+    buildListFieldsSuccessOutput,
+    buildListFieldsFailedOutput,
+  );
+}
+
+async function executeTableauMetadataToolViaTransport<
+  TInput extends TableauDescribeDatasourceInput | TableauListFieldsInput,
+  TOutput extends TableauDescribeDatasourceOutput | TableauListFieldsOutput,
+>(
+  toolName: string,
+  normalizedInput: TInput,
+  executionInput: ToolExecutionInput,
+  options: TableauMetadataExecutionBoundaryOptions,
+  successBuilder: (
+    input: TInput,
+    precondition: TableauMetadataPreconditionResult,
+  ) => TOutput,
+  failedBuilder: (
+    input: TInput,
+    precondition: TableauMetadataPreconditionResult,
+  ) => TOutput,
+): Promise<TOutput> {
+  const transport =
+    options.transport ?? createFakeTableauMetadataTransport(options);
+  const now = options.now ?? (() => new Date());
+  const startedAt = now();
+  const precondition = evaluateTableauMetadataToolPreconditions(
+    buildPreconditionInput(executionInput, toolName, normalizedInput),
+  );
+  const request = buildTransportRequest(
+    toolName,
+    normalizedInput,
+    executionInput,
+    precondition,
+  );
+
+  if (!precondition.canExecute) {
+    return withExecutionMetadata(
+      failedBuilder(normalizedInput, precondition),
+      buildExecutionMetadata({
+        request,
+        transportKind: getRequestedTransportKind(executionInput),
+        transportStatus: "failed",
+        preconditionStatus: precondition.status,
+        startedAt: startedAt.toISOString(),
+        completedAt: startedAt.toISOString(),
+        durationMs: 0,
+        warningCount: precondition.warnings?.length ?? 0,
+        errorCode: mapPreconditionFailureToErrorCode(precondition.failureCode),
+      }),
+      precondition.warnings ?? [],
     );
-    const precondition = evaluateTableauMetadataToolPreconditions(
-      buildPreconditionInput(
-        input,
-        TABLEAU_METADATA_LIST_FIELDS_TOOL_NAME,
+  }
+
+  try {
+    const transportResult = await transport.call(request);
+    const completedAt = now();
+    const output =
+      transportResult.status === "success" ||
+      transportResult.status === "partial"
+        ? normalizeSuccessfulTransportOutput(
+            toolName,
+            normalizedInput,
+            precondition,
+            transportResult,
+            successBuilder,
+          )
+        : normalizeFailedTransportOutput(
+            normalizedInput,
+            precondition,
+            transportResult,
+            failedBuilder,
+          );
+
+    return withExecutionMetadata(
+      output,
+      buildExecutionMetadata({
+        request,
+        transportKind: transportResult.transportKind,
+        transportStatus: transportResult.status,
+        preconditionStatus: precondition.status,
+        startedAt: transportResult.trace?.startedAt ?? startedAt.toISOString(),
+        completedAt:
+          transportResult.trace?.completedAt ?? completedAt.toISOString(),
+        durationMs:
+          transportResult.trace?.durationMs ??
+          Math.max(0, completedAt.getTime() - startedAt.getTime()),
+        timeoutMs: request.timeoutMs,
+        warningCount: transportResult.warnings?.length ?? 0,
+        errorCode: transportResult.error?.code,
+        transportResult,
+      }),
+      [...(precondition.warnings ?? []), ...(transportResult.warnings ?? [])],
+    );
+  } catch (error) {
+    const completedAt = now();
+    const transportResult: TableauMcpTransportResult = {
+      requestId: request.requestId,
+      transportKind: getRequestedTransportKind(executionInput),
+      status: "failed",
+      toolName,
+      error: normalizeThrowableToTransportError(error),
+      trace: {
+        correlationId: request.correlationId,
+        agentRunId: request.agentRunId,
+        startedAt: startedAt.toISOString(),
+        completedAt: completedAt.toISOString(),
+        durationMs: Math.max(0, completedAt.getTime() - startedAt.getTime()),
+        transportKind: getRequestedTransportKind(executionInput),
+        toolName,
+      },
+      timing: {
+        startedAt: startedAt.toISOString(),
+        completedAt: completedAt.toISOString(),
+        durationMs: Math.max(0, completedAt.getTime() - startedAt.getTime()),
+        timeoutMs: request.timeoutMs,
+        timedOut: false,
+      },
+    };
+
+    return withExecutionMetadata(
+      normalizeFailedTransportOutput(
         normalizedInput,
+        precondition,
+        transportResult,
+        failedBuilder,
       ),
+      buildExecutionMetadata({
+        request,
+        transportKind: transportResult.transportKind,
+        transportStatus: transportResult.status,
+        preconditionStatus: precondition.status,
+        startedAt: startedAt.toISOString(),
+        completedAt: completedAt.toISOString(),
+        durationMs: Math.max(0, completedAt.getTime() - startedAt.getTime()),
+        timeoutMs: request.timeoutMs,
+        warningCount: 0,
+        errorCode: transportResult.error?.code,
+        transportResult,
+      }),
     );
+  }
+}
 
-    if (!precondition.canExecute) {
-      return buildListFieldsFailedOutput(normalizedInput, precondition);
+function normalizeSuccessfulTransportOutput<
+  TInput extends TableauDescribeDatasourceInput | TableauListFieldsInput,
+  TOutput extends TableauDescribeDatasourceOutput | TableauListFieldsOutput,
+>(
+  toolName: string,
+  normalizedInput: TInput,
+  precondition: TableauMetadataPreconditionResult,
+  transportResult: TableauMcpTransportResult,
+  successBuilder: (
+    input: TInput,
+    precondition: TableauMetadataPreconditionResult,
+  ) => TOutput,
+): TOutput {
+  const fallback = successBuilder(normalizedInput, precondition);
+  const rawOutput = isJsonObject(transportResult.data)
+    ? (cloneMetadataJson(
+        transportResult.data as JsonValue,
+      ) as unknown as TOutput)
+    : fallback;
+  const output = rawOutput as TOutput;
+  const warnings = dedupeWarnings([
+    ...(Array.isArray(output.warnings) ? output.warnings : []),
+    ...normalizeTransportWarnings(transportResult.warnings),
+  ]);
+
+  if (warnings.length > 0) {
+    output.warnings = warnings;
+  }
+
+  output.metadata = mergeExecutionMetadata(
+    output.metadata,
+    buildTransportOutputMetadata(transportResult),
+  );
+
+  if (!output.resolution) {
+    output.resolution = preconditionToResolution(precondition);
+  }
+
+  if (toolName === TABLEAU_METADATA_DESCRIBE_DATASOURCE_TOOL_NAME) {
+    const describeOutput = output as TableauDescribeDatasourceOutput;
+    const describeFallback = fallback as TableauDescribeDatasourceOutput;
+    if (!describeOutput.summary) {
+      describeOutput.summary = describeFallback.summary;
     }
+    if (!describeOutput.fieldsSummary && describeFallback.fieldsSummary) {
+      describeOutput.fieldsSummary = describeFallback.fieldsSummary;
+    }
+    if (
+      !describeOutput.connectionSummary &&
+      describeFallback.connectionSummary
+    ) {
+      describeOutput.connectionSummary = describeFallback.connectionSummary;
+    }
+    describeOutput.status =
+      transportResult.status === "partial" ||
+      describeOutput.status === "partial"
+        ? "partial"
+        : "success";
+    return describeOutput as TOutput;
+  }
 
-    return buildListFieldsSuccessOutput(normalizedInput, precondition);
+  const listOutput = output as TableauListFieldsOutput;
+  const listFallback = fallback as TableauListFieldsOutput;
+  if (!listOutput.datasource) {
+    listOutput.datasource = listFallback.datasource;
+  }
+  if (!listOutput.fields) {
+    listOutput.fields = listFallback.fields;
+  }
+  if (!listOutput.fieldCountSummary) {
+    listOutput.fieldCountSummary = listFallback.fieldCountSummary;
+  }
+  listOutput.status =
+    transportResult.status === "partial" || listOutput.status === "partial"
+      ? "partial"
+      : "success";
+  return listOutput as TOutput;
+}
+
+function normalizeFailedTransportOutput<
+  TInput extends TableauDescribeDatasourceInput | TableauListFieldsInput,
+  TOutput extends TableauDescribeDatasourceOutput | TableauListFieldsOutput,
+>(
+  normalizedInput: TInput,
+  precondition: TableauMetadataPreconditionResult,
+  transportResult: TableauMcpTransportResult,
+  failedBuilder: (
+    input: TInput,
+    precondition: TableauMetadataPreconditionResult,
+  ) => TOutput,
+): TOutput {
+  const output = failedBuilder(normalizedInput, precondition);
+  output.error = buildTransportErrorSummary(transportResult);
+  output.warnings = dedupeWarnings([
+    ...(Array.isArray(output.warnings) ? output.warnings : []),
+    ...normalizeTransportWarnings(transportResult.warnings),
+  ]);
+  output.metadata = mergeExecutionMetadata(
+    output.metadata,
+    buildTransportOutputMetadata(transportResult),
+  );
+  return output as TOutput;
+}
+
+function buildTransportRequest<
+  TInput extends TableauDescribeDatasourceInput | TableauListFieldsInput,
+>(
+  toolName: string,
+  normalizedInput: TInput,
+  executionInput: ToolExecutionInput,
+  precondition: TableauMetadataPreconditionResult,
+): TableauMcpTransportRequest {
+  const context = normalizeToolContext(executionInput);
+  const contextualPrecondition =
+    readContextualPreconditionInput(executionInput);
+  const requestId =
+    readString(context?.tableauMetadataRequestId) ??
+    `tableau-metadata-${toolName}`;
+  const correlationId =
+    readString(context?.tableauMetadataCorrelationId) ??
+    readString(executionInput.traceMetadata?.correlationId);
+  const agentRunId =
+    readString(context?.tableauMetadataAgentRunId) ?? executionInput.agentRunId;
+  const transportKind = getRequestedTransportKind(executionInput);
+
+  return {
+    requestId,
+    toolName,
+    input: cloneMetadataJson(normalizedInput),
+    timeoutMs:
+      contextualPrecondition?.budget?.timeoutMs ??
+      executionInput.timeoutMs ??
+      5_000,
+    correlationId,
+    agentRunId,
+    userContext: buildTransportUserContext(
+      contextualPrecondition?.authenticatedTableauContext,
+    ),
+    authContext: buildTransportAuthContext(
+      contextualPrecondition?.authenticatedTableauContext,
+    ),
+    trace: {
+      correlationId,
+      agentRunId,
+      toolName,
+      metadata: buildJsonObjectFromPairs([
+        ["source", "tableau_metadata_execution_boundary"],
+        ["transportKind", transportKind],
+        ["preconditionStatus", precondition.status],
+      ]),
+    },
+    metadata: buildJsonObjectFromPairs([
+      ["source", "tableau_metadata_execution_boundary"],
+      ["transportKind", transportKind],
+      ["preconditionStatus", precondition.status],
+      ["selectedTransportKind", transportKind],
+      ["requestedTransportKind", transportKind],
+      [
+        "noNetwork",
+        contextualPrecondition?.transportConfig?.noNetwork === true ||
+          transportKind === "fake",
+      ],
+    ]),
+  };
+}
+
+function buildTransportErrorSummary(
+  transportResult: TableauMcpTransportResult,
+): TableauMetadataErrorSummary {
+  if (transportResult.error) {
+    return {
+      code: mapTransportErrorCode(transportResult.error.code),
+      message: transportResult.error.message,
+      retryable: transportResult.error.retryable,
+      userActionRequired: transportResult.error.userActionRequired,
+      metadata: transportResult.error.metadata
+        ? cloneMetadataJson(transportResult.error.metadata)
+        : buildJsonObjectFromPairs([
+            ["transportKind", transportResult.transportKind],
+            ["transportStatus", transportResult.status],
+          ]),
+    };
+  }
+
+  switch (transportResult.status) {
+    case "timeout":
+      return {
+        code: "TIMEOUT",
+        message: "The Tableau metadata transport timed out.",
+        retryable: true,
+        userActionRequired: true,
+        metadata: buildJsonObjectFromPairs([
+          ["transportKind", transportResult.transportKind],
+          ["transportStatus", transportResult.status],
+        ]),
+      };
+    case "not_configured":
+      return {
+        code: "TRANSPORT_NOT_CONFIGURED",
+        message: "The Tableau metadata transport is not configured.",
+        retryable: false,
+        userActionRequired: true,
+        metadata: buildJsonObjectFromPairs([
+          ["transportKind", transportResult.transportKind],
+          ["transportStatus", transportResult.status],
+        ]),
+      };
+    case "unsupported":
+      return {
+        code: "TRANSPORT_FAILED",
+        message: "The Tableau metadata transport does not support this tool.",
+        retryable: false,
+        userActionRequired: true,
+        metadata: buildJsonObjectFromPairs([
+          ["transportKind", transportResult.transportKind],
+          ["transportStatus", transportResult.status],
+        ]),
+      };
+    case "cancelled":
+      return {
+        code: "TRANSPORT_FAILED",
+        message: "The Tableau metadata transport call was cancelled.",
+        retryable: false,
+        userActionRequired: true,
+        metadata: buildJsonObjectFromPairs([
+          ["transportKind", transportResult.transportKind],
+          ["transportStatus", transportResult.status],
+        ]),
+      };
+    default:
+      return {
+        code: "UNKNOWN_ERROR",
+        message: "The Tableau metadata transport failed.",
+        retryable: false,
+        userActionRequired: true,
+        metadata: buildJsonObjectFromPairs([
+          ["transportKind", transportResult.transportKind],
+          ["transportStatus", transportResult.status],
+        ]),
+      };
+  }
+}
+
+function buildTransportOutputMetadata(
+  transportResult: TableauMcpTransportResult,
+): JsonObject {
+  return buildJsonObjectFromPairs([
+    ["transportKind", transportResult.transportKind],
+    ["transportStatus", transportResult.status],
+    ["transportEventId", transportResult.trace?.transportEventId],
+    ["remoteTraceId", transportResult.trace?.remoteTraceId],
+    ["hostedSessionId", transportResult.trace?.hostedSessionId],
+    ["startedAt", transportResult.timing?.startedAt],
+    ["completedAt", transportResult.timing?.completedAt],
+    ["durationMs", transportResult.timing?.durationMs],
+    ["timeoutMs", transportResult.timing?.timeoutMs],
+    ["timedOut", transportResult.timing?.timedOut],
+    ["warningCount", transportResult.warnings?.length ?? 0],
+    ["errorCode", transportResult.error?.code],
+  ]);
+}
+
+function buildExecutionMetadata(args: {
+  request: TableauMcpTransportRequest;
+  transportKind: TableauMcpTransportKind;
+  transportStatus: TableauMcpTransportStatus;
+  preconditionStatus: TableauMetadataPreconditionResult["status"];
+  startedAt: string;
+  completedAt: string;
+  durationMs: number;
+  warningCount: number;
+  errorCode?: string;
+  timeoutMs?: number;
+  transportResult?: TableauMcpTransportResult;
+}): JsonObject {
+  return buildJsonObjectFromPairs([
+    [
+      "source",
+      args.transportKind === "fake" ? "fake_no_network" : "transport_boundary",
+    ],
+    ["placeholder", args.transportKind === "fake"],
+    ["requestId", args.request.requestId],
+    ["toolName", args.request.toolName],
+    ["correlationId", args.request.correlationId],
+    ["agentRunId", args.request.agentRunId],
+    ["transportKind", args.transportKind],
+    ["transportStatus", args.transportStatus],
+    ["preconditionStatus", args.preconditionStatus],
+    ["startedAt", args.startedAt],
+    ["completedAt", args.completedAt],
+    ["durationMs", args.durationMs],
+    ["timeoutMs", args.timeoutMs],
+    ["warningCount", args.warningCount],
+    ["errorCode", args.errorCode],
+    ["transportEventId", args.transportResult?.trace?.transportEventId],
+    ["remoteTraceId", args.transportResult?.trace?.remoteTraceId],
+    ["hostedSessionId", args.transportResult?.trace?.hostedSessionId],
+  ]);
+}
+
+function mergeExecutionMetadata(
+  base: JsonObject | undefined,
+  addition: JsonObject,
+): JsonObject {
+  return buildJsonObjectFromPairs([
+    ...(base
+      ? (Object.entries(base).map(
+          (entry) => entry as readonly [string, JsonValue],
+        ) as readonly (readonly [string, JsonValue])[])
+      : []),
+    ...Object.entries(addition).map(
+      (entry) => entry as readonly [string, JsonValue],
+    ),
+  ]);
+}
+
+function withExecutionMetadata<
+  TOutput extends TableauDescribeDatasourceOutput | TableauListFieldsOutput,
+>(
+  output: TOutput,
+  metadata: JsonObject,
+  warnings: readonly {
+    code?: string;
+    message: string;
+    target?: string;
+    metadata?: JsonObject;
+  }[] = [],
+): TOutput {
+  const cloned = output as TOutput;
+  const mergedWarnings = dedupeWarnings([
+    ...(Array.isArray(cloned.warnings) ? cloned.warnings : []),
+    ...warnings.map((warning) => ({
+      code: normalizeWarningCode(warning.code ?? "UNKNOWN_WARNING"),
+      message: warning.message,
+      target: warning.target,
+      metadata: warning.metadata
+        ? cloneMetadataJson(warning.metadata)
+        : undefined,
+    })),
+  ]);
+
+  if (mergedWarnings.length > 0) {
+    cloned.warnings = mergedWarnings;
+  }
+
+  cloned.metadata = mergeExecutionMetadata(cloned.metadata, metadata);
+  return cloned;
+}
+
+function normalizeTransportWarnings(
+  warnings: readonly TableauMcpTransportWarning[] | undefined,
+): TableauMetadataWarningSummary[] {
+  if (!warnings?.length) {
+    return [];
+  }
+
+  return warnings.map((warning) => ({
+    code: normalizeWarningCode(warning.code ?? "UNKNOWN_WARNING"),
+    message: warning.message,
+    metadata: warning.metadata
+      ? cloneMetadataJson(warning.metadata)
+      : undefined,
+  }));
+}
+
+function dedupeWarnings(
+  warnings: readonly TableauMetadataWarningSummary[],
+): TableauMetadataWarningSummary[] {
+  const seen = new Set<string>();
+  const deduped: TableauMetadataWarningSummary[] = [];
+
+  for (const warning of warnings) {
+    const key = `${warning.code}:${warning.message}`;
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    deduped.push({
+      code: warning.code,
+      message: warning.message,
+      ...(warning.target ? { target: warning.target } : {}),
+      ...(warning.metadata
+        ? { metadata: cloneMetadataJson(warning.metadata) }
+        : {}),
+    });
+  }
+
+  return deduped;
+}
+
+function buildTransportUserContext(
+  context:
+    | TableauMetadataPreconditionInput["authenticatedTableauContext"]
+    | undefined,
+): TableauMcpUserContextSummary | undefined {
+  if (!context) {
+    return undefined;
+  }
+
+  return {
+    userId: context.userId,
+    tableauUserId: context.tableauUserId,
+    email: context.email,
+    siteId: context.siteId,
+    siteName: context.siteName,
+    source:
+      context.authMode === "fake"
+        ? "fake"
+        : context.authMode === "unknown"
+          ? "unknown"
+          : "tableau",
+  };
+}
+
+function buildTransportAuthContext(
+  context:
+    | TableauMetadataPreconditionInput["authenticatedTableauContext"]
+    | undefined,
+): TableauMcpAuthContextSummary | undefined {
+  if (!context) {
+    return undefined;
+  }
+
+  return {
+    mode:
+      context.authMode === "direct_trust" ||
+      context.authMode === "oauth_delegated" ||
+      context.authMode === "token_reference" ||
+      context.authMode === "fake"
+        ? context.authMode
+        : "unknown",
+    metadata: buildJsonObjectFromPairs([
+      ["siteId", context.siteId],
+      ["siteName", context.siteName],
+      ["isAuthenticated", context.isAuthenticated],
+    ]),
+  };
+}
+
+function getRequestedTransportKind(
+  executionInput: ToolExecutionInput,
+): TableauMcpTransportKind {
+  const contextualPrecondition =
+    readContextualPreconditionInput(executionInput);
+  return (
+    readTransportKind(
+      normalizeToolContext(executionInput)?.tableauMetadataTransportKind,
+    ) ??
+    readTransportKind(
+      contextualPrecondition?.transportConfig?.selectedTransportKind,
+    ) ??
+    "unknown"
+  );
+}
+
+function normalizeThrowableToTransportError(
+  error: unknown,
+): TableauMcpTransportError {
+  if (error instanceof Error) {
+    return {
+      code: "UNKNOWN_ERROR",
+      message: error.message,
+      retryable: false,
+      userActionRequired: true,
+      source: error.name,
+    };
+  }
+
+  return {
+    code: "UNKNOWN_ERROR",
+    message: "The Tableau metadata transport failed unexpectedly.",
+    retryable: false,
+    userActionRequired: true,
+  };
+}
+
+function mapTransportErrorCode(
+  code: TableauMcpTransportErrorCode,
+): TableauMetadataErrorCode {
+  switch (code) {
+    case "AUTH_REQUIRED":
+      return "AUTH_REQUIRED";
+    case "AUTH_EXPIRED":
+      return "AUTH_REQUIRED";
+    case "PERMISSION_DENIED":
+      return "PERMISSION_DENIED";
+    case "SITE_SETTINGS_DISABLED":
+      return "SITE_SETTINGS_DISABLED";
+    case "TIMEOUT":
+      return "TIMEOUT";
+    case "TRANSPORT_NOT_CONFIGURED":
+      return "TRANSPORT_NOT_CONFIGURED";
+    case "INVALID_TOOL_INPUT":
+      return "INVALID_INPUT";
+    case "TOOL_NOT_FOUND":
+      return "NOT_FOUND";
+    case "UNSUPPORTED_TRANSPORT":
+    case "NETWORK_ERROR":
+    case "MCP_PROTOCOL_ERROR":
+    case "REMOTE_SERVER_ERROR":
+    case "STDIO_PROCESS_ERROR":
+    case "UNKNOWN_ERROR":
+    default:
+      return "TRANSPORT_FAILED";
+  }
+}
+
+function normalizeToolContext(
+  input: ToolExecutionInput,
+): JsonObject | undefined {
+  return isJsonObject(input.context) ? input.context : undefined;
+}
+
+function readContextualPreconditionInput(
+  input: ToolExecutionInput,
+): Partial<TableauMetadataPreconditionInput> | undefined {
+  const context = normalizeToolContext(input);
+  if (!isJsonObject(context?.tableauMetadataPreconditionInput)) {
+    return undefined;
+  }
+
+  return context.tableauMetadataPreconditionInput as Partial<TableauMetadataPreconditionInput>;
+}
+
+function nowIso(now?: () => Date): string {
+  return (now ?? (() => new Date()))().toISOString();
+}
+
+function createFakeTransportPreconditionResult(
+  request: TableauMcpTransportRequest,
+  datasourceResolution: "resolved" | "missing" | "ambiguous" | "not_found",
+): TableauMetadataPreconditionResult {
+  return {
+    status: "passed",
+    canExecute: true,
+    warnings: [
+      {
+        code: "USING_FAKE_TRANSPORT",
+        message: "Fake no-network metadata result.",
+        metadata: buildJsonObjectFromPairs([
+          ["transportKind", "fake"],
+          ["noNetwork", true],
+          ["source", "fake_no_network"],
+          ["placeholder", true],
+        ]),
+      },
+    ],
+    governance: {
+      readOnly: "allowed",
+      safeForPreview: "allowed",
+      externalAccess: "allowed",
+      underlyingDataAccess: "not_requested",
+      writeOperation: "not_requested",
+      allowedToolPolicy: "allowed",
+      permission: "not_verified",
+      siteSettings: "enabled",
+    },
+    metadata: buildJsonObjectFromPairs([
+      ["datasourceResolution", datasourceResolution],
+      ["transportKind", request.metadata?.requestedTransportKind ?? "fake"],
+      ["fakeNoNetwork", true],
+    ]),
+  };
+}
+
+function buildTransportTraceMetadata(
+  request: TableauMcpTransportRequest,
+  startedAt: string,
+  completedAt: string,
+  durationMs: number,
+  stdioProcessIdAvailable: boolean,
+): TableauMcpTransportTraceMetadata {
+  return {
+    correlationId: request.correlationId,
+    agentRunId: request.agentRunId,
+    startedAt,
+    completedAt,
+    durationMs,
+    transportKind: request.metadata?.requestedTransportKind as
+      | TableauMcpTransportKind
+      | undefined,
+    toolName: request.toolName,
+    attemptCount: 1,
+    stdioProcessIdAvailable,
+    metadata: buildJsonObjectFromPairs([
+      ["source", "tableau_metadata_execution_boundary"],
+      ["requestId", request.requestId],
+    ]),
   };
 }
 
