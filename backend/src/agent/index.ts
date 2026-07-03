@@ -280,6 +280,19 @@ export {
   createTableauMetadataToolRuntime,
 } from "./tableauMetadataToolRuntime";
 export {
+  createHostedTableauMcpTransport,
+  HostedTableauMcpTransport,
+} from "./hostedTableauMcpTransport";
+export type {
+  HostedMcpRequestClient,
+  HostedMcpRequestClientResult,
+  HostedTableauMcpTransportAuthMode,
+  HostedTableauMcpTransportConfig,
+  HostedTableauMcpTransportDependencies,
+  HostedTableauMcpTransportLogger,
+  HostedTableauMcpTransportProtocol,
+} from "./hostedTableauMcpTransport";
+export {
   buildBudgetTraceMetadata,
   buildExecutionTraceMetadata as buildOrchestrationExecutionTraceMetadata,
   buildFallbackTraceMetadata,
