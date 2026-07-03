@@ -45,6 +45,8 @@ gh milestone create v0.8.0 --description "v0.8.0 Hosted Tableau MCP Metadata Exe
 
 ## Notes
 
+- `#156` is the boundary-locking issue for v0.8.0.
+- `#157` and later child issues should follow the plan in `docs/v0.8-plan.md`.
 - The script keeps Hosted MCP work explicitly gated.
 - The parent and child issue bodies use `{{PARENT_ISSUE_NUMBER}}`, which the script replaces after the parent issue is created.
 - `MILESTONE`, `PARENT_LABELS`, and `CHILD_LABELS` can be overridden from the command line if the repository uses different names.
