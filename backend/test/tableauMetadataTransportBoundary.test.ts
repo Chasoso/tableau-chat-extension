@@ -688,6 +688,18 @@ describe("Tableau metadata transport-aware execution boundary", () => {
         }),
       }),
     );
+    const output = result.output as { trace?: Record<string, unknown> };
+    expect(output.trace).toEqual(
+      expect.objectContaining({
+        transportKind: "hosted",
+        transportStatus: "success",
+        requestedTransportKind: "hosted",
+        selectedTransportKind: "hosted",
+        fallbackUsed: false,
+        hostedFeatureEnabled: true,
+        noNetworkRequested: false,
+      }),
+    );
     expect(JSON.stringify(result.output)).not.toContain("accessToken");
     expect(JSON.stringify(result.output)).not.toContain("refreshToken");
     expect(JSON.stringify(hostedCalls[0])).not.toContain("accessToken");
@@ -870,6 +882,18 @@ describe("Tableau metadata transport-aware execution boundary", () => {
         status: "success",
       }),
     );
+    const output = result.output as { trace?: Record<string, unknown> };
+    expect(output.trace).toEqual(
+      expect.objectContaining({
+        transportKind: "fake",
+        transportStatus: "success",
+        requestedTransportKind: "hosted",
+        selectedTransportKind: "fake",
+        fallbackUsed: true,
+        fallbackFrom: "hosted",
+        fallbackTo: "fake",
+      }),
+    );
   });
 
   it("keeps hosted execution off when no-network is requested", async () => {
@@ -959,6 +983,19 @@ describe("Tableau metadata transport-aware execution boundary", () => {
     expect(result.output).toEqual(
       expect.objectContaining({
         status: "success",
+      }),
+    );
+    const output = result.output as { trace?: Record<string, unknown> };
+    expect(output.trace).toEqual(
+      expect.objectContaining({
+        transportKind: "fake",
+        transportStatus: "success",
+        requestedTransportKind: "hosted",
+        selectedTransportKind: "fake",
+        fallbackUsed: true,
+        fallbackFrom: "hosted",
+        fallbackTo: "fake",
+        noNetworkRequested: true,
       }),
     );
   });
