@@ -40,6 +40,7 @@ export type TableauMetadataAuthenticatedContext = {
   email?: string;
   siteId?: string;
   siteName?: string;
+  siteContentUrl?: string;
   authMode?:
     | "direct_trust"
     | "oauth_delegated"

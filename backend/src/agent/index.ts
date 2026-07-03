@@ -293,6 +293,25 @@ export type {
   HostedTableauMcpTransportProtocol,
 } from "./hostedTableauMcpTransport";
 export {
+  createHostedMcpAuthContextAdapter,
+  maskTokenReferenceForTrace,
+  toTableauMcpTransportAuthContext,
+  toTableauMcpTransportUserContext,
+} from "./hostedMcpAuthContextAdapter";
+export type {
+  HostedMcpAuthContextAdapterInput,
+  HostedMcpAuthContextAdapterResult,
+  HostedMcpAuthContextError,
+  HostedMcpAuthContextWarning,
+  HostedMcpAuthMode,
+  HostedMcpAuthReasonCode,
+  HostedMcpAuthState,
+  HostedMcpAuthTraceSummary,
+  HostedMcpSafeAuthContext,
+  HostedMcpTokenReference,
+  HostedMcpUserContextSummary,
+} from "./hostedMcpAuthContextAdapter";
+export {
   buildBudgetTraceMetadata,
   buildExecutionTraceMetadata as buildOrchestrationExecutionTraceMetadata,
   buildFallbackTraceMetadata,

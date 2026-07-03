@@ -60,7 +60,10 @@ export type TableauMcpUserContextSummary = {
   email?: string;
   siteId?: string;
   siteName?: string;
+  siteContentUrl?: string;
+  locale?: string;
   source?: "cognito" | "tableau" | "fake" | "unknown";
+  metadata?: JsonObject;
 };
 
 export type TableauMcpAuthContextSummary = {
@@ -71,6 +74,16 @@ export type TableauMcpAuthContextSummary = {
     | "token_reference"
     | "fake"
     | "unknown";
+  state?: "ready" | "missing" | "expired" | "unknown" | "not_configured";
+  reasonCode?:
+    | "AUTH_REQUIRED"
+    | "AUTH_EXPIRED"
+    | "AUTH_STATE_UNKNOWN"
+    | "HOSTED_AUTH_NOT_CONFIGURED"
+    | "SITE_SETTINGS_DISABLED"
+    | "TOKEN_REFERENCE_MISSING";
+  userActionRequired?: boolean;
+  retryable?: boolean;
   tokenReference?: string;
   scopes?: readonly string[];
   expiresAt?: string;
