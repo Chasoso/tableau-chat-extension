@@ -243,9 +243,23 @@ export {
 } from "./tableauMetadataTools";
 export type {
   TableauMetadataFakeExecutionContext,
+  TableauMcpAuthContextSummary,
+  TableauMcpTransport,
+  TableauMcpTransportError,
+  TableauMcpTransportErrorCode,
+  TableauMcpTransportKind,
+  TableauMcpTransportRequest,
+  TableauMcpTransportResult,
+  TableauMcpTransportStatus,
+  TableauMcpTransportTiming,
+  TableauMcpTransportTraceMetadata,
+  TableauMcpTransportTraceOptions,
+  TableauMcpTransportWarning,
+  TableauMcpUserContextSummary,
   TableauMetadataToolRuntime,
 } from "./tableauMetadataToolRuntime";
 export {
+  createFakeTableauMetadataTransport,
   createTableauMetadataToolHandlers,
   createTableauMetadataToolRegistry,
   createTableauMetadataToolRuntime,
