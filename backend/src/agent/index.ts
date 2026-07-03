@@ -298,6 +298,11 @@ export {
   toTableauMcpTransportAuthContext,
   toTableauMcpTransportUserContext,
 } from "./hostedMcpAuthContextAdapter";
+export {
+  normalizeHostedMcpMetadataError,
+  normalizeHostedMcpMetadataErrorCode,
+  safeHostedMetadataErrorMessage,
+} from "./hostedMcpMetadataErrorNormalizer";
 export type {
   HostedMcpAuthContextAdapterInput,
   HostedMcpAuthContextAdapterResult,
@@ -311,6 +316,10 @@ export type {
   HostedMcpTokenReference,
   HostedMcpUserContextSummary,
 } from "./hostedMcpAuthContextAdapter";
+export type {
+  HostedMcpMetadataErrorInput,
+  HostedMcpMetadataErrorOperation,
+} from "./hostedMcpMetadataErrorNormalizer";
 export {
   buildBudgetTraceMetadata,
   buildExecutionTraceMetadata as buildOrchestrationExecutionTraceMetadata,

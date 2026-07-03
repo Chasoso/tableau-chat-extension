@@ -428,6 +428,119 @@ describe("Tableau metadata output normalization and trace events", () => {
     expect(JSON.stringify(result)).not.toContain("stack");
   });
 
+  it.each([
+    [
+      "AUTH_EXPIRED",
+      {
+        code: "AUTH_EXPIRED",
+        message: "raw auth expiry details should not leak",
+      },
+    ],
+    [
+      "NETWORK_ERROR",
+      {
+        code: "NETWORK_ERROR",
+        message: "raw DNS details should not leak",
+      },
+    ],
+    [
+      "MCP_PROTOCOL_ERROR",
+      {
+        code: "MCP_PROTOCOL_ERROR",
+        message: "raw malformed payload should not leak",
+      },
+    ],
+  ] as const)(
+    "normalizes hosted metadata errors into safe summaries for %s",
+    (expectedCode, error) => {
+      const request = createRequest(
+        TABLEAU_METADATA_DESCRIBE_DATASOURCE_TOOL_NAME,
+      );
+      const transportResult: TableauMcpTransportResult = {
+        requestId: request.requestId,
+        transportKind: "hosted",
+        status: "failed",
+        toolName: request.toolName,
+        error: {
+          code: error.code as never,
+          message: error.message,
+          retryable: true,
+          userActionRequired: true,
+          metadata: {
+            accessToken: "suppress-me",
+            rawMcpResponse: "suppress-me",
+          },
+        },
+        trace: {
+          correlationId: request.correlationId,
+          agentRunId: request.agentRunId,
+          transportEventId: "hosted-event-1",
+          startedAt: "2026-07-03T00:00:00.000Z",
+          completedAt: "2026-07-03T00:00:00.005Z",
+          durationMs: 5,
+          transportKind: "hosted",
+          toolName: request.toolName,
+        },
+        timing: {
+          startedAt: "2026-07-03T00:00:00.000Z",
+          completedAt: "2026-07-03T00:00:00.005Z",
+          durationMs: 5,
+          timeoutMs: request.timeoutMs,
+          timedOut: false,
+        },
+      };
+
+      const result = normalizeTableauMetadataExecutionResult({
+        toolName: request.toolName,
+        request,
+        precondition: createPassedPrecondition(),
+        transportResult,
+        fallbackOutput: {
+          status: "failed",
+          summary: {
+            datasourceId: "datasource-1",
+            datasourceName: "Datasource One",
+          },
+          error: {
+            code: "UNKNOWN_ERROR",
+            message: "fallback message",
+          },
+        } as TableauDescribeDatasourceOutput,
+        startedAt: "2026-07-03T00:00:00.000Z",
+        completedAt: "2026-07-03T00:00:00.005Z",
+      });
+
+      expect(result).toEqual(
+        expect.objectContaining({
+          status: "failed",
+          error: expect.objectContaining({
+            code: expectedCode,
+            message: expect.any(String),
+            metadata: expect.objectContaining({
+              source: "hosted_mcp_metadata_error_normalizer",
+              normalizedCode: expectedCode,
+              toolName: request.toolName,
+              transportKind: "hosted",
+              requestId: request.requestId,
+              correlationId: request.correlationId,
+              agentRunId: request.agentRunId,
+            }),
+          }),
+          metadata: expect.objectContaining({
+            transportKind: "hosted",
+            transportStatus: "failed",
+            errorCode: expectedCode,
+          }),
+        }),
+      );
+      expect(JSON.stringify(result)).not.toContain("raw auth expiry details");
+      expect(JSON.stringify(result)).not.toContain("raw DNS details");
+      expect(JSON.stringify(result)).not.toContain("raw malformed payload");
+      expect(JSON.stringify(result)).not.toContain("accessToken");
+      expect(JSON.stringify(result)).not.toContain("rawMcpResponse");
+    },
+  );
+
   it("creates JSON-safe trace events", () => {
     const metadata: Record<string, unknown> = {
       createdAt: new Date("2026-07-03T00:00:00.000Z"),
