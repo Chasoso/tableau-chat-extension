@@ -48,6 +48,7 @@ gh milestone create v0.8.0 --description "v0.8.0 Hosted Tableau MCP Metadata Exe
 - `#156` is the boundary-locking issue for v0.8.0.
 - `#157` is the endpoint / site-settings verification issue and feeds `docs/v0.8-hosted-mcp-endpoint-site-settings-verification.md`.
 - `#158` is the Hosted integration test gating issue and feeds `docs/v0.8-hosted-mcp-integration-test-gating.md`.
+- `#159` is the Hosted transport skeleton issue and feeds `docs/v0.8-hosted-tableau-mcp-transport-skeleton.md`.
 - `#157` and later child issues should follow the plan in `docs/v0.8-plan.md`.
 - The script keeps Hosted MCP work explicitly gated.
 - The parent and child issue bodies use `{{PARENT_ISSUE_NUMBER}}`, which the script replaces after the parent issue is created.
