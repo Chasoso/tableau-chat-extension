@@ -10,6 +10,14 @@ export type MetadataDiscoveryTargetType =
   | "view"
   | "unknown";
 
+export type MetadataDiscoveryAmbiguityState =
+  | "ready"
+  | "unknown_target"
+  | "ambiguous_target"
+  | "missing_identifier"
+  | "target_not_supported"
+  | "unsupported";
+
 export type MetadataDiscoveryDecisionKind =
   | "execute_candidate"
   | "clarification_candidate"
@@ -22,9 +30,36 @@ export type MetadataDiscoveryNextStep =
   | "legacy_fallback"
   | "unsupported";
 
+export type MetadataDiscoveryPreconditionId =
+  | "target_type_known"
+  | "single_target_candidate"
+  | "datasource_identifier_present"
+  | "datasource_boundary_supported";
+
+export type MetadataDiscoveryPreconditionCheck = {
+  id: MetadataDiscoveryPreconditionId;
+  required: boolean;
+  satisfied: boolean;
+  reasonBrief: string;
+  metadata?: JsonObject;
+};
+
 export type MetadataDiscoveryEvidence = {
   type: string;
   value: string;
+};
+
+export type MetadataDiscoveryTargetContext = {
+  targetType?: MetadataDiscoveryTargetType;
+  identifier?: string;
+  identifierType?: string;
+  candidateTargetTypes?: readonly Exclude<
+    MetadataDiscoveryTargetType,
+    "unknown"
+  >[];
+  candidateCount?: number;
+  source?: string;
+  metadata?: JsonObject;
 };
 
 export type MetadataDiscoveryIntentInput = {
@@ -32,6 +67,7 @@ export type MetadataDiscoveryIntentInput = {
   message?: string;
   contextSummary?: IntentResolutionContextSummary;
   requestedTargetType?: MetadataDiscoveryTargetType;
+  targetContext?: MetadataDiscoveryTargetContext;
   metadata?: JsonObject;
 };
 
@@ -41,13 +77,22 @@ export type MetadataDiscoveryIntentDecision = {
   kind: MetadataDiscoveryDecisionKind;
   confidence: number;
   targetTypeCandidate: MetadataDiscoveryTargetType;
+  candidateTargetTypes: readonly Exclude<
+    MetadataDiscoveryTargetType,
+    "unknown"
+  >[];
+  ambiguityState: MetadataDiscoveryAmbiguityState;
   clarificationRequired: boolean;
+  metadataBoundaryReady: boolean;
   unsupportedReason?: string;
+  clarificationReason?: string;
   nextStep: MetadataDiscoveryNextStep;
   reasonBrief: string;
   safeUserFacingNote: string;
   signals: string[];
   evidence: MetadataDiscoveryEvidence[];
+  preconditions: readonly MetadataDiscoveryPreconditionCheck[];
+  missingPreconditions: readonly MetadataDiscoveryPreconditionId[];
   metadata?: JsonObject;
   traceMetadata?: JsonObject;
 };
@@ -103,29 +148,51 @@ const METADATA_DISCOVERY_QUERY_INTENT_KEYWORDS = [
   "underlying data",
 ] as const;
 
+const METADATA_DISCOVERY_SAFE_TARGETS = new Set<MetadataDiscoveryTargetType>([
+  "datasource",
+  "workbook",
+  "view",
+]);
+
 export function classifyMetadataDiscoveryIntent(
   input: MetadataDiscoveryIntentInput,
 ): MetadataDiscoveryIntentDecision {
   const normalizedMessage = normalizeMessage(input.message);
   const evidence = buildEvidence(input, normalizedMessage);
-  const targetTypeCandidate =
-    input.requestedTargetType ?? detectTargetType(normalizedMessage);
   const discoverySignals = buildDiscoverySignals(normalizedMessage);
   const unsafeSignals = buildUnsafeSignals(normalizedMessage);
   const querySignals = buildQuerySignals(normalizedMessage);
-  const hasDiscoverySignal = discoverySignals.length > 0;
+  const targetContext = resolveTargetContext(input, normalizedMessage);
+  const targetTypeCandidate = targetContext.targetType;
+  const candidateTargetTypes = targetContext.candidateTargetTypes;
+  const hasDiscoverySignal =
+    discoverySignals.length > 0 || candidateTargetTypes.length > 0;
   const hasUnsafeSignal = unsafeSignals.length > 0;
   const hasQuerySignal = querySignals.length > 0;
-  const multipleTargetTypes = hasMultipleTargetTypes(normalizedMessage);
+  const multipleTargetTypes =
+    candidateTargetTypes.length > 1 ||
+    (targetContext.candidateCount ?? 0) > 1 ||
+    looksAmbiguous(normalizedMessage);
+  const identifierPresent = Boolean(targetContext.identifier?.trim());
 
   if (hasUnsafeSignal || hasQuerySignal) {
-    return {
-      agentRunId: input.agentRunId,
-      intentId: "metadata_discovery",
+    const preconditions = buildPreconditions({
+      targetTypeCandidate,
+      candidateTargetTypes,
+      identifierPresent,
+      metadataBoundaryReady: false,
+      ambiguityState: "unsupported",
+    });
+
+    return buildDecision({
+      input,
       kind: "unsupported",
       confidence: 0.15,
       targetTypeCandidate,
+      candidateTargetTypes,
+      ambiguityState: "unsupported",
       clarificationRequired: false,
+      metadataBoundaryReady: false,
       unsupportedReason: hasQuerySignal
         ? "The request asks for query-style execution or data retrieval."
         : "The request asks for unsafe metadata access.",
@@ -136,23 +203,35 @@ export function classifyMetadataDiscoveryIntent(
         "I can help with safe metadata discovery, but this request needs a legacy fallback path.",
       signals: [...discoverySignals, ...unsafeSignals, ...querySignals],
       evidence,
+      preconditions,
       metadata: cloneJsonObject(input.metadata),
       traceMetadata: {
         kind: "unsupported",
         targetTypeCandidate,
+        candidateTargetTypes: [...candidateTargetTypes],
         signals: [...discoverySignals, ...unsafeSignals, ...querySignals],
       },
-    };
+    });
   }
 
   if (!hasDiscoverySignal && targetTypeCandidate === "unknown") {
-    return {
-      agentRunId: input.agentRunId,
-      intentId: "metadata_discovery",
+    const preconditions = buildPreconditions({
+      targetTypeCandidate,
+      candidateTargetTypes,
+      identifierPresent,
+      metadataBoundaryReady: false,
+      ambiguityState: "unknown_target",
+    });
+
+    return buildDecision({
+      input,
       kind: "fallback",
       confidence: 0.05,
-      targetTypeCandidate: "unknown",
+      targetTypeCandidate,
+      candidateTargetTypes,
+      ambiguityState: "unknown_target",
       clarificationRequired: false,
+      metadataBoundaryReady: false,
       nextStep: "legacy_fallback",
       reasonBrief:
         "The request does not look like a metadata discovery request.",
@@ -160,26 +239,36 @@ export function classifyMetadataDiscoveryIntent(
         "This does not look like metadata discovery yet, so it should stay on the legacy path.",
       signals: [],
       evidence,
+      preconditions,
       metadata: cloneJsonObject(input.metadata),
       traceMetadata: {
         kind: "fallback",
         targetTypeCandidate: "unknown",
+        candidateTargetTypes: [...candidateTargetTypes],
       },
-    };
+    });
   }
 
-  if (
-    targetTypeCandidate === "unknown" ||
-    multipleTargetTypes ||
-    looksAmbiguous(normalizedMessage)
-  ) {
-    return {
-      agentRunId: input.agentRunId,
-      intentId: "metadata_discovery",
-      kind: "clarification_candidate",
-      confidence: 0.7,
+  if (multipleTargetTypes) {
+    const preconditions = buildPreconditions({
       targetTypeCandidate,
+      candidateTargetTypes,
+      identifierPresent,
+      metadataBoundaryReady: false,
+      ambiguityState: "ambiguous_target",
+    });
+
+    return buildDecision({
+      input,
+      kind: "clarification_candidate",
+      confidence: 0.72,
+      targetTypeCandidate,
+      candidateTargetTypes,
+      ambiguityState: "ambiguous_target",
       clarificationRequired: true,
+      metadataBoundaryReady: false,
+      clarificationReason:
+        "The request can be read as more than one Tableau content type.",
       nextStep: "clarify",
       reasonBrief:
         "The request looks like metadata discovery, but the target is ambiguous.",
@@ -187,36 +276,174 @@ export function classifyMetadataDiscoveryIntent(
         "I can help with datasource, workbook, or view metadata, but I need one clear target first.",
       signals: [...discoverySignals],
       evidence,
+      preconditions,
+      missingPreconditions: [
+        "single_target_candidate",
+        ...(targetTypeCandidate === "datasource"
+          ? ["datasource_identifier_present" as const]
+          : []),
+      ],
       metadata: cloneJsonObject(input.metadata),
       traceMetadata: {
         kind: "clarification_candidate",
         targetTypeCandidate,
+        candidateTargetTypes: [...candidateTargetTypes],
         signals: [...discoverySignals],
       },
-    };
+    });
   }
 
-  return {
-    agentRunId: input.agentRunId,
-    intentId: "metadata_discovery",
-    kind: "execute_candidate",
-    confidence: 0.86,
+  if (targetTypeCandidate === "unknown") {
+    const preconditions = buildPreconditions({
+      targetTypeCandidate,
+      candidateTargetTypes,
+      identifierPresent,
+      metadataBoundaryReady: false,
+      ambiguityState: "unknown_target",
+    });
+
+    return buildDecision({
+      input,
+      kind: "clarification_candidate",
+      confidence: 0.67,
+      targetTypeCandidate,
+      candidateTargetTypes,
+      ambiguityState: "unknown_target",
+      clarificationRequired: true,
+      metadataBoundaryReady: false,
+      clarificationReason:
+        "The request looks like metadata discovery, but the target type is not clear.",
+      nextStep: "clarify",
+      reasonBrief:
+        "The request looks like metadata discovery, but the target type is unknown.",
+      safeUserFacingNote:
+        "I can help with datasource, workbook, or view metadata, but I need to know which one you mean.",
+      signals: [...discoverySignals],
+      evidence,
+      preconditions,
+      missingPreconditions: ["target_type_known"],
+      metadata: cloneJsonObject(input.metadata),
+      traceMetadata: {
+        kind: "clarification_candidate",
+        targetTypeCandidate: "unknown",
+        candidateTargetTypes: [...candidateTargetTypes],
+        signals: [...discoverySignals],
+      },
+    });
+  }
+
+  if (targetTypeCandidate !== "datasource") {
+    const preconditions = buildPreconditions({
+      targetTypeCandidate,
+      candidateTargetTypes,
+      identifierPresent,
+      metadataBoundaryReady: false,
+      ambiguityState: "target_not_supported",
+    });
+
+    return buildDecision({
+      input,
+      kind: "clarification_candidate",
+      confidence: 0.66,
+      targetTypeCandidate,
+      candidateTargetTypes,
+      ambiguityState: "target_not_supported",
+      clarificationRequired: true,
+      metadataBoundaryReady: false,
+      clarificationReason:
+        "The current structured boundary only executes safe datasource metadata cases.",
+      nextStep: "clarify",
+      reasonBrief:
+        "The request looks like metadata discovery, but workbook and view targets stay on the clarification path here.",
+      safeUserFacingNote:
+        "I can help with datasource metadata in this step, but workbook or view targets need clarification first.",
+      signals: [...discoverySignals],
+      evidence,
+      preconditions,
+      missingPreconditions: ["datasource_boundary_supported"],
+      metadata: cloneJsonObject(input.metadata),
+      traceMetadata: {
+        kind: "clarification_candidate",
+        targetTypeCandidate,
+        candidateTargetTypes: [...candidateTargetTypes],
+        signals: [...discoverySignals],
+      },
+    });
+  }
+
+  if (!identifierPresent) {
+    const preconditions = buildPreconditions({
+      targetTypeCandidate,
+      candidateTargetTypes,
+      identifierPresent,
+      metadataBoundaryReady: false,
+      ambiguityState: "missing_identifier",
+    });
+
+    return buildDecision({
+      input,
+      kind: "clarification_candidate",
+      confidence: 0.76,
+      targetTypeCandidate,
+      candidateTargetTypes,
+      ambiguityState: "missing_identifier",
+      clarificationRequired: true,
+      metadataBoundaryReady: false,
+      clarificationReason:
+        "The datasource target is clear, but the identifier needed for safe execution is missing.",
+      nextStep: "clarify",
+      reasonBrief:
+        "The request looks like metadata discovery, but the datasource identifier is missing.",
+      safeUserFacingNote:
+        "I can continue with datasource metadata once I know which datasource you mean.",
+      signals: [...discoverySignals],
+      evidence,
+      preconditions,
+      missingPreconditions: ["datasource_identifier_present"],
+      metadata: cloneJsonObject(input.metadata),
+      traceMetadata: {
+        kind: "clarification_candidate",
+        targetTypeCandidate,
+        candidateTargetTypes: [...candidateTargetTypes],
+        signals: [...discoverySignals],
+      },
+    });
+  }
+
+  const preconditions = buildPreconditions({
     targetTypeCandidate,
+    candidateTargetTypes,
+    identifierPresent,
+    metadataBoundaryReady: true,
+    ambiguityState: "ready",
+  });
+
+  return buildDecision({
+    input,
+    kind: "execute_candidate",
+    confidence: 0.9,
+    targetTypeCandidate,
+    candidateTargetTypes,
+    ambiguityState: "ready",
     clarificationRequired: false,
+    metadataBoundaryReady: true,
     nextStep: "structured_plan",
     reasonBrief:
-      "The request looks like a safe metadata discovery case that can move to structured orchestration.",
+      "The request looks like a safe datasource metadata discovery case that can move to structured orchestration.",
     safeUserFacingNote:
       "This looks like structured metadata discovery and can continue through the safe orchestration path.",
     signals: [...discoverySignals],
     evidence,
+    preconditions,
+    missingPreconditions: [],
     metadata: cloneJsonObject(input.metadata),
     traceMetadata: {
       kind: "execute_candidate",
       targetTypeCandidate,
+      candidateTargetTypes: [...candidateTargetTypes],
       signals: [...discoverySignals],
     },
-  };
+  });
 }
 
 export function buildMetadataDiscoveryIntentTraceMetadata(
@@ -228,15 +455,29 @@ export function buildMetadataDiscoveryIntentTraceMetadata(
     kind: decision.kind,
     confidence: decision.confidence,
     targetTypeCandidate: decision.targetTypeCandidate,
+    candidateTargetTypes: [...decision.candidateTargetTypes],
+    ambiguityState: decision.ambiguityState,
     clarificationRequired: decision.clarificationRequired,
+    metadataBoundaryReady: decision.metadataBoundaryReady,
     nextStep: decision.nextStep,
     reasonBrief: decision.reasonBrief,
     safeUserFacingNote: decision.safeUserFacingNote,
     signals: [...decision.signals],
+    preconditions: decision.preconditions.map((item) => ({
+      id: item.id,
+      required: item.required,
+      satisfied: item.satisfied,
+      reasonBrief: item.reasonBrief,
+      ...(item.metadata ? { metadata: { ...item.metadata } } : {}),
+    })),
+    missingPreconditions: [...decision.missingPreconditions],
   };
 
   if (decision.unsupportedReason) {
     metadata.unsupportedReason = decision.unsupportedReason;
+  }
+  if (decision.clarificationReason) {
+    metadata.clarificationReason = decision.clarificationReason;
   }
   if (decision.metadata) {
     metadata.metadata = { ...decision.metadata };
@@ -249,6 +490,210 @@ export function buildMetadataDiscoveryIntentTraceMetadata(
   }
 
   return metadata;
+}
+
+function buildDecision(input: {
+  input: MetadataDiscoveryIntentInput;
+  kind: MetadataDiscoveryDecisionKind;
+  confidence: number;
+  targetTypeCandidate: MetadataDiscoveryTargetType;
+  candidateTargetTypes: readonly Exclude<
+    MetadataDiscoveryTargetType,
+    "unknown"
+  >[];
+  ambiguityState: MetadataDiscoveryAmbiguityState;
+  clarificationRequired: boolean;
+  metadataBoundaryReady: boolean;
+  unsupportedReason?: string;
+  clarificationReason?: string;
+  nextStep: MetadataDiscoveryNextStep;
+  reasonBrief: string;
+  safeUserFacingNote: string;
+  signals: string[];
+  evidence: MetadataDiscoveryEvidence[];
+  preconditions: readonly MetadataDiscoveryPreconditionCheck[];
+  missingPreconditions?: readonly MetadataDiscoveryPreconditionId[];
+  metadata?: JsonObject;
+  traceMetadata?: JsonObject;
+}): MetadataDiscoveryIntentDecision {
+  return {
+    agentRunId: input.input.agentRunId,
+    intentId: "metadata_discovery",
+    kind: input.kind,
+    confidence: input.confidence,
+    targetTypeCandidate: input.targetTypeCandidate,
+    candidateTargetTypes: [...input.candidateTargetTypes],
+    ambiguityState: input.ambiguityState,
+    clarificationRequired: input.clarificationRequired,
+    metadataBoundaryReady: input.metadataBoundaryReady,
+    unsupportedReason: input.unsupportedReason,
+    clarificationReason: input.clarificationReason,
+    nextStep: input.nextStep,
+    reasonBrief: input.reasonBrief,
+    safeUserFacingNote: input.safeUserFacingNote,
+    signals: [...input.signals],
+    evidence: input.evidence.map((item) => ({ ...item })),
+    preconditions: input.preconditions.map((item) => ({
+      id: item.id,
+      required: item.required,
+      satisfied: item.satisfied,
+      reasonBrief: item.reasonBrief,
+      ...(item.metadata ? { metadata: { ...item.metadata } } : {}),
+    })),
+    missingPreconditions: [...(input.missingPreconditions ?? [])],
+    metadata: cloneJsonObject(input.metadata),
+    traceMetadata: input.traceMetadata ? { ...input.traceMetadata } : undefined,
+  };
+}
+
+function buildPreconditions(input: {
+  targetTypeCandidate: MetadataDiscoveryTargetType;
+  candidateTargetTypes: readonly Exclude<
+    MetadataDiscoveryTargetType,
+    "unknown"
+  >[];
+  identifierPresent: boolean;
+  metadataBoundaryReady: boolean;
+  ambiguityState: MetadataDiscoveryAmbiguityState;
+}): readonly MetadataDiscoveryPreconditionCheck[] {
+  const targetTypeKnown = input.targetTypeCandidate !== "unknown";
+  const singleTargetCandidate = input.candidateTargetTypes.length === 1;
+  const datasourceIdentifierPresent =
+    input.targetTypeCandidate === "datasource" && input.identifierPresent;
+  const datasourceBoundarySupported =
+    input.metadataBoundaryReady &&
+    input.ambiguityState === "ready" &&
+    input.targetTypeCandidate === "datasource";
+
+  return [
+    {
+      id: "target_type_known",
+      required: true,
+      satisfied: targetTypeKnown,
+      reasonBrief: targetTypeKnown
+        ? "The target type is known."
+        : "The target type is not known yet.",
+    },
+    {
+      id: "single_target_candidate",
+      required: true,
+      satisfied: singleTargetCandidate,
+      reasonBrief: singleTargetCandidate
+        ? "Only one target candidate remains."
+        : "Multiple target candidates are still present.",
+    },
+    {
+      id: "datasource_identifier_present",
+      required: true,
+      satisfied: datasourceIdentifierPresent,
+      reasonBrief: datasourceIdentifierPresent
+        ? "A datasource identifier is available."
+        : "A datasource identifier is missing or not applicable yet.",
+    },
+    {
+      id: "datasource_boundary_supported",
+      required: true,
+      satisfied: datasourceBoundarySupported,
+      reasonBrief: datasourceBoundarySupported
+        ? "The datasource boundary is ready for structured orchestration."
+        : "The request is not yet ready for the datasource boundary.",
+    },
+  ];
+}
+
+function resolveTargetContext(
+  input: MetadataDiscoveryIntentInput,
+  normalizedMessage: string,
+): {
+  targetType: MetadataDiscoveryTargetType;
+  candidateTargetTypes: readonly Exclude<
+    MetadataDiscoveryTargetType,
+    "unknown"
+  >[];
+  identifier?: string;
+  identifierType?: string;
+  candidateCount?: number;
+  source?: string;
+  metadata?: JsonObject;
+} {
+  const requestedTargetType = isMetadataDiscoveryTargetType(
+    input.requestedTargetType,
+  )
+    ? input.requestedTargetType
+    : undefined;
+  const explicitTargetType = isMetadataDiscoveryTargetType(
+    input.targetContext?.targetType,
+  )
+    ? input.targetContext?.targetType
+    : undefined;
+  const targetType =
+    explicitTargetType ??
+    requestedTargetType ??
+    detectTargetType(normalizedMessage);
+  const candidateTargetTypes =
+    normalizeCandidateTargetTypes(input.targetContext?.candidateTargetTypes) ??
+    (targetType === "unknown"
+      ? detectCandidateTargetTypes(normalizedMessage)
+      : [targetType]);
+
+  return {
+    targetType,
+    candidateTargetTypes,
+    identifier: input.targetContext?.identifier?.trim(),
+    identifierType: input.targetContext?.identifierType,
+    candidateCount: input.targetContext?.candidateCount,
+    source: input.targetContext?.source,
+    metadata: cloneJsonObject(input.targetContext?.metadata),
+  };
+}
+
+function normalizeCandidateTargetTypes(
+  value?: readonly Exclude<MetadataDiscoveryTargetType, "unknown">[],
+): readonly Exclude<MetadataDiscoveryTargetType, "unknown">[] | undefined {
+  if (!value || value.length === 0) {
+    return undefined;
+  }
+
+  const normalized = value.filter(
+    (targetType, index, array) =>
+      isSafeTargetType(targetType) && array.indexOf(targetType) === index,
+  );
+
+  return normalized.length > 0 ? normalized : undefined;
+}
+
+function detectTargetType(
+  normalizedMessage: string,
+): MetadataDiscoveryTargetType {
+  const matches = detectCandidateTargetTypes(normalizedMessage);
+  if (matches.length === 1) {
+    return matches[0];
+  }
+  if (matches.length > 1) {
+    return "unknown";
+  }
+  return "unknown";
+}
+
+function detectCandidateTargetTypes(
+  normalizedMessage: string,
+): readonly Exclude<MetadataDiscoveryTargetType, "unknown">[] {
+  const matches: Exclude<MetadataDiscoveryTargetType, "unknown">[] = [];
+  for (const [targetType, keywords] of Object.entries(
+    METADATA_DISCOVERY_TARGET_KEYWORDS,
+  ) as Array<
+    [Exclude<MetadataDiscoveryTargetType, "unknown">, readonly string[]]
+  >) {
+    if (
+      keywords.some((keyword) => {
+        const pattern = new RegExp(`\\b${escapeRegExp(keyword)}\\b`, "i");
+        return pattern.test(normalizedMessage);
+      })
+    ) {
+      matches.push(targetType);
+    }
+  }
+  return matches;
 }
 
 function buildEvidence(
@@ -266,6 +711,24 @@ function buildEvidence(
     evidence.push({
       type: "requestedTargetType",
       value: input.requestedTargetType,
+    });
+  }
+  if (input.targetContext?.targetType) {
+    evidence.push({
+      type: "targetContext.targetType",
+      value: input.targetContext.targetType,
+    });
+  }
+  if (input.targetContext?.candidateTargetTypes?.length) {
+    evidence.push({
+      type: "targetContext.candidateTargetTypes",
+      value: input.targetContext.candidateTargetTypes.join(","),
+    });
+  }
+  if (input.targetContext?.identifier) {
+    evidence.push({
+      type: "targetContext.identifier",
+      value: input.targetContext.identifier,
     });
   }
   if (input.contextSummary?.workbookName) {
@@ -294,7 +757,7 @@ function buildDiscoverySignals(normalizedMessage: string): string[] {
   const keywordSignals = METADATA_DISCOVERY_KEYWORDS.filter((keyword) =>
     normalizedMessage.includes(keyword),
   ).map((keyword) => `metadata:${keyword}`);
-  const targetSignals = targetTypeMatches(normalizedMessage).map(
+  const targetSignals = detectCandidateTargetTypes(normalizedMessage).map(
     (targetType) => `target:${targetType}`,
   );
   return [...keywordSignals, ...targetSignals];
@@ -310,41 +773,6 @@ function buildQuerySignals(normalizedMessage: string): string[] {
   return METADATA_DISCOVERY_QUERY_INTENT_KEYWORDS.filter((keyword) =>
     normalizedMessage.includes(keyword),
   ).map((keyword) => `query:${keyword}`);
-}
-
-function detectTargetType(
-  normalizedMessage: string,
-): MetadataDiscoveryTargetType {
-  const matches = targetTypeMatches(normalizedMessage);
-  if (matches.length === 1) {
-    return matches[0];
-  }
-  return "unknown";
-}
-
-function hasMultipleTargetTypes(normalizedMessage: string): boolean {
-  return targetTypeMatches(normalizedMessage).length > 1;
-}
-
-function targetTypeMatches(
-  normalizedMessage: string,
-): MetadataDiscoveryTargetType[] {
-  const matches: MetadataDiscoveryTargetType[] = [];
-  for (const [targetType, keywords] of Object.entries(
-    METADATA_DISCOVERY_TARGET_KEYWORDS,
-  ) as Array<
-    [Exclude<MetadataDiscoveryTargetType, "unknown">, readonly string[]]
-  >) {
-    if (
-      keywords.some((keyword) => {
-        const pattern = new RegExp(`\\b${escapeRegExp(keyword)}\\b`, "i");
-        return pattern.test(normalizedMessage);
-      })
-    ) {
-      matches.push(targetType);
-    }
-  }
-  return matches;
 }
 
 function looksAmbiguous(normalizedMessage: string): boolean {
@@ -366,4 +794,21 @@ function cloneJsonObject(value?: JsonObject): JsonObject | undefined {
 
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function isMetadataDiscoveryTargetType(
+  value: unknown,
+): value is MetadataDiscoveryTargetType {
+  return (
+    value === "datasource" ||
+    value === "workbook" ||
+    value === "view" ||
+    value === "unknown"
+  );
+}
+
+function isSafeTargetType(
+  value: MetadataDiscoveryTargetType,
+): value is Exclude<MetadataDiscoveryTargetType, "unknown"> {
+  return METADATA_DISCOVERY_SAFE_TARGETS.has(value);
 }

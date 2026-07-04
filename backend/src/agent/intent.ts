@@ -73,6 +73,7 @@ export type IntentResolutionInput = {
   resolverMode?: IntentResolverMode;
   traceMetadata?: JsonObject;
   metadata?: JsonObject;
+  targetContext?: JsonObject;
 };
 
 export type IntentResolutionResult = {

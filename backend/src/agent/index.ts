@@ -164,6 +164,18 @@ export {
   buildMetadataDiscoveryIntentTraceMetadata,
   classifyMetadataDiscoveryIntent,
 } from "./metadataDiscoveryIntent";
+export type {
+  MetadataDiscoveryAmbiguityState,
+  MetadataDiscoveryDecisionKind,
+  MetadataDiscoveryIntentDecision,
+  MetadataDiscoveryIntentId,
+  MetadataDiscoveryIntentInput,
+  MetadataDiscoveryNextStep,
+  MetadataDiscoveryPreconditionCheck,
+  MetadataDiscoveryPreconditionId,
+  MetadataDiscoveryTargetContext,
+  MetadataDiscoveryTargetType,
+} from "./metadataDiscoveryIntent";
 export {
   createDefaultIntentResolver,
   createMinimalIntentResolver,
