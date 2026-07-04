@@ -283,4 +283,65 @@ describe("chatHandler", () => {
       mocks.chatJobServiceImplementation.createChatJob,
     ).not.toHaveBeenCalled();
   });
+
+  it("runs metadata discovery orchestration when requested without invoking chat services", async () => {
+    const response = await handler({
+      httpMethod: "POST",
+      rawPath: "/intent/resolve",
+      headers: {},
+      body: JSON.stringify({
+        requestedIntent: "metadata_discovery",
+        runMode: "resolve_and_execute_metadata_discovery",
+        message: "Tell me about this datasource.",
+        clientTimestamp: "2026-06-30T00:00:00.000Z",
+        targetContext: {
+          targetType: "datasource",
+          identifier: "sales-datasource",
+        },
+        metadata: {
+          sourceKind: "tableau-extension",
+          tableauMetadataTransportKind: "fake",
+          tableauMetadataNoNetwork: true,
+        },
+      }),
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = JSON.parse(response.body) as {
+      result?: {
+        resolvedIntentId?: string;
+        status?: string;
+      };
+      metadataDiscoveryOrchestration?: {
+        status?: string;
+        plan?: {
+          planState?: string;
+        };
+        execution?: {
+          normalizedOutput?: {
+            status?: string;
+          };
+        };
+      };
+    };
+
+    expect(body.result).toMatchObject({
+      resolvedIntentId: "metadata_discovery",
+    });
+    expect(body.metadataDiscoveryOrchestration).toMatchObject({
+      status: "completed",
+      plan: {
+        planState: "executable",
+      },
+      execution: {
+        normalizedOutput: {
+          status: "success",
+        },
+      },
+    });
+    expect(mocks.createChatServiceMock).not.toHaveBeenCalled();
+    expect(
+      mocks.chatJobServiceImplementation.createChatJob,
+    ).not.toHaveBeenCalled();
+  });
 });
