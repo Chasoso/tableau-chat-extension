@@ -470,6 +470,7 @@ function resolveMetadataDiscoveryIntent(input: {
     agentRunId: input.input.agentRunId,
     message: input.input.message,
     contextSummary: input.input.contextSummary,
+    targetContext: input.input.targetContext,
     metadata: input.input.metadata,
   });
 
