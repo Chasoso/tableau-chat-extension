@@ -165,6 +165,10 @@ export {
   buildMetadataDiscoveryClarificationTraceMetadata,
 } from "./metadataDiscoveryClarification";
 export {
+  buildMetadataDiscoveryPlan,
+  buildMetadataDiscoveryPlanTraceMetadata,
+} from "./metadataDiscoveryPlan";
+export {
   buildMetadataDiscoveryIntentTraceMetadata,
   classifyMetadataDiscoveryIntent,
 } from "./metadataDiscoveryIntent";
@@ -177,6 +181,22 @@ export type {
   MetadataDiscoveryClarificationResumeContract,
   MetadataDiscoveryClarificationResumeField,
 } from "./metadataDiscoveryClarification";
+export type {
+  MetadataDiscoveryClarificationGate,
+  MetadataDiscoveryExecutionGate,
+  MetadataDiscoveryFallbackGate,
+  MetadataDiscoveryMetadataBoundary,
+  MetadataDiscoveryPlan,
+  MetadataDiscoveryPlanInput,
+  MetadataDiscoveryPlanKind,
+  MetadataDiscoveryPlanReasonCode,
+  MetadataDiscoveryPlanState,
+  MetadataDiscoveryPlanTransition,
+  MetadataDiscoveryToolCandidate,
+  MetadataDiscoveryToolCandidateOperation,
+  MetadataDiscoveryToolCandidateStatus,
+  MetadataDiscoveryUnsupportedGate,
+} from "./metadataDiscoveryPlan";
 export type {
   MetadataDiscoveryAmbiguityState,
   MetadataDiscoveryDecisionKind,
