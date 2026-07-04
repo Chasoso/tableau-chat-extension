@@ -13,6 +13,7 @@ This directory is reserved for v0.9.0 issue planning references.
 - Make sure `gh auth status` succeeds for `Chasoso/tableau-chat-extension`.
 - Make sure the repository exists and is reachable.
 - Make sure the `v0.9.0` milestone exists, or let the script create it.
+- Issue #182 is the planning boundary for this milestone.
 
 ## After running
 
