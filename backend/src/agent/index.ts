@@ -161,6 +161,10 @@ export {
   normalizeIntentConfidence,
 } from "./intent";
 export {
+  buildMetadataDiscoveryIntentTraceMetadata,
+  classifyMetadataDiscoveryIntent,
+} from "./metadataDiscoveryIntent";
+export {
   createDefaultIntentResolver,
   createMinimalIntentResolver,
   MinimalIntentResolver,
