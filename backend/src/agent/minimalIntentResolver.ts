@@ -9,11 +9,16 @@ import {
   type IntentResolutionResult,
   type IntentResolver,
 } from "./intent";
+import {
+  buildMetadataDiscoveryIntentTraceMetadata,
+  classifyMetadataDiscoveryIntent,
+} from "./metadataDiscoveryIntent";
 import type { JsonObject } from "./types";
 
 const DEFAULT_SUPPORTED_INTENT_IDS: readonly IntentId[] = [
   "selected_mark_explanation",
   "current_dashboard_summary",
+  "metadata_discovery",
 ];
 
 const DEFAULT_SELECTED_MARK_ACTION_IDS = new Map<string, IntentId>([
@@ -335,6 +340,14 @@ function resolveDeterministicIntent(input: {
   );
 
   if (!mentionsSelectedMarks) {
+    const metadataDiscoveryResolution = resolveMetadataDiscoveryIntent({
+      input: resolutionInput,
+      availableIntentIds,
+    });
+    if (metadataDiscoveryResolution) {
+      return metadataDiscoveryResolution;
+    }
+
     return undefined;
   }
 
@@ -449,6 +462,98 @@ function buildCommonEvidence(input: {
   return evidence;
 }
 
+function resolveMetadataDiscoveryIntent(input: {
+  input: IntentResolutionInput;
+  availableIntentIds: Set<IntentId>;
+}): IntentResolutionResult | undefined {
+  const classification = classifyMetadataDiscoveryIntent({
+    agentRunId: input.input.agentRunId,
+    message: input.input.message,
+    contextSummary: input.input.contextSummary,
+    metadata: input.input.metadata,
+  });
+
+  if (
+    classification.kind === "fallback" &&
+    classification.targetTypeCandidate === "unknown"
+  ) {
+    return undefined;
+  }
+
+  if (!input.availableIntentIds.has("metadata_discovery")) {
+    return createUnresolvedIntentResolution({
+      agentRunId: input.input.agentRunId,
+      fallbackIntentId: "unknown",
+      confidence: classification.confidence,
+      source: "deterministic_rule",
+      reason: "metadata_discovery is not available in this resolver scope.",
+      warnings: ["metadata_discovery_unavailable"],
+      evidence: buildCommonEvidence({
+        input: input.input,
+        message: input.input.message,
+      }),
+      traceMetadata: buildMetadataDiscoveryIntentTraceMetadata(classification),
+    });
+  }
+
+  if (classification.kind === "execute_candidate") {
+    return createResolvedIntentResolution({
+      agentRunId: input.input.agentRunId,
+      resolvedIntentId: "metadata_discovery",
+      confidence: classification.confidence,
+      source: "deterministic_rule",
+      reason: classification.reasonBrief,
+      evidence: buildCommonEvidence({
+        input: input.input,
+        message: input.input.message,
+      }),
+      traceMetadata: buildMetadataDiscoveryIntentTraceMetadata(classification),
+      metadata: {
+        metadataDiscoveryDecision:
+          buildMetadataDiscoveryIntentTraceMetadata(classification),
+      },
+    });
+  }
+
+  if (classification.kind === "clarification_candidate") {
+    return createUnresolvedIntentResolution({
+      agentRunId: input.input.agentRunId,
+      fallbackIntentId: "unknown",
+      confidence: classification.confidence,
+      source: "deterministic_rule",
+      reason: classification.reasonBrief,
+      warnings: ["metadata_discovery_needs_clarification"],
+      evidence: buildCommonEvidence({
+        input: input.input,
+        message: input.input.message,
+      }),
+      traceMetadata: buildMetadataDiscoveryIntentTraceMetadata(classification),
+      metadata: {
+        metadataDiscoveryDecision:
+          buildMetadataDiscoveryIntentTraceMetadata(classification),
+      },
+    });
+  }
+
+  return createFallbackIntentResolution({
+    agentRunId: input.input.agentRunId,
+    fallbackIntentId: "unknown",
+    confidence: classification.confidence,
+    source: "deterministic_rule",
+    reason: classification.reasonBrief,
+    warnings: ["metadata_discovery_legacy_fallback"],
+    evidence: buildCommonEvidence({
+      input: input.input,
+      message: input.input.message,
+    }),
+    traceMetadata: buildMetadataDiscoveryIntentTraceMetadata(classification),
+    metadata: {
+      metadataDiscoveryDecision:
+        buildMetadataDiscoveryIntentTraceMetadata(classification),
+    },
+  });
+}
+
 function buildUiActionTraceMetadata(input: {
   actionId?: string;
   intentId?: IntentId;
@@ -505,6 +610,7 @@ function isKnownIntentId(value: unknown): value is IntentId {
   return (
     value === "selected_mark_explanation" ||
     value === "current_dashboard_summary" ||
+    value === "metadata_discovery" ||
     value === "freeform_question" ||
     value === "unknown"
   );

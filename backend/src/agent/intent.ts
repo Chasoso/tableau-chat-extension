@@ -4,6 +4,7 @@ import type { JsonObject } from "./types";
 export type IntentId =
   | "selected_mark_explanation"
   | "current_dashboard_summary"
+  | "metadata_discovery"
   | "freeform_question"
   | "unknown";
 
