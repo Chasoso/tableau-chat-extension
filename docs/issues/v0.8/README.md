@@ -55,6 +55,7 @@ gh milestone create v0.8.0 --description "v0.8.0 Hosted Tableau MCP Metadata Exe
 - `#163` is the Hosted metadata execution trace coverage issue and feeds `docs/v0.8-hosted-metadata-execution-trace-coverage.md`.
 - `#164` is the fake / no-network and stdio fallback regression coverage issue and feeds `docs/v0.8-fake-no-network-stdio-fallback-regression.md`.
 - `#165` is the `listFields` Hosted readiness evaluation issue and feeds `docs/v0.8-listfields-hosted-readiness.md`.
+- `#166` is the Hosted MCP metadata execution result issue and feeds `docs/v0.8-hosted-mcp-metadata-execution-result.md`.
 - `#157` and later child issues should follow the plan in `docs/v0.8-plan.md`.
 - The script keeps Hosted MCP work explicitly gated.
 - The parent and child issue bodies use `{{PARENT_ISSUE_NUMBER}}`, which the script replaces after the parent issue is created.
