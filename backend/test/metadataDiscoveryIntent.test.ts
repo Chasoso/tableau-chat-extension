@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildMetadataDiscoveryClarificationResponse,
   buildMetadataDiscoveryIntentTraceMetadata,
   classifyMetadataDiscoveryIntent,
   createAgentRunId,
@@ -166,6 +167,52 @@ describe("metadata discovery ambiguity model", () => {
     expect(traceMetadata.metadataBoundaryReady).toBe(true);
   });
 
+  it("builds a clarification response for missing datasource identifiers", () => {
+    const decision = classifyMetadataDiscoveryIntent({
+      agentRunId: createAgentRunId(),
+      message: "Tell me about this datasource.",
+      targetContext: { targetType: "datasource" },
+    });
+
+    const response = buildMetadataDiscoveryClarificationResponse(decision);
+
+    expect(response).toMatchObject({
+      kind: "clarification_required",
+      intentId: "metadata_discovery",
+      requiresClarification: true,
+      canExecute: false,
+      targetType: "datasource",
+      reasonCode: "missing_identifier",
+      fallbackRecommended: false,
+    });
+    expect(response?.allowedResponses).toContain("provide_identifier");
+    expect(response?.resumeContract).toMatchObject({
+      nextIntentId: "metadata_discovery",
+      reenterMode: "reclassify",
+      canReenter: true,
+    });
+    expect(JSON.parse(JSON.stringify(response))).toEqual(response);
+  });
+
+  it("builds an unsupported clarification response for write requests", () => {
+    const decision = classifyMetadataDiscoveryIntent({
+      agentRunId: createAgentRunId(),
+      message: "Update the workbook and write the new values.",
+    });
+
+    const response = buildMetadataDiscoveryClarificationResponse(decision);
+
+    expect(response).toMatchObject({
+      kind: "unsupported",
+      canExecute: false,
+      requiresClarification: false,
+      reasonCode: "unsupported_write_request",
+      fallbackRecommended: true,
+    });
+    expect(response?.safeMessage).toContain("cannot continue");
+    expect(response?.resumeHint).toContain("Do not resume");
+  });
+
   it("can resolve metadata_discovery through the minimal intent resolver without execution wiring", async () => {
     const resolver = createDefaultIntentResolver();
     const result = await resolver.resolve({
@@ -186,5 +233,32 @@ describe("metadata discovery ambiguity model", () => {
     expect(result.status).toBe("resolved");
     expect(result.source).toBe("deterministic_rule");
     expect(JSON.parse(JSON.stringify(result))).toEqual(result);
+  });
+
+  it("attaches a clarification response to unresolved metadata discovery results", async () => {
+    const resolver = createDefaultIntentResolver();
+    const result = await resolver.resolve({
+      agentRunId: createAgentRunId(),
+      message: "Tell me about this datasource.",
+      targetContext: { targetType: "datasource" },
+      availableIntentIds: [
+        "selected_mark_explanation",
+        "current_dashboard_summary",
+        "metadata_discovery",
+      ],
+    });
+
+    expect(result.status).toBe("unresolved");
+    expect(
+      result.metadata?.metadataDiscoveryClarificationResponse,
+    ).toMatchObject({
+      kind: "clarification_required",
+      reasonCode: "missing_identifier",
+    });
+    expect(
+      JSON.parse(
+        JSON.stringify(result.metadata?.metadataDiscoveryClarificationResponse),
+      ),
+    ).toEqual(result.metadata?.metadataDiscoveryClarificationResponse);
   });
 });

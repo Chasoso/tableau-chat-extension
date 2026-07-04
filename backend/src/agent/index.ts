@@ -161,9 +161,22 @@ export {
   normalizeIntentConfidence,
 } from "./intent";
 export {
+  buildMetadataDiscoveryClarificationResponse,
+  buildMetadataDiscoveryClarificationTraceMetadata,
+} from "./metadataDiscoveryClarification";
+export {
   buildMetadataDiscoveryIntentTraceMetadata,
   classifyMetadataDiscoveryIntent,
 } from "./metadataDiscoveryIntent";
+export type {
+  MetadataDiscoveryClarificationAction,
+  MetadataDiscoveryClarificationOption,
+  MetadataDiscoveryClarificationReasonCode,
+  MetadataDiscoveryClarificationResponse,
+  MetadataDiscoveryClarificationResponseKind,
+  MetadataDiscoveryClarificationResumeContract,
+  MetadataDiscoveryClarificationResumeField,
+} from "./metadataDiscoveryClarification";
 export type {
   MetadataDiscoveryAmbiguityState,
   MetadataDiscoveryDecisionKind,
