@@ -1,5 +1,9 @@
 import { createDefaultToolExecutionWrapper } from "./toolExecutionWrapper";
 import { InMemoryToolRegistry } from "./toolRegistry";
+import {
+  createHostedMcpAuthContextAdapter,
+  type HostedMcpAuthContextAdapterResult,
+} from "./hostedMcpAuthContextAdapter";
 import type { JsonObject, JsonValue } from "./types";
 import {
   cloneMetadataJson,
@@ -60,7 +64,10 @@ export type TableauMcpUserContextSummary = {
   email?: string;
   siteId?: string;
   siteName?: string;
+  siteContentUrl?: string;
+  locale?: string;
   source?: "cognito" | "tableau" | "fake" | "unknown";
+  metadata?: JsonObject;
 };
 
 export type TableauMcpAuthContextSummary = {
@@ -71,6 +78,16 @@ export type TableauMcpAuthContextSummary = {
     | "token_reference"
     | "fake"
     | "unknown";
+  state?: "ready" | "missing" | "expired" | "unknown" | "not_configured";
+  reasonCode?:
+    | "AUTH_REQUIRED"
+    | "AUTH_EXPIRED"
+    | "AUTH_STATE_UNKNOWN"
+    | "HOSTED_AUTH_NOT_CONFIGURED"
+    | "SITE_SETTINGS_DISABLED"
+    | "TOKEN_REFERENCE_MISSING";
+  userActionRequired?: boolean;
+  retryable?: boolean;
   tokenReference?: string;
   scopes?: readonly string[];
   expiresAt?: string;
@@ -185,7 +202,19 @@ export type TableauMetadataToolRuntime = {
 
 export type TableauMetadataExecutionBoundaryOptions = {
   transport?: TableauMcpTransport;
+  hostedTransport?: TableauMcpTransport;
   now?: () => Date;
+};
+
+type TableauMetadataTransportSelection = {
+  requestedTransportKind: TableauMcpTransportKind;
+  selectedTransportKind: TableauMcpTransportKind;
+  hostedFeatureEnabled: boolean;
+  hostedTransportSelected: boolean;
+  noNetworkRequested: boolean;
+  fallbackUsed: boolean;
+  fallbackFrom?: TableauMcpTransportKind;
+  fallbackTo?: TableauMcpTransportKind;
 };
 
 const FAKE_TRANSPORT_WARNING: TableauMetadataWarningSummary = {
@@ -306,11 +335,16 @@ export function createTableauMetadataToolHandlers(
   options: TableauMetadataExecutionBoundaryOptions = {},
 ): Record<string, ToolExecutionHandler> {
   const transport = options.transport ?? createFakeTableauMetadataTransport();
+  const hostedTransport = options.hostedTransport;
   const now = options.now;
 
   return {
     [TABLEAU_METADATA_DESCRIBE_DATASOURCE_TOOL_NAME]:
-      createDescribeDatasourceFakeHandler({ transport, now }),
+      createDescribeDatasourceFakeHandler({
+        transport,
+        hostedTransport,
+        now,
+      }),
     [TABLEAU_METADATA_LIST_FIELDS_TOOL_NAME]: createListFieldsFakeHandler({
       transport,
       now,
@@ -517,16 +551,27 @@ async function executeTableauMetadataToolViaTransport<
 ): Promise<TableauMetadataNormalizedResult> {
   const transport =
     options.transport ?? createFakeTableauMetadataTransport(options);
+  const hostedTransport = options.hostedTransport;
   const now = options.now ?? (() => new Date());
   const startedAt = now();
+  const selection = buildTransportSelection(toolName, executionInput, {
+    fallbackTransport: transport,
+    hostedTransport,
+  });
   const precondition = evaluateTableauMetadataToolPreconditions(
-    buildPreconditionInput(executionInput, toolName, normalizedInput),
+    buildPreconditionInput(
+      executionInput,
+      toolName,
+      normalizedInput,
+      selection,
+    ),
   );
   const request = buildTransportRequest(
     toolName,
     normalizedInput,
     executionInput,
     precondition,
+    selection,
   );
   const fallbackOutput = successBuilder(normalizedInput, precondition);
 
@@ -535,9 +580,16 @@ async function executeTableauMetadataToolViaTransport<
       failedBuilder(normalizedInput, precondition),
       buildExecutionMetadata({
         request,
-        transportKind: getRequestedTransportKind(executionInput),
+        requestedTransportKind: selection.requestedTransportKind,
+        selectedTransportKind: selection.selectedTransportKind,
+        transportKind: selection.selectedTransportKind,
         transportStatus: "failed",
         preconditionStatus: precondition.status,
+        hostedFeatureEnabled: selection.hostedFeatureEnabled,
+        noNetworkRequested: selection.noNetworkRequested,
+        fallbackUsed: selection.fallbackUsed,
+        fallbackFrom: selection.fallbackFrom,
+        fallbackTo: selection.fallbackTo,
         startedAt: startedAt.toISOString(),
         completedAt: startedAt.toISOString(),
         durationMs: 0,
@@ -558,7 +610,10 @@ async function executeTableauMetadataToolViaTransport<
   }
 
   try {
-    const transportResult = await transport.call(request);
+    const activeTransport = selection.hostedTransportSelected
+      ? (hostedTransport ?? transport)
+      : transport;
+    const transportResult = await activeTransport.call(request);
     const completedAt = now();
     const enrichedFallback =
       transportResult.status === "success" ||
@@ -567,9 +622,15 @@ async function executeTableauMetadataToolViaTransport<
             fallbackOutput,
             buildExecutionMetadata({
               request,
+              requestedTransportKind: selection.requestedTransportKind,
+              selectedTransportKind: selection.selectedTransportKind,
               transportKind: transportResult.transportKind,
               transportStatus: transportResult.status,
               preconditionStatus: precondition.status,
+              hostedFeatureEnabled: selection.hostedFeatureEnabled,
+              fallbackUsed: selection.fallbackUsed,
+              fallbackFrom: selection.fallbackFrom,
+              fallbackTo: selection.fallbackTo,
               startedAt:
                 transportResult.trace?.startedAt ?? startedAt.toISOString(),
               completedAt:
@@ -587,9 +648,15 @@ async function executeTableauMetadataToolViaTransport<
             failedBuilder(normalizedInput, precondition),
             buildExecutionMetadata({
               request,
+              requestedTransportKind: selection.requestedTransportKind,
+              selectedTransportKind: selection.selectedTransportKind,
               transportKind: transportResult.transportKind,
               transportStatus: transportResult.status,
               preconditionStatus: precondition.status,
+              hostedFeatureEnabled: selection.hostedFeatureEnabled,
+              fallbackUsed: selection.fallbackUsed,
+              fallbackFrom: selection.fallbackFrom,
+              fallbackTo: selection.fallbackTo,
               startedAt:
                 transportResult.trace?.startedAt ?? startedAt.toISOString(),
               completedAt:
@@ -622,7 +689,7 @@ async function executeTableauMetadataToolViaTransport<
     const completedAt = now();
     const transportResult: TableauMcpTransportResult = {
       requestId: request.requestId,
-      transportKind: getRequestedTransportKind(executionInput),
+      transportKind: selection.selectedTransportKind,
       status: "failed",
       toolName,
       error: normalizeThrowableToTransportError(error),
@@ -632,7 +699,7 @@ async function executeTableauMetadataToolViaTransport<
         startedAt: startedAt.toISOString(),
         completedAt: completedAt.toISOString(),
         durationMs: Math.max(0, completedAt.getTime() - startedAt.getTime()),
-        transportKind: getRequestedTransportKind(executionInput),
+        transportKind: selection.selectedTransportKind,
         toolName,
       },
       timing: {
@@ -648,9 +715,16 @@ async function executeTableauMetadataToolViaTransport<
       failedBuilder(normalizedInput, precondition),
       buildExecutionMetadata({
         request,
-        transportKind: transportResult.transportKind,
+        requestedTransportKind: selection.requestedTransportKind,
+        selectedTransportKind: selection.selectedTransportKind,
+        transportKind: selection.selectedTransportKind,
         transportStatus: transportResult.status,
         preconditionStatus: precondition.status,
+        hostedFeatureEnabled: selection.hostedFeatureEnabled,
+        noNetworkRequested: selection.noNetworkRequested,
+        fallbackUsed: selection.fallbackUsed,
+        fallbackFrom: selection.fallbackFrom,
+        fallbackTo: selection.fallbackTo,
         startedAt: startedAt.toISOString(),
         completedAt: completedAt.toISOString(),
         durationMs: Math.max(0, completedAt.getTime() - startedAt.getTime()),
@@ -680,6 +754,7 @@ function buildTransportRequest<
   normalizedInput: TInput,
   executionInput: ToolExecutionInput,
   precondition: TableauMetadataPreconditionResult,
+  selection: TableauMetadataTransportSelection,
 ): TableauMcpTransportRequest {
   const context = normalizeToolContext(executionInput);
   const contextualPrecondition =
@@ -692,7 +767,13 @@ function buildTransportRequest<
     readString(executionInput.traceMetadata?.correlationId);
   const agentRunId =
     readString(context?.tableauMetadataAgentRunId) ?? executionInput.agentRunId;
-  const transportKind = getRequestedTransportKind(executionInput);
+  const hostedAuth = buildHostedTransportAuthContext({
+    requestId,
+    correlationId,
+    agentRunId,
+    contextualPrecondition,
+  });
+  const transportKind = selection.selectedTransportKind;
 
   return {
     requestId,
@@ -704,12 +785,8 @@ function buildTransportRequest<
       5_000,
     correlationId,
     agentRunId,
-    userContext: buildTransportUserContext(
-      contextualPrecondition?.authenticatedTableauContext,
-    ),
-    authContext: buildTransportAuthContext(
-      contextualPrecondition?.authenticatedTableauContext,
-    ),
+    userContext: hostedAuth.transportUserContext,
+    authContext: hostedAuth.transportAuthContext,
     trace: {
       correlationId,
       agentRunId,
@@ -717,19 +794,67 @@ function buildTransportRequest<
       metadata: buildJsonObjectFromPairs([
         ["source", "tableau_metadata_execution_boundary"],
         ["transportKind", transportKind],
+        ["hostedFeatureEnabled", selection.hostedFeatureEnabled],
+        ["hostedTransportSelected", selection.hostedTransportSelected],
+        ["noNetworkRequested", selection.noNetworkRequested],
+        ["fallbackUsed", selection.fallbackUsed],
+        ...(selection.fallbackFrom
+          ? [["fallbackFrom", selection.fallbackFrom] as const]
+          : []),
+        ...(selection.fallbackTo
+          ? [["fallbackTo", selection.fallbackTo] as const]
+          : []),
         ["preconditionStatus", precondition.status],
+        ["hostedAuthState", hostedAuth.traceSummary.authState],
+        ["hostedAuthMode", hostedAuth.traceSummary.authMode],
+        ...(hostedAuth.traceSummary.reasonCode
+          ? [
+              [
+                "hostedAuthReasonCode",
+                hostedAuth.traceSummary.reasonCode,
+              ] as const,
+            ]
+          : []),
+        [
+          "hostedTokenReferenceMasked",
+          hostedAuth.traceSummary.tokenReferenceMasked,
+        ],
       ]),
     },
     metadata: buildJsonObjectFromPairs([
       ["source", "tableau_metadata_execution_boundary"],
       ["transportKind", transportKind],
+      ["requestedTransportKind", selection.requestedTransportKind],
       ["preconditionStatus", precondition.status],
-      ["selectedTransportKind", transportKind],
-      ["requestedTransportKind", transportKind],
+      ["selectedTransportKind", selection.selectedTransportKind],
+      ["hostedFeatureEnabled", selection.hostedFeatureEnabled],
+      ["hostedTransportSelected", selection.hostedTransportSelected],
+      ["noNetworkRequested", selection.noNetworkRequested],
+      ["fallbackUsed", selection.fallbackUsed],
+      ...(selection.fallbackFrom
+        ? [["fallbackFrom", selection.fallbackFrom] as const]
+        : []),
+      ...(selection.fallbackTo
+        ? [["fallbackTo", selection.fallbackTo] as const]
+        : []),
       [
         "noNetwork",
         contextualPrecondition?.transportConfig?.noNetwork === true ||
-          transportKind === "fake",
+          selection.selectedTransportKind === "fake",
+      ],
+      ["hostedAuthState", hostedAuth.traceSummary.authState],
+      ["hostedAuthMode", hostedAuth.traceSummary.authMode],
+      ...(hostedAuth.traceSummary.reasonCode
+        ? [
+            [
+              "hostedAuthReasonCode",
+              hostedAuth.traceSummary.reasonCode,
+            ] as const,
+          ]
+        : []),
+      [
+        "hostedTokenReferenceMasked",
+        hostedAuth.traceSummary.tokenReferenceMasked,
       ],
     ]),
   };
@@ -737,9 +862,16 @@ function buildTransportRequest<
 
 function buildExecutionMetadata(args: {
   request: TableauMcpTransportRequest;
+  requestedTransportKind?: TableauMcpTransportKind;
+  selectedTransportKind?: TableauMcpTransportKind;
   transportKind: TableauMcpTransportKind;
   transportStatus: TableauMcpTransportStatus;
   preconditionStatus: TableauMetadataPreconditionResult["status"];
+  hostedFeatureEnabled?: boolean;
+  fallbackUsed?: boolean;
+  noNetworkRequested?: boolean;
+  fallbackFrom?: TableauMcpTransportKind;
+  fallbackTo?: TableauMcpTransportKind;
   startedAt: string;
   completedAt: string;
   durationMs: number;
@@ -758,9 +890,18 @@ function buildExecutionMetadata(args: {
     ["toolName", args.request.toolName],
     ["correlationId", args.request.correlationId],
     ["agentRunId", args.request.agentRunId],
+    ["requestedTransportKind", args.requestedTransportKind],
+    ["selectedTransportKind", args.selectedTransportKind],
     ["transportKind", args.transportKind],
     ["transportStatus", args.transportStatus],
     ["preconditionStatus", args.preconditionStatus],
+    ["hostedFeatureEnabled", args.hostedFeatureEnabled],
+    ["noNetworkRequested", args.noNetworkRequested],
+    ["fallbackUsed", args.fallbackUsed],
+    ...(args.fallbackFrom
+      ? [["fallbackFrom", args.fallbackFrom] as const]
+      : []),
+    ...(args.fallbackTo ? [["fallbackTo", args.fallbackTo] as const] : []),
     ["startedAt", args.startedAt],
     ["completedAt", args.completedAt],
     ["durationMs", args.durationMs],
@@ -847,52 +988,98 @@ function dedupeWarnings(
   return deduped;
 }
 
-function buildTransportUserContext(
-  context:
-    | TableauMetadataPreconditionInput["authenticatedTableauContext"]
-    | undefined,
-): TableauMcpUserContextSummary | undefined {
-  if (!context) {
-    return undefined;
-  }
-
-  return {
-    userId: context.userId,
-    tableauUserId: context.tableauUserId,
-    email: context.email,
-    siteId: context.siteId,
-    siteName: context.siteName,
-    source:
-      context.authMode === "fake"
-        ? "fake"
-        : context.authMode === "unknown"
-          ? "unknown"
-          : "tableau",
-  };
+function buildHostedTransportAuthContext(input: {
+  requestId: string;
+  correlationId?: string;
+  agentRunId?: string;
+  contextualPrecondition?: Partial<TableauMetadataPreconditionInput>;
+}): HostedMcpAuthContextAdapterResult {
+  return createHostedMcpAuthContextAdapter({
+    requestId: input.requestId,
+    correlationId: input.correlationId,
+    agentRunId: input.agentRunId,
+    authenticatedUser: input.contextualPrecondition?.authenticatedTableauContext
+      ?.userId
+      ? {
+          userId:
+            input.contextualPrecondition.authenticatedTableauContext.userId,
+          email: input.contextualPrecondition.authenticatedTableauContext.email,
+          tableauSubject:
+            input.contextualPrecondition.authenticatedTableauContext
+              .tableauUserId,
+        }
+      : undefined,
+    authenticatedTableauContext:
+      input.contextualPrecondition?.authenticatedTableauContext,
+    siteSettings: input.contextualPrecondition?.siteSettings,
+    metadata: buildJsonObjectFromPairs([
+      ["source", "tableau_metadata_execution_boundary"],
+      ["requestId", input.requestId],
+      ...(input.correlationId
+        ? [["correlationId", input.correlationId] as const]
+        : []),
+      ...(input.agentRunId ? [["agentRunId", input.agentRunId] as const] : []),
+      [
+        "authContextSource",
+        input.contextualPrecondition?.authenticatedTableauContext
+          ? "contextual_precondition"
+          : "default_fake_context",
+      ],
+    ]),
+  });
 }
 
-function buildTransportAuthContext(
-  context:
-    | TableauMetadataPreconditionInput["authenticatedTableauContext"]
-    | undefined,
-): TableauMcpAuthContextSummary | undefined {
-  if (!context) {
-    return undefined;
-  }
+function buildTransportSelection(
+  toolName: string,
+  executionInput: ToolExecutionInput,
+  options: {
+    fallbackTransport: TableauMcpTransport;
+    hostedTransport?: TableauMcpTransport;
+  },
+): TableauMetadataTransportSelection {
+  const context = normalizeToolContext(executionInput);
+  const contextualPrecondition =
+    readContextualPreconditionInput(executionInput);
+  const requestedTransportKind = getRequestedTransportKind(executionInput);
+  const noNetworkRequested =
+    contextualPrecondition?.transportConfig?.noNetwork === true ||
+    readBoolean(context?.tableauMetadataNoNetwork);
+  const hostedFeatureEnabled = readBoolean(
+    context?.tableauMetadataHostedExecutionEnabled,
+  )
+    ? true
+    : readBoolean(
+          (contextualPrecondition as JsonObject | undefined)
+            ?.tableauMetadataHostedExecutionEnabled,
+        )
+      ? true
+      : readBoolean(
+          contextualPrecondition?.metadata
+            ?.tableauMetadataHostedExecutionEnabled,
+        );
+  const hostedRequested =
+    requestedTransportKind === "hosted" &&
+    toolName === TABLEAU_METADATA_DESCRIBE_DATASOURCE_TOOL_NAME;
+  const hostedTransportSelected =
+    hostedFeatureEnabled &&
+    hostedRequested &&
+    !noNetworkRequested &&
+    options.hostedTransport !== undefined;
+  const selectedTransportKind = hostedTransportSelected
+    ? "hosted"
+    : options.fallbackTransport.kind;
+  const fallbackUsed =
+    requestedTransportKind === "hosted" && !hostedTransportSelected;
 
   return {
-    mode:
-      context.authMode === "direct_trust" ||
-      context.authMode === "oauth_delegated" ||
-      context.authMode === "token_reference" ||
-      context.authMode === "fake"
-        ? context.authMode
-        : "unknown",
-    metadata: buildJsonObjectFromPairs([
-      ["siteId", context.siteId],
-      ["siteName", context.siteName],
-      ["isAuthenticated", context.isAuthenticated],
-    ]),
+    requestedTransportKind,
+    selectedTransportKind,
+    hostedFeatureEnabled,
+    hostedTransportSelected,
+    noNetworkRequested,
+    fallbackUsed,
+    ...(fallbackUsed ? { fallbackFrom: "hosted" as const } : {}),
+    ...(fallbackUsed ? { fallbackTo: options.fallbackTransport.kind } : {}),
   };
 }
 
@@ -903,13 +1090,17 @@ function getRequestedTransportKind(
     readContextualPreconditionInput(executionInput);
   return (
     readTransportKind(
-      normalizeToolContext(executionInput)?.tableauMetadataTransportKind,
+      contextualPrecondition?.transportConfig?.selectedTransportKind,
     ) ??
     readTransportKind(
-      contextualPrecondition?.transportConfig?.selectedTransportKind,
+      normalizeToolContext(executionInput)?.tableauMetadataTransportKind,
     ) ??
     "unknown"
   );
+}
+
+function readBoolean(value: unknown): boolean {
+  return value === true;
 }
 
 function normalizeThrowableToTransportError(
@@ -985,7 +1176,12 @@ function createFakeTransportPreconditionResult(
     },
     metadata: buildJsonObjectFromPairs([
       ["datasourceResolution", datasourceResolution],
-      ["transportKind", request.metadata?.requestedTransportKind ?? "fake"],
+      [
+        "transportKind",
+        request.metadata?.selectedTransportKind ??
+          request.metadata?.requestedTransportKind ??
+          "fake",
+      ],
       ["fakeNoNetwork", true],
     ]),
   };
@@ -1004,7 +1200,8 @@ function buildTransportTraceMetadata(
     startedAt,
     completedAt,
     durationMs,
-    transportKind: request.metadata?.requestedTransportKind as
+    transportKind: (request.metadata?.selectedTransportKind ??
+      request.metadata?.requestedTransportKind) as
       | TableauMcpTransportKind
       | undefined,
     toolName: request.toolName,
@@ -1021,6 +1218,7 @@ function buildPreconditionInput(
   input: ToolExecutionInput,
   toolName: string,
   normalizedInput: TableauDescribeDatasourceInput | TableauListFieldsInput,
+  selection: TableauMetadataTransportSelection,
 ): TableauMetadataPreconditionInput {
   const context = isJsonObject(input.context) ? input.context : undefined;
   const contextualPrecondition = isJsonObject(
@@ -1028,6 +1226,7 @@ function buildPreconditionInput(
   )
     ? (context.tableauMetadataPreconditionInput as Partial<TableauMetadataPreconditionInput>)
     : undefined;
+  const useFakeDefaults = selection.selectedTransportKind === "fake";
 
   return {
     toolName,
@@ -1037,22 +1236,32 @@ function buildPreconditionInput(
       readString(context?.tableauMetadataAgentRunId) ?? input.agentRunId,
     authenticatedTableauContext:
       contextualPrecondition?.authenticatedTableauContext ?? {
-        isAuthenticated: true,
-        authMode: "fake",
-        ...buildJsonObjectFromPairs([
-          ["userId", readString(context?.tableauMetadataUserId)],
-          ["tableauUserId", readString(context?.tableauMetadataTableauUserId)],
-          ["email", readString(context?.tableauMetadataEmail)],
-          ["siteId", readString(context?.tableauMetadataSiteId)],
-          ["siteName", readString(context?.tableauMetadataSiteName)],
-        ]),
+        isAuthenticated: useFakeDefaults,
+        authMode: useFakeDefaults ? "fake" : "unknown",
+        ...(useFakeDefaults
+          ? buildJsonObjectFromPairs([
+              ["userId", readString(context?.tableauMetadataUserId)],
+              [
+                "tableauUserId",
+                readString(context?.tableauMetadataTableauUserId),
+              ],
+              ["email", readString(context?.tableauMetadataEmail)],
+              ["siteId", readString(context?.tableauMetadataSiteId)],
+              ["siteName", readString(context?.tableauMetadataSiteName)],
+            ])
+          : {}),
       },
     siteSettings:
       contextualPrecondition?.siteSettings ??
-      ({
-        status: "not_required_for_fake",
-        source: "fake",
-      } as const),
+      (useFakeDefaults
+        ? ({
+            status: "not_required_for_fake",
+            source: "fake",
+          } as const)
+        : ({
+            status: "unknown",
+            source: "unknown",
+          } as const)),
     identifierResolution: contextualPrecondition?.identifierResolution ?? {
       datasource:
         readResolutionOverride(context?.tableauMetadataDatasourceResolution) ??
@@ -1073,12 +1282,13 @@ function buildPreconditionInput(
       maxItems: 25,
       ...(contextualPrecondition?.budget ?? {}),
     },
-    transportConfig: contextualPrecondition?.transportConfig ?? {
-      selectedTransportKind: readTransportKind(
-        context?.tableauMetadataTransportKind,
-      ),
-      status: "selected",
-      noNetwork: true,
+    transportConfig: {
+      ...(contextualPrecondition?.transportConfig ?? {}),
+      selectedTransportKind: selection.selectedTransportKind,
+      status: contextualPrecondition?.transportConfig?.status ?? "selected",
+      noNetwork:
+        selection.noNetworkRequested ||
+        selection.selectedTransportKind === "fake",
     },
     permission:
       contextualPrecondition?.permission ??

@@ -19,6 +19,7 @@ import type {
   TableauMcpTransportStatus,
   TableauMcpTransportError,
 } from "./tableauMetadataToolRuntime";
+import { normalizeHostedMcpMetadataError } from "./hostedMcpMetadataErrorNormalizer";
 
 export type TableauMetadataNormalizedStatus =
   | "success"
@@ -38,7 +39,15 @@ export type TableauMetadataTraceEvent = {
   agentRunId?: string;
   toolName: string;
   status?: TableauMetadataNormalizedStatus;
+  transportStatus?: TableauMcpTransportStatus;
   transportKind?: TableauMcpTransportKind;
+  requestedTransportKind?: TableauMcpTransportKind;
+  selectedTransportKind?: TableauMcpTransportKind;
+  fallbackUsed?: boolean;
+  fallbackFrom?: TableauMcpTransportKind;
+  fallbackTo?: TableauMcpTransportKind;
+  hostedFeatureEnabled?: boolean;
+  noNetworkRequested?: boolean;
   startedAt?: string;
   completedAt?: string;
   durationMs?: number;
@@ -57,7 +66,15 @@ export type TableauMetadataTraceSummary = {
   agentRunId?: string;
   toolName: string;
   status: TableauMetadataNormalizedStatus;
+  transportStatus?: TableauMcpTransportStatus;
   transportKind?: TableauMcpTransportKind;
+  requestedTransportKind?: TableauMcpTransportKind;
+  selectedTransportKind?: TableauMcpTransportKind;
+  fallbackUsed?: boolean;
+  fallbackFrom?: TableauMcpTransportKind;
+  fallbackTo?: TableauMcpTransportKind;
+  hostedFeatureEnabled?: boolean;
+  noNetworkRequested?: boolean;
   startedAt?: string;
   completedAt?: string;
   durationMs?: number;
@@ -147,6 +164,7 @@ export function normalizeTableauMetadataExecutionResult(
     input.precondition,
     normalizedStatus,
     input.transportResult?.status,
+    input,
   );
   const summary = buildSummary(candidateOutput, input.toolName);
   const resolution =
@@ -176,7 +194,7 @@ export function normalizeTableauMetadataExecutionResult(
       input.transportResult?.transportKind ??
       readTransportKind(input.request.metadata?.transportKind) ??
       "unknown",
-    transportStatus: input.transportResult?.status ?? "failed",
+    transportStatus: trace?.transportStatus ?? input.transportResult?.status,
     preconditionStatus: input.precondition.status,
     warningCount: warnings.length,
     errorCode: error?.code,
@@ -187,6 +205,17 @@ export function normalizeTableauMetadataExecutionResult(
     remoteTraceId: input.transportResult?.trace?.remoteTraceId,
     hostedSessionId: input.transportResult?.trace?.hostedSessionId,
     transportTraceMetadata: input.transportResult?.trace?.metadata,
+    requestedTransportKind: trace?.requestedTransportKind,
+    selectedTransportKind: trace?.selectedTransportKind,
+    fallbackUsed: trace?.fallbackUsed,
+    ...(trace?.fallbackFrom ? { fallbackFrom: trace.fallbackFrom } : {}),
+    ...(trace?.fallbackTo ? { fallbackTo: trace.fallbackTo } : {}),
+    ...(trace?.hostedFeatureEnabled !== undefined
+      ? { hostedFeatureEnabled: trace.hostedFeatureEnabled }
+      : {}),
+    ...(trace?.noNetworkRequested !== undefined
+      ? { noNetworkRequested: trace.noNetworkRequested }
+      : {}),
     ...(isJsonObject(candidateOutput.metadata)
       ? sanitizeJsonObject(candidateOutput.metadata)
       : {}),
@@ -244,6 +273,14 @@ function buildTraceEvent(
     toolName: input.toolName,
     status: input.status,
     transportKind: input.transportKind,
+    transportStatus: input.transportStatus,
+    requestedTransportKind: input.requestedTransportKind,
+    selectedTransportKind: input.selectedTransportKind,
+    fallbackUsed: input.fallbackUsed,
+    fallbackFrom: input.fallbackFrom,
+    fallbackTo: input.fallbackTo,
+    hostedFeatureEnabled: input.hostedFeatureEnabled,
+    noNetworkRequested: input.noNetworkRequested,
     startedAt: input.startedAt,
     completedAt: input.completedAt,
     durationMs: input.durationMs,
@@ -279,6 +316,7 @@ function buildTraceSummary(input: {
     (startedAt && completedAt
       ? Math.max(0, Date.parse(completedAt) - Date.parse(startedAt))
       : undefined);
+  const traceTransportContext = buildTraceTransportContext(input.input);
   const eventNames: TableauMetadataTraceEventName[] = [
     "tableau_metadata_tool.started",
     input.status === "success" || input.status === "partial"
@@ -297,10 +335,18 @@ function buildTraceSummary(input: {
     agentRunId: input.input.request.agentRunId,
     toolName: input.input.toolName,
     status: input.status,
+    transportStatus: input.input.transportResult?.status,
     transportKind:
       input.input.transportResult?.transportKind ??
       readTransportKind(input.input.request.metadata?.transportKind) ??
       "unknown",
+    requestedTransportKind: traceTransportContext.requestedTransportKind,
+    selectedTransportKind: traceTransportContext.selectedTransportKind,
+    fallbackUsed: traceTransportContext.fallbackUsed,
+    fallbackFrom: traceTransportContext.fallbackFrom,
+    fallbackTo: traceTransportContext.fallbackTo,
+    hostedFeatureEnabled: traceTransportContext.hostedFeatureEnabled,
+    noNetworkRequested: traceTransportContext.noNetworkRequested,
     startedAt,
     completedAt,
     durationMs,
@@ -323,8 +369,116 @@ function buildTraceSummary(input: {
       preconditionStatus: input.input.precondition.status,
       warningCount: input.warnings.length,
       ...(input.error?.code ? { errorCode: input.error.code } : {}),
+      ...(traceTransportContext.requestedTransportKind
+        ? {
+            requestedTransportKind:
+              traceTransportContext.requestedTransportKind,
+          }
+        : {}),
+      ...(traceTransportContext.selectedTransportKind
+        ? {
+            selectedTransportKind: traceTransportContext.selectedTransportKind,
+          }
+        : {}),
+      ...(traceTransportContext.fallbackUsed !== undefined
+        ? { fallbackUsed: traceTransportContext.fallbackUsed }
+        : {}),
+      ...(traceTransportContext.fallbackFrom
+        ? { fallbackFrom: traceTransportContext.fallbackFrom }
+        : {}),
+      ...(traceTransportContext.fallbackTo
+        ? { fallbackTo: traceTransportContext.fallbackTo }
+        : {}),
+      ...(traceTransportContext.hostedFeatureEnabled !== undefined
+        ? { hostedFeatureEnabled: traceTransportContext.hostedFeatureEnabled }
+        : {}),
+      ...(traceTransportContext.noNetworkRequested !== undefined
+        ? { noNetworkRequested: traceTransportContext.noNetworkRequested }
+        : {}),
     }),
   };
+}
+
+function buildTraceTransportContext(
+  input: TableauMetadataOutputNormalizationInput,
+): {
+  requestedTransportKind?: TableauMcpTransportKind;
+  selectedTransportKind?: TableauMcpTransportKind;
+  fallbackUsed?: boolean;
+  fallbackFrom?: TableauMcpTransportKind;
+  fallbackTo?: TableauMcpTransportKind;
+  hostedFeatureEnabled?: boolean;
+  noNetworkRequested?: boolean;
+} {
+  const requestMetadata = isJsonObject(input.request.metadata)
+    ? input.request.metadata
+    : undefined;
+  const transportMetadata = isJsonObject(input.transportResult?.metadata)
+    ? input.transportResult?.metadata
+    : undefined;
+  const traceMetadata = isJsonObject(input.transportResult?.trace?.metadata)
+    ? input.transportResult?.trace?.metadata
+    : undefined;
+  const metadataSources = [requestMetadata, transportMetadata, traceMetadata];
+
+  return {
+    requestedTransportKind: readTransportKindFromMetadata(
+      metadataSources,
+      "requestedTransportKind",
+    ),
+    selectedTransportKind: readTransportKindFromMetadata(
+      metadataSources,
+      "selectedTransportKind",
+    ),
+    fallbackUsed: readBooleanFromMetadata(metadataSources, "fallbackUsed"),
+    fallbackFrom: readTransportKindFromMetadata(
+      metadataSources,
+      "fallbackFrom",
+    ),
+    fallbackTo: readTransportKindFromMetadata(metadataSources, "fallbackTo"),
+    hostedFeatureEnabled: readBooleanFromMetadata(
+      metadataSources,
+      "hostedFeatureEnabled",
+    ),
+    noNetworkRequested: readBooleanFromMetadata(
+      metadataSources,
+      "noNetworkRequested",
+    ),
+  };
+}
+
+function readTransportKindFromMetadata(
+  metadataSources: readonly (JsonObject | undefined)[],
+  key: string,
+): TableauMcpTransportKind | undefined {
+  for (const metadata of metadataSources) {
+    if (!metadata) {
+      continue;
+    }
+    const candidate = readTransportKind(metadata[key]);
+    if (candidate) {
+      return candidate;
+    }
+  }
+
+  return undefined;
+}
+
+function readBooleanFromMetadata(
+  metadataSources: readonly (JsonObject | undefined)[],
+  key: string,
+): boolean | undefined {
+  for (const metadata of metadataSources) {
+    if (!metadata) {
+      continue;
+    }
+    const value = metadata[key];
+    if (typeof value === "boolean") {
+      return value;
+    }
+  }
+
+  return undefined;
 }
 
 function buildSummary(
@@ -444,6 +598,7 @@ function normalizeError(
   precondition: TableauMetadataPreconditionResult,
   status: TableauMetadataNormalizedStatus,
   transportStatus: TableauMcpTransportStatus | undefined,
+  input: TableauMetadataOutputNormalizationInput,
 ): TableauMetadataErrorSummary | undefined {
   if (!error) {
     if (status === "blocked") {
@@ -481,15 +636,49 @@ function normalizeError(
     return undefined;
   }
 
+  const hostedErrorSummary = isHostedTransportKind(
+    input.transportResult?.transportKind,
+  )
+    ? normalizeHostedMcpMetadataError({
+        toolName: input.toolName,
+        operation:
+          input.toolName === "tableau.metadata.listFields"
+            ? "listFields"
+            : input.toolName === "tableau.metadata.describeDatasource"
+              ? "describeDatasource"
+              : "unknown",
+        transportKind: input.transportResult?.transportKind,
+        transportStatus,
+        code: error.code,
+        retryable: error.retryable,
+        userActionRequired: error.userActionRequired,
+        target: "target" in error ? error.target : undefined,
+        requestId: input.request.requestId,
+        correlationId: input.request.correlationId,
+        agentRunId: input.request.agentRunId,
+        metadata: error.metadata,
+      })
+    : undefined;
+
   return {
-    code: normalizeErrorCode(error.code),
-    message: error.message,
-    ...(error.retryable !== undefined ? { retryable: error.retryable } : {}),
-    ...(error.userActionRequired !== undefined
-      ? { userActionRequired: error.userActionRequired }
-      : {}),
-    ...("target" in error && error.target ? { target: error.target } : {}),
-    ...(error.metadata ? { metadata: sanitizeJsonObject(error.metadata) } : {}),
+    ...(hostedErrorSummary
+      ? hostedErrorSummary
+      : {
+          code: normalizeErrorCode(error.code),
+          message: error.message,
+          ...(error.retryable !== undefined
+            ? { retryable: error.retryable }
+            : {}),
+          ...(error.userActionRequired !== undefined
+            ? { userActionRequired: error.userActionRequired }
+            : {}),
+          ...("target" in error && error.target
+            ? { target: error.target }
+            : {}),
+          ...(error.metadata
+            ? { metadata: sanitizeJsonObject(error.metadata) }
+            : {}),
+        }),
   };
 }
 
@@ -665,16 +854,24 @@ function normalizeErrorCode(
     case "AMBIGUOUS_IDENTIFIER":
     case "NOT_FOUND":
     case "AUTH_REQUIRED":
+    case "AUTH_EXPIRED":
     case "PERMISSION_DENIED":
     case "SITE_SETTINGS_DISABLED":
     case "TRANSPORT_NOT_CONFIGURED":
+    case "NETWORK_ERROR":
+    case "MCP_PROTOCOL_ERROR":
+    case "TOOL_NOT_FOUND":
+    case "REMOTE_SERVER_ERROR":
     case "TRANSPORT_FAILED":
     case "TIMEOUT":
     case "UNKNOWN_ERROR":
       return code;
     default:
       switch (code) {
+        case "INVALID_TOOL_INPUT":
+          return "INVALID_INPUT";
         case "AUTH_EXPIRED":
+          return "AUTH_EXPIRED";
         case "AUTH_REQUIRED":
           return "AUTH_REQUIRED";
         case "PERMISSION_DENIED":
@@ -682,17 +879,26 @@ function normalizeErrorCode(
         case "SITE_SETTINGS_DISABLED":
           return "SITE_SETTINGS_DISABLED";
         case "NETWORK_ERROR":
+          return "NETWORK_ERROR";
         case "MCP_PROTOCOL_ERROR":
+          return "MCP_PROTOCOL_ERROR";
         case "REMOTE_SERVER_ERROR":
+          return "REMOTE_SERVER_ERROR";
+        case "TOOL_NOT_FOUND":
+          return "TOOL_NOT_FOUND";
         case "STDIO_PROCESS_ERROR":
         case "UNSUPPORTED_TRANSPORT":
-        case "INVALID_TOOL_INPUT":
-        case "TOOL_NOT_FOUND":
           return "TRANSPORT_FAILED";
         default:
           return "UNKNOWN_ERROR";
       }
   }
+}
+
+function isHostedTransportKind(
+  transportKind: TableauMcpTransportKind | undefined,
+): transportKind is "hosted" | "remote" {
+  return transportKind === "hosted" || transportKind === "remote";
 }
 
 function readTransportKind(

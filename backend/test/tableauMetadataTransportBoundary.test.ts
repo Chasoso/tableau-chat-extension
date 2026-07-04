@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  type JsonObject,
   createTableauMetadataToolRuntime,
   type TableauMcpTransport,
   type TableauMcpTransportRequest,
@@ -8,9 +9,36 @@ import {
   TABLEAU_METADATA_LIST_FIELDS_TOOL_NAME,
 } from "../src/agent";
 
-function createExecutionContext(overrides: Record<string, unknown> = {}) {
+function createExecutionContext(
+  overrides: Record<string, unknown> = {},
+): JsonObject {
+  const {
+    tableauMetadataTransportKind,
+    tableauMetadataHostedExecutionEnabled,
+    tableauMetadataNoNetwork,
+    tableauMetadataRequestId,
+    tableauMetadataCorrelationId,
+    tableauMetadataAgentRunId,
+    ...preconditionOverrides
+  } = overrides;
+
   return {
-    tableauMetadataTransportKind: "fake",
+    tableauMetadataTransportKind: tableauMetadataTransportKind ?? "fake",
+    ...(tableauMetadataHostedExecutionEnabled !== undefined
+      ? { tableauMetadataHostedExecutionEnabled }
+      : {}),
+    ...(tableauMetadataNoNetwork !== undefined
+      ? { tableauMetadataNoNetwork }
+      : {}),
+    ...(tableauMetadataRequestId !== undefined
+      ? { tableauMetadataRequestId }
+      : {}),
+    ...(tableauMetadataCorrelationId !== undefined
+      ? { tableauMetadataCorrelationId }
+      : {}),
+    ...(tableauMetadataAgentRunId !== undefined
+      ? { tableauMetadataAgentRunId }
+      : {}),
     tableauMetadataPreconditionInput: {
       authenticatedTableauContext: {
         isAuthenticated: true,
@@ -28,9 +56,9 @@ function createExecutionContext(overrides: Record<string, unknown> = {}) {
       permission: {
         status: "verified" as const,
       },
-      ...overrides,
+      ...preconditionOverrides,
     },
-  };
+  } as unknown as JsonObject;
 }
 
 function createStubTransport(
@@ -499,6 +527,561 @@ describe("Tableau metadata transport-aware execution boundary", () => {
             "tableau_metadata_tool.failed",
           ]),
         }),
+      }),
+    );
+  });
+
+  it("routes describeDatasource through hosted transport behind the feature flag", async () => {
+    const hostedCalls: TableauMcpTransportRequest[] = [];
+    const fallbackCalls: TableauMcpTransportRequest[] = [];
+    const hostedTransport = createStubTransport((request) => {
+      return {
+        requestId: request.requestId,
+        transportKind: "hosted",
+        status: "success",
+        toolName: request.toolName,
+        data: {
+          status: "success" as const,
+          summary: {
+            datasourceId: "hosted-datasource",
+            datasourceName: "Hosted Datasource",
+            connectionType: "hosted",
+            fieldCount: 3,
+            visibleFieldCount: 3,
+            hiddenFieldCount: 0,
+          },
+          resolution: {
+            status: "resolved" as const,
+            target: "datasource" as const,
+            selectedId: "hosted-datasource",
+            selectedName: "Hosted Datasource",
+          },
+          metadata: {
+            source: "hosted-test",
+          },
+        },
+        trace: {
+          correlationId: request.correlationId,
+          agentRunId: request.agentRunId,
+          transportEventId: "hosted-event-1",
+          hostedSessionId: "hosted-session-1",
+          startedAt: "2026-07-03T00:00:00.000Z",
+          completedAt: "2026-07-03T00:00:00.100Z",
+          durationMs: 100,
+          transportKind: "hosted",
+          toolName: request.toolName,
+        },
+        timing: {
+          startedAt: "2026-07-03T00:00:00.000Z",
+          completedAt: "2026-07-03T00:00:00.100Z",
+          durationMs: 100,
+          timeoutMs: request.timeoutMs,
+          timedOut: false,
+        },
+      };
+    }, hostedCalls);
+    const fallbackTransport = createStubTransport((request) => {
+      return {
+        requestId: request.requestId,
+        transportKind: "fake",
+        status: "success",
+        toolName: request.toolName,
+        data: {
+          status: "success" as const,
+          summary: {
+            datasourceId: "fallback-datasource",
+            datasourceName: "Fallback Datasource",
+            connectionType: "fake",
+            fieldCount: 1,
+            visibleFieldCount: 1,
+            hiddenFieldCount: 0,
+          },
+          resolution: {
+            status: "resolved" as const,
+            target: "datasource" as const,
+            selectedId: "fallback-datasource",
+            selectedName: "Fallback Datasource",
+          },
+          metadata: {
+            source: "fallback-test",
+          },
+        },
+      };
+    }, fallbackCalls);
+
+    const runtime = createTableauMetadataToolRuntime({
+      transport: fallbackTransport,
+      hostedTransport,
+    });
+
+    const result = await runtime.executionWrapper.execute({
+      toolName: TABLEAU_METADATA_DESCRIBE_DATASOURCE_TOOL_NAME,
+      input: {
+        datasource: {
+          datasourceId: "hosted-datasource",
+        },
+      },
+      context: createExecutionContext({
+        tableauMetadataHostedExecutionEnabled: true,
+        tableauMetadataTransportKind: "hosted" as const,
+        authenticatedTableauContext: {
+          isAuthenticated: true,
+          authMode: "oauth_delegated" as const,
+          userId: "user-hosted",
+          tableauUserId: "tableau-hosted",
+          email: "hosted@example.com",
+          siteId: "site-hosted",
+          siteName: "Hosted Site",
+          siteContentUrl: "hosted-site",
+        },
+        siteSettings: {
+          status: "enabled" as const,
+          source: "tableau_rest_api" as const,
+        },
+        transportConfig: {
+          selectedTransportKind: "hosted" as const,
+          status: "selected" as const,
+          noNetwork: false,
+        },
+        permission: {
+          status: "verified" as const,
+        },
+      }),
+      traceMetadata: {
+        correlationId: "corr-hosted",
+      },
+    });
+
+    expect(result.status).toBe("completed");
+    expect(hostedCalls).toHaveLength(1);
+    expect(fallbackCalls).toHaveLength(0);
+    expect(hostedCalls[0].authContext).toEqual(
+      expect.objectContaining({
+        state: "ready",
+        mode: "oauth_delegated",
+      }),
+    );
+    expect(hostedCalls[0].userContext).toEqual(
+      expect.objectContaining({
+        userId: "user-hosted",
+        tableauUserId: "tableau-hosted",
+        siteContentUrl: "hosted-site",
+      }),
+    );
+    expect(hostedCalls[0].metadata).toEqual(
+      expect.objectContaining({
+        requestedTransportKind: "hosted",
+        selectedTransportKind: "hosted",
+        hostedFeatureEnabled: true,
+        hostedTransportSelected: true,
+        noNetworkRequested: false,
+      }),
+    );
+    expect(result.output).toEqual(
+      expect.objectContaining({
+        status: "success",
+        summary: expect.objectContaining({
+          datasource: expect.objectContaining({
+            datasourceId: "hosted-datasource",
+            datasourceName: "Hosted Datasource",
+          }),
+        }),
+      }),
+    );
+    const output = result.output as { trace?: Record<string, unknown> };
+    expect(output.trace).toEqual(
+      expect.objectContaining({
+        transportKind: "hosted",
+        transportStatus: "success",
+        requestedTransportKind: "hosted",
+        selectedTransportKind: "hosted",
+        fallbackUsed: false,
+        hostedFeatureEnabled: true,
+        noNetworkRequested: false,
+      }),
+    );
+    expect(JSON.stringify(result.output)).not.toContain("accessToken");
+    expect(JSON.stringify(result.output)).not.toContain("refreshToken");
+    expect(JSON.stringify(hostedCalls[0])).not.toContain("accessToken");
+    expect(JSON.stringify(hostedCalls[0])).not.toContain("refreshToken");
+    expect(JSON.stringify(result.output)).not.toContain("rawMcpResult");
+  });
+
+  it("blocks hosted execution safely when authentication is missing", async () => {
+    const hostedCalls: TableauMcpTransportRequest[] = [];
+    const fallbackCalls: TableauMcpTransportRequest[] = [];
+    const hostedTransport = createStubTransport(
+      (request) => ({
+        requestId: request.requestId,
+        transportKind: "hosted",
+        status: "success",
+        toolName: request.toolName,
+        data: {},
+      }),
+      hostedCalls,
+    );
+    const fallbackTransport = createStubTransport(
+      (request) => ({
+        requestId: request.requestId,
+        transportKind: "fake",
+        status: "success",
+        toolName: request.toolName,
+        data: {
+          status: "success" as const,
+          summary: {
+            datasourceId: "missing-auth-datasource",
+            datasourceName: "Missing Auth Datasource",
+            connectionType: "fake",
+            fieldCount: 0,
+            visibleFieldCount: 0,
+            hiddenFieldCount: 0,
+          },
+          resolution: {
+            status: "resolved" as const,
+            target: "datasource" as const,
+            selectedId: "missing-auth-datasource",
+            selectedName: "Missing Auth Datasource",
+          },
+        },
+      }),
+      fallbackCalls,
+    );
+
+    const runtime = createTableauMetadataToolRuntime({
+      transport: fallbackTransport,
+      hostedTransport,
+    });
+
+    const result = await runtime.executionWrapper.execute({
+      toolName: TABLEAU_METADATA_DESCRIBE_DATASOURCE_TOOL_NAME,
+      input: {
+        datasource: {
+          datasourceId: "missing-auth-datasource",
+        },
+      },
+      context: createExecutionContext({
+        tableauMetadataHostedExecutionEnabled: true,
+        tableauMetadataTransportKind: "hosted" as const,
+        siteSettings: {
+          status: "enabled" as const,
+          source: "tableau_rest_api" as const,
+        },
+        transportConfig: {
+          selectedTransportKind: "hosted" as const,
+          status: "selected" as const,
+          noNetwork: false,
+        },
+        permission: {
+          status: "verified" as const,
+        },
+        authenticatedTableauContext: {
+          isAuthenticated: false,
+          authMode: "unknown",
+        },
+      }),
+    });
+
+    expect(result.status).toBe("completed");
+    expect(hostedCalls).toHaveLength(0);
+    expect(fallbackCalls).toHaveLength(0);
+    expect(result.output).toEqual(
+      expect.objectContaining({
+        status: "blocked",
+        error: expect.objectContaining({
+          code: "AUTH_REQUIRED",
+        }),
+      }),
+    );
+  });
+
+  it("falls back when the hosted feature flag is off", async () => {
+    const hostedCalls: TableauMcpTransportRequest[] = [];
+    const fallbackCalls: TableauMcpTransportRequest[] = [];
+    const hostedTransport = createStubTransport((request) => {
+      return {
+        requestId: request.requestId,
+        transportKind: "hosted",
+        status: "success",
+        toolName: request.toolName,
+        data: {},
+      };
+    }, hostedCalls);
+    const fallbackTransport = createStubTransport((request) => {
+      return {
+        requestId: request.requestId,
+        transportKind: "fake",
+        status: "success",
+        toolName: request.toolName,
+        data: {
+          status: "success" as const,
+          summary: {
+            datasourceId: "fallback-datasource",
+            datasourceName: "Fallback Datasource",
+            connectionType: "fake",
+            fieldCount: 2,
+            visibleFieldCount: 2,
+            hiddenFieldCount: 0,
+          },
+          resolution: {
+            status: "resolved" as const,
+            target: "datasource" as const,
+            selectedId: "fallback-datasource",
+            selectedName: "Fallback Datasource",
+          },
+        },
+      };
+    }, fallbackCalls);
+
+    const runtime = createTableauMetadataToolRuntime({
+      transport: fallbackTransport,
+      hostedTransport,
+    });
+    const result = await runtime.executionWrapper.execute({
+      toolName: TABLEAU_METADATA_DESCRIBE_DATASOURCE_TOOL_NAME,
+      input: {
+        datasource: {
+          datasourceId: "fallback-datasource",
+        },
+      },
+      context: createExecutionContext({
+        tableauMetadataHostedExecutionEnabled: false,
+        tableauMetadataTransportKind: "hosted" as const,
+        authenticatedTableauContext: {
+          isAuthenticated: true,
+          authMode: "oauth_delegated" as const,
+        },
+        siteSettings: {
+          status: "enabled" as const,
+          source: "tableau_rest_api" as const,
+        },
+        transportConfig: {
+          selectedTransportKind: "hosted" as const,
+          status: "selected" as const,
+          noNetwork: false,
+        },
+        permission: {
+          status: "verified" as const,
+        },
+      }),
+    });
+
+    expect(result.status).toBe("completed");
+    expect(hostedCalls).toHaveLength(0);
+    expect(fallbackCalls).toHaveLength(1);
+    expect(fallbackCalls[0].metadata).toEqual(
+      expect.objectContaining({
+        requestedTransportKind: "hosted",
+        selectedTransportKind: "fake",
+        hostedFeatureEnabled: false,
+        hostedTransportSelected: false,
+        fallbackUsed: true,
+      }),
+    );
+    expect(result.output).toEqual(
+      expect.objectContaining({
+        status: "success",
+      }),
+    );
+    const output = result.output as { trace?: Record<string, unknown> };
+    expect(output.trace).toEqual(
+      expect.objectContaining({
+        transportKind: "fake",
+        transportStatus: "success",
+        requestedTransportKind: "hosted",
+        selectedTransportKind: "fake",
+        fallbackUsed: true,
+        fallbackFrom: "hosted",
+        fallbackTo: "fake",
+      }),
+    );
+  });
+
+  it("keeps hosted execution off when no-network is requested", async () => {
+    const hostedCalls: TableauMcpTransportRequest[] = [];
+    const fallbackCalls: TableauMcpTransportRequest[] = [];
+    const hostedTransport = createStubTransport((request) => {
+      return {
+        requestId: request.requestId,
+        transportKind: "hosted",
+        status: "success",
+        toolName: request.toolName,
+        data: {},
+      };
+    }, hostedCalls);
+    const fallbackTransport = createStubTransport((request) => {
+      return {
+        requestId: request.requestId,
+        transportKind: "fake",
+        status: "success",
+        toolName: request.toolName,
+        data: {
+          status: "success" as const,
+          summary: {
+            datasourceId: "ci-datasource",
+            datasourceName: "CI Datasource",
+            connectionType: "fake",
+            fieldCount: 1,
+            visibleFieldCount: 1,
+            hiddenFieldCount: 0,
+          },
+          resolution: {
+            status: "resolved" as const,
+            target: "datasource" as const,
+            selectedId: "ci-datasource",
+            selectedName: "CI Datasource",
+          },
+        },
+      };
+    }, fallbackCalls);
+
+    const runtime = createTableauMetadataToolRuntime({
+      transport: fallbackTransport,
+      hostedTransport,
+    });
+    const result = await runtime.executionWrapper.execute({
+      toolName: TABLEAU_METADATA_DESCRIBE_DATASOURCE_TOOL_NAME,
+      input: {
+        datasource: {
+          datasourceId: "ci-datasource",
+        },
+      },
+      context: createExecutionContext({
+        tableauMetadataHostedExecutionEnabled: true,
+        tableauMetadataTransportKind: "hosted" as const,
+        authenticatedTableauContext: {
+          isAuthenticated: true,
+          authMode: "oauth_delegated" as const,
+        },
+        siteSettings: {
+          status: "enabled" as const,
+          source: "tableau_rest_api" as const,
+        },
+        transportConfig: {
+          selectedTransportKind: "hosted" as const,
+          status: "selected" as const,
+          noNetwork: true,
+        },
+        permission: {
+          status: "verified" as const,
+        },
+      }),
+    });
+
+    expect(result.status).toBe("completed");
+    expect(hostedCalls).toHaveLength(0);
+    expect(fallbackCalls).toHaveLength(1);
+    expect(fallbackCalls[0].metadata).toEqual(
+      expect.objectContaining({
+        requestedTransportKind: "hosted",
+        selectedTransportKind: "fake",
+        noNetworkRequested: true,
+        hostedFeatureEnabled: true,
+        hostedTransportSelected: false,
+        fallbackUsed: true,
+      }),
+    );
+    expect(result.output).toEqual(
+      expect.objectContaining({
+        status: "success",
+      }),
+    );
+    const output = result.output as { trace?: Record<string, unknown> };
+    expect(output.trace).toEqual(
+      expect.objectContaining({
+        transportKind: "fake",
+        transportStatus: "success",
+        requestedTransportKind: "hosted",
+        selectedTransportKind: "fake",
+        fallbackUsed: true,
+        fallbackFrom: "hosted",
+        fallbackTo: "fake",
+        noNetworkRequested: true,
+      }),
+    );
+  });
+
+  it("does not route listFields to hosted transport", async () => {
+    const hostedCalls: TableauMcpTransportRequest[] = [];
+    const fallbackCalls: TableauMcpTransportRequest[] = [];
+    const hostedTransport = createStubTransport((request) => {
+      return {
+        requestId: request.requestId,
+        transportKind: "hosted",
+        status: "success",
+        toolName: request.toolName,
+        data: {},
+      };
+    }, hostedCalls);
+    const fallbackTransport = createStubTransport((request) => {
+      return {
+        requestId: request.requestId,
+        transportKind: "fake",
+        status: "success",
+        toolName: request.toolName,
+        data: {
+          status: "success" as const,
+          datasource: {
+            datasourceId: "list-fields-datasource",
+            datasourceName: "List Fields Datasource",
+          },
+          fields: [],
+          fieldCountSummary: {
+            returned: 0,
+            totalAvailable: 0,
+            visibleFields: 0,
+            hiddenFields: 0,
+          },
+        },
+      };
+    }, fallbackCalls);
+
+    const runtime = createTableauMetadataToolRuntime({
+      transport: fallbackTransport,
+      hostedTransport,
+    });
+    const result = await runtime.executionWrapper.execute({
+      toolName: TABLEAU_METADATA_LIST_FIELDS_TOOL_NAME,
+      input: {
+        datasource: {
+          datasourceId: "list-fields-datasource",
+        },
+      },
+      context: createExecutionContext({
+        tableauMetadataHostedExecutionEnabled: true,
+        tableauMetadataTransportKind: "hosted" as const,
+        authenticatedTableauContext: {
+          isAuthenticated: true,
+          authMode: "oauth_delegated" as const,
+        },
+        siteSettings: {
+          status: "enabled" as const,
+          source: "tableau_rest_api" as const,
+        },
+        transportConfig: {
+          selectedTransportKind: "hosted" as const,
+          status: "selected" as const,
+          noNetwork: false,
+        },
+        permission: {
+          status: "verified" as const,
+        },
+      }),
+    });
+
+    expect(result.status).toBe("completed");
+    expect(hostedCalls).toHaveLength(0);
+    expect(fallbackCalls).toHaveLength(1);
+    expect(fallbackCalls[0].metadata).toEqual(
+      expect.objectContaining({
+        requestedTransportKind: "hosted",
+        selectedTransportKind: "fake",
+        hostedFeatureEnabled: true,
+        hostedTransportSelected: false,
+      }),
+    );
+    expect(result.output).toEqual(
+      expect.objectContaining({
+        status: "success",
       }),
     );
   });

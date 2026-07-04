@@ -280,6 +280,47 @@ export {
   createTableauMetadataToolRuntime,
 } from "./tableauMetadataToolRuntime";
 export {
+  createHostedTableauMcpTransport,
+  HostedTableauMcpTransport,
+} from "./hostedTableauMcpTransport";
+export type {
+  HostedMcpRequestClient,
+  HostedMcpRequestClientResult,
+  HostedTableauMcpTransportAuthMode,
+  HostedTableauMcpTransportConfig,
+  HostedTableauMcpTransportDependencies,
+  HostedTableauMcpTransportLogger,
+  HostedTableauMcpTransportProtocol,
+} from "./hostedTableauMcpTransport";
+export {
+  createHostedMcpAuthContextAdapter,
+  maskTokenReferenceForTrace,
+  toTableauMcpTransportAuthContext,
+  toTableauMcpTransportUserContext,
+} from "./hostedMcpAuthContextAdapter";
+export {
+  normalizeHostedMcpMetadataError,
+  normalizeHostedMcpMetadataErrorCode,
+  safeHostedMetadataErrorMessage,
+} from "./hostedMcpMetadataErrorNormalizer";
+export type {
+  HostedMcpAuthContextAdapterInput,
+  HostedMcpAuthContextAdapterResult,
+  HostedMcpAuthContextError,
+  HostedMcpAuthContextWarning,
+  HostedMcpAuthMode,
+  HostedMcpAuthReasonCode,
+  HostedMcpAuthState,
+  HostedMcpAuthTraceSummary,
+  HostedMcpSafeAuthContext,
+  HostedMcpTokenReference,
+  HostedMcpUserContextSummary,
+} from "./hostedMcpAuthContextAdapter";
+export type {
+  HostedMcpMetadataErrorInput,
+  HostedMcpMetadataErrorOperation,
+} from "./hostedMcpMetadataErrorNormalizer";
+export {
   buildBudgetTraceMetadata,
   buildExecutionTraceMetadata as buildOrchestrationExecutionTraceMetadata,
   buildFallbackTraceMetadata,
