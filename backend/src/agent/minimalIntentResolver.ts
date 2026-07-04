@@ -10,6 +10,10 @@ import {
   type IntentResolver,
 } from "./intent";
 import {
+  buildMetadataDiscoveryClarificationResponse,
+  buildMetadataDiscoveryClarificationTraceMetadata,
+} from "./metadataDiscoveryClarification";
+import {
   buildMetadataDiscoveryIntentTraceMetadata,
   classifyMetadataDiscoveryIntent,
 } from "./metadataDiscoveryIntent";
@@ -473,6 +477,11 @@ function resolveMetadataDiscoveryIntent(input: {
     targetContext: input.input.targetContext,
     metadata: input.input.metadata,
   });
+  const clarificationResponse =
+    buildMetadataDiscoveryClarificationResponse(classification);
+  const clarificationResponseMetadata = clarificationResponse
+    ? buildMetadataDiscoveryClarificationTraceMetadata(clarificationResponse)
+    : undefined;
 
   if (
     classification.kind === "fallback" &&
@@ -494,6 +503,14 @@ function resolveMetadataDiscoveryIntent(input: {
         message: input.input.message,
       }),
       traceMetadata: buildMetadataDiscoveryIntentTraceMetadata(classification),
+      metadata: clarificationResponseMetadata
+        ? {
+            metadataDiscoveryClarificationResponse:
+              clarificationResponseMetadata,
+            metadataDiscoveryClarificationTraceMetadata:
+              clarificationResponseMetadata,
+          }
+        : undefined,
     });
   }
 
@@ -509,10 +526,14 @@ function resolveMetadataDiscoveryIntent(input: {
         message: input.input.message,
       }),
       traceMetadata: buildMetadataDiscoveryIntentTraceMetadata(classification),
-      metadata: {
-        metadataDiscoveryDecision:
-          buildMetadataDiscoveryIntentTraceMetadata(classification),
-      },
+      metadata: clarificationResponseMetadata
+        ? {
+            metadataDiscoveryClarificationResponse:
+              clarificationResponseMetadata,
+            metadataDiscoveryClarificationTraceMetadata:
+              clarificationResponseMetadata,
+          }
+        : undefined,
     });
   }
 
@@ -529,10 +550,14 @@ function resolveMetadataDiscoveryIntent(input: {
         message: input.input.message,
       }),
       traceMetadata: buildMetadataDiscoveryIntentTraceMetadata(classification),
-      metadata: {
-        metadataDiscoveryDecision:
-          buildMetadataDiscoveryIntentTraceMetadata(classification),
-      },
+      metadata: clarificationResponseMetadata
+        ? {
+            metadataDiscoveryClarificationResponse:
+              clarificationResponseMetadata,
+            metadataDiscoveryClarificationTraceMetadata:
+              clarificationResponseMetadata,
+          }
+        : undefined,
     });
   }
 
