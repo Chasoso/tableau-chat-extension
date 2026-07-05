@@ -18,6 +18,8 @@ This directory is reserved for v0.9.0 issue planning references.
 - #188 defines the controlled `listFields` discovery contract, including caps,
   truncation, and permission-aware omission behavior.
 - The contract details live in `docs/v0.9-controlled-listfields-discovery-contract.md`.
+- The v0.9.0 result summary lives in `docs/v0.9-structured-discovery-result.md`.
+- The final v0.9.0 wrap-up lives in `docs/v0.9-wrap-up.md`.
 
 ## After running
 
