@@ -24,3 +24,4 @@ This directory is reserved for v0.9.0 issue planning references.
 - Issue numbers are assigned by GitHub at creation time.
 - Parent / child links can be refined after creation if needed.
 - The created URLs are printed by the script.
+- The v0.9.0 result summary is recorded in `docs/v0.9-structured-discovery-result.md`.
