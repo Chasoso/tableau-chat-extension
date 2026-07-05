@@ -4,6 +4,7 @@ import type {
   OrchestrationTraceContextSummary,
   PlanSelectionResult,
   TraceEvent,
+  MetadataDiscoveryOrchestrationResponse,
 } from "../agent";
 
 export type ResolveIntentContextSummary = {
@@ -32,7 +33,8 @@ export type ResolveIntentContextSummary = {
 
 export type ResolveIntentRunMode =
   | "resolve_only"
-  | "resolve_and_execute_fixed_plan";
+  | "resolve_and_execute_fixed_plan"
+  | "resolve_and_execute_metadata_discovery";
 
 export type ResolveIntentRequest = {
   actionId?: string;
@@ -40,6 +42,7 @@ export type ResolveIntentRequest = {
   message?: string;
   clientTimestamp?: string;
   contextSummary?: ResolveIntentContextSummary;
+  targetContext?: Record<string, unknown>;
   runMode?: ResolveIntentRunMode;
   metadata?: Record<string, unknown>;
 };
@@ -61,4 +64,5 @@ export type SelectedMarkOrchestrationResponse = {
 export type ResolveIntentResponse = {
   result: IntentResolutionResult;
   orchestration?: SelectedMarkOrchestrationResponse;
+  metadataDiscoveryOrchestration?: MetadataDiscoveryOrchestrationResponse;
 };

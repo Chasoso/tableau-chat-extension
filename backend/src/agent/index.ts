@@ -168,10 +168,18 @@ export {
   buildMetadataDiscoveryPlan,
   buildMetadataDiscoveryPlanTraceMetadata,
 } from "./metadataDiscoveryPlan";
+export { runMetadataDiscoveryOrchestration } from "./metadataDiscoveryOrchestration";
 export {
   buildMetadataDiscoveryIntentTraceMetadata,
   classifyMetadataDiscoveryIntent,
 } from "./metadataDiscoveryIntent";
+export type {
+  MetadataDiscoveryOrchestrationExecutionContext,
+  MetadataDiscoveryOrchestrationExecutionResult,
+  MetadataDiscoveryOrchestrationInput,
+  MetadataDiscoveryOrchestrationResponse,
+  MetadataDiscoveryOrchestrationStatus,
+} from "./metadataDiscoveryOrchestration";
 export type {
   MetadataDiscoveryClarificationAction,
   MetadataDiscoveryClarificationOption,
