@@ -23,7 +23,7 @@ Planned child issue titles, in order:
 2. `#210 Define LLM ResponseComposer safety boundary`
 3. `#211 Define response material contract for LLM composition`
 4. `#212 Add guarded LLM ResponseComposer prototype`
-5. `Add LLM ResponseComposer fallback and regression tests`
+5. `#213 Add LLM ResponseComposer fallback and regression tests`
 6. `Document LLM ResponseComposer result`
 7. `v0.10.0 wrap-up`
 
@@ -57,6 +57,8 @@ The LLM ResponseComposer safety boundary is documented in `docs/v0.10-llm-respon
 The response material contract for `#211 Define response material contract for LLM composition` is documented in `docs/v0.10-llm-response-material-contract.md`.
 
 The guarded prototype for `#212 Add guarded LLM ResponseComposer prototype` is documented in `docs/v0.10-guarded-llm-response-composer-prototype.md`.
+
+The fallback and regression coverage for `#213 Add LLM ResponseComposer fallback and regression tests` is documented in `docs/v0.10-llm-response-composer-fallback-regressions.md`.
 
 ### Deferred path
 

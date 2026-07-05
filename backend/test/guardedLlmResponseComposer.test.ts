@@ -8,6 +8,8 @@ import {
   readGuardedLlmResponseComposerConfig,
   validateLlmResponseMaterial,
   type ResponseComposerInput,
+  type LlmResponseComposerAdapter,
+  type LlmResponseComposerMaterial,
 } from "../src/agent";
 
 function createInput(
@@ -37,6 +39,18 @@ function createInput(
       requestId: "request-1",
     },
     ...overrides,
+  };
+}
+
+function createCapturingAdapter(
+  onMaterial: (material: LlmResponseComposerMaterial) => void,
+  output: string | ((material: LlmResponseComposerMaterial) => string),
+): LlmResponseComposerAdapter {
+  return {
+    async compose(material: LlmResponseComposerMaterial): Promise<unknown> {
+      onMaterial(material);
+      return typeof output === "function" ? output(material) : output;
+    },
   };
 }
 
@@ -111,20 +125,35 @@ describe("GuardedLlmResponseComposer", () => {
   });
 
   it("uses the fake success adapter while keeping response material safe", async () => {
+    let capturedMaterial: LlmResponseComposerMaterial | undefined;
     const guarded = createGuardedLlmResponseComposer({
       enabled: true,
       mode: "fake",
-      adapter: createFakeLlmResponseComposerAdapter("success"),
+      adapter: createCapturingAdapter(
+        (material) => {
+          capturedMaterial = material;
+        },
+        (material) =>
+          [
+            "Guarded LLM composition is safely enabled.",
+            ...material.requiredDisclosures.map(
+              (disclosure) => `Disclosure: ${disclosure}`,
+            ),
+          ].join("\n"),
+      ),
     });
     const result = await guarded.compose(createInput());
 
     expect(result.status).toBe("composed");
-    expect(result.message).toContain("LLM composition is safely guarded.");
-    expect(result.message).toContain("Intent: metadata_discovery");
-    expect(result.message).toContain("Response type: fallback_message");
-    expect(result.message).toContain("Disclosure:");
-    expect(JSON.stringify(result)).not.toContain("secret-value");
-    expect(JSON.stringify(result)).not.toContain("raw MCP");
+    expect(result.message).toContain(
+      "Guarded LLM composition is safely enabled.",
+    );
+    expect(result.message).toContain("Disclosure: input_warning");
+    expect(result.message).toContain("Disclosure: fallback");
+    expect(capturedMaterial).toBeDefined();
+    expect(JSON.stringify(capturedMaterial)).not.toContain("secret-value");
+    expect(JSON.stringify(capturedMaterial)).not.toContain("secret raw output");
+    expect(capturedMaterial?.requiredDisclosures.length).toBeGreaterThan(0);
     expect(result.traceMetadata).toMatchObject({
       llmComposer: {
         status: "composed",
@@ -167,6 +196,7 @@ describe("GuardedLlmResponseComposer", () => {
 
     expect(result.message).toBe(baseline.message);
     expect(result.status).toBe(baseline.status);
+    expect(JSON.stringify(result)).not.toContain("Fake LLM composer error.");
     expect(result.traceMetadata).toMatchObject({
       llmComposer: {
         fallbackReason: "composer_error",
@@ -205,6 +235,69 @@ describe("GuardedLlmResponseComposer", () => {
 
     expect(result.message).toBe(baseline.message);
     expect(result.status).toBe(baseline.status);
+    expect(JSON.stringify(result)).not.toContain("SELECT * FROM raw_table");
+    expect(result.traceMetadata).toMatchObject({
+      llmComposer: {
+        fallbackReason: "composer_unsafe_output",
+      },
+    });
+  });
+
+  it("falls back safely when the adapter output is too long", async () => {
+    const guarded = createGuardedLlmResponseComposer({
+      enabled: true,
+      mode: "fake",
+      maxOutputChars: 16,
+      adapter: createCapturingAdapter(() => undefined, "x".repeat(128)),
+    });
+    const baseline =
+      await createDefaultResponseComposer().compose(createInput());
+    const result = await guarded.compose(createInput());
+
+    expect(result.message).toBe(baseline.message);
+    expect(result.status).toBe(baseline.status);
+    expect(result.traceMetadata).toMatchObject({
+      llmComposer: {
+        fallbackReason: "composer_output_too_long",
+      },
+    });
+  });
+
+  it("falls back safely when required limitations are missing", async () => {
+    const guarded = createGuardedLlmResponseComposer({
+      enabled: true,
+      mode: "fake",
+      adapter: createCapturingAdapter(() => undefined, "Short summary only."),
+    });
+    const baseline =
+      await createDefaultResponseComposer().compose(createInput());
+    const result = await guarded.compose(createInput());
+
+    expect(result.message).toBe(baseline.message);
+    expect(result.status).toBe(baseline.status);
+    expect(result.traceMetadata).toMatchObject({
+      llmComposer: {
+        fallbackReason: "composer_missing_required_limitations",
+      },
+    });
+  });
+
+  it("falls back safely when the adapter returns a tool-call-like string", async () => {
+    const guarded = createGuardedLlmResponseComposer({
+      enabled: true,
+      mode: "fake",
+      adapter: createCapturingAdapter(
+        () => undefined,
+        "Call the Tableau MCP tool to run SELECT * FROM raw_table",
+      ),
+    });
+    const baseline =
+      await createDefaultResponseComposer().compose(createInput());
+    const result = await guarded.compose(createInput());
+
+    expect(result.message).toBe(baseline.message);
+    expect(result.status).toBe(baseline.status);
+    expect(JSON.stringify(result)).not.toContain("SELECT * FROM raw_table");
     expect(result.traceMetadata).toMatchObject({
       llmComposer: {
         fallbackReason: "composer_unsafe_output",
@@ -231,6 +324,35 @@ describe("GuardedLlmResponseComposer", () => {
     expect(material.sourceKind).toBe("metadata_discovery");
     expect(material.evidence.length).toBeGreaterThan(0);
     expect(material.requiredDisclosures.length).toBeGreaterThan(0);
+  });
+
+  it("keeps metadata_discovery normalized and safe when captured by the adapter", async () => {
+    let capturedMaterial: LlmResponseComposerMaterial | undefined;
+    const guarded = createGuardedLlmResponseComposer({
+      enabled: true,
+      mode: "fake",
+      adapter: createCapturingAdapter(
+        (material) => {
+          capturedMaterial = material;
+        },
+        (material) =>
+          [
+            "Guarded metadata discovery summary.",
+            ...material.requiredDisclosures.map(
+              (disclosure) => `Disclosure: ${disclosure}`,
+            ),
+          ].join("\n"),
+      ),
+    });
+    const result = await guarded.compose(createInput());
+
+    expect(result.status).toBe("composed");
+    expect(capturedMaterial).toBeDefined();
+    expect(JSON.stringify(capturedMaterial)).not.toContain("secret-value");
+    expect(JSON.stringify(capturedMaterial)).not.toContain("hidden");
+    expect(JSON.stringify(capturedMaterial)).not.toContain("secret raw output");
+    expect(capturedMaterial?.requiredDisclosures).toContain("input_warning");
+    expect(capturedMaterial?.sourceKind).toBe("metadata_discovery");
   });
 
   it("uses a disabled config by default", () => {
