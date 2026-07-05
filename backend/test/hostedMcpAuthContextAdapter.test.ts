@@ -13,7 +13,7 @@ import {
 function createInput(
   overrides: Partial<HostedMcpAuthContextAdapterInput> = {},
 ): HostedMcpAuthContextAdapterInput {
-  const defaultExpiresAt = "2026-07-05T00:00:00.000Z";
+  const defaultExpiresAt = "2030-07-05T00:00:00.000Z";
 
   return {
     requestId: "request-1",
@@ -92,7 +92,7 @@ describe("Hosted MCP auth context adapter", () => {
       tokenReference: {
         kind: "token_reference",
         referenceId: "reference-1",
-        expiresAt: "2026-07-05T00:00:00.000Z",
+        expiresAt: "2030-07-05T00:00:00.000Z",
         scopes: ["read", "view"],
         source: "oauth",
       },
@@ -111,7 +111,7 @@ describe("Hosted MCP auth context adapter", () => {
       authMode: "oauth_delegated",
       tokenReferencePresent: true,
       tokenReferenceMasked: true,
-      tokenReferenceExpiresAt: "2026-07-05T00:00:00.000Z",
+      tokenReferenceExpiresAt: "2030-07-05T00:00:00.000Z",
       siteId: "site-1",
       siteName: "Site One",
       siteContentUrl: "site-one",
@@ -123,7 +123,7 @@ describe("Hosted MCP auth context adapter", () => {
       retryable: false,
       tokenReference: "reference-1",
       scopes: ["read", "view"],
-      expiresAt: "2026-07-05T00:00:00.000Z",
+      expiresAt: "2030-07-05T00:00:00.000Z",
     });
     expect(result.transportUserContext).toMatchObject({
       userId: "user-1",
@@ -256,7 +256,7 @@ describe("Hosted MCP auth context adapter", () => {
       mode: "oauth_delegated",
       state: "ready",
       tokenReference: "reference-1",
-      expiresAt: "2026-07-05T00:00:00.000Z",
+      expiresAt: "2030-07-05T00:00:00.000Z",
     });
     expect(toTableauMcpTransportUserContext(result.userContext)).toMatchObject({
       userId: "user-1",
