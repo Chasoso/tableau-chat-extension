@@ -4,6 +4,7 @@ import type {
   TableauListFieldsOutput,
   TableauMetadataErrorSummary,
   TableauMetadataOmissionSummary,
+  TableauMetadataOmissionReason,
   TableauMetadataResolutionSummary,
   TableauMetadataTruncationSummary,
   TableauMetadataWarningSummary,
@@ -54,7 +55,18 @@ export type TableauMetadataTraceEvent = {
   warningCount?: number;
   errorCode?: string;
   truncated?: boolean;
+  limitApplied?: number;
+  returnedCount?: number;
+  totalCountKnown?: boolean;
+  totalCount?: number;
+  omittedCountKnown?: boolean;
   omittedCount?: number;
+  omissionReasons?: readonly string[];
+  truncationReason?: string;
+  permissionLimited?: boolean;
+  permissionStatus?: "verified" | "limited" | "unknown";
+  permissionNotes?: readonly string[];
+  safeMessage?: string;
   fakeNoNetwork?: boolean;
   metadata?: JsonObject;
 };
@@ -81,10 +93,26 @@ export type TableauMetadataTraceSummary = {
   warningCount?: number;
   errorCode?: string;
   truncated?: boolean;
+  limitApplied?: number;
+  returnedCount?: number;
+  totalCountKnown?: boolean;
+  totalCount?: number;
+  omittedCountKnown?: boolean;
   omittedCount?: number;
+  omissionReasons?: readonly string[];
+  truncationReason?: string;
+  permissionLimited?: boolean;
+  permissionStatus?: "verified" | "limited" | "unknown";
+  permissionNotes?: readonly string[];
+  safeMessage?: string;
   fakeNoNetwork?: boolean;
   metadata?: JsonObject;
 };
+
+export type TableauMetadataPermissionStatus =
+  | "verified"
+  | "limited"
+  | "unknown";
 
 export type TableauMetadataNormalizedResult = {
   toolName: string;
@@ -96,6 +124,20 @@ export type TableauMetadataNormalizedResult = {
   omissions?: readonly TableauMetadataOmissionSummary[];
   resolution?: TableauMetadataResolutionSummary;
   trace?: TableauMetadataTraceSummary;
+  traceSafeSummary?: JsonObject;
+  truncated?: boolean;
+  limitApplied?: number;
+  returnedCount?: number;
+  totalCountKnown?: boolean;
+  totalCount?: number;
+  omittedCountKnown?: boolean;
+  omittedCount?: number;
+  omissionReasons?: readonly string[];
+  truncationReason?: string;
+  permissionLimited?: boolean;
+  permissionStatus?: TableauMetadataPermissionStatus;
+  permissionNotes?: readonly string[];
+  safeMessage?: string;
   metadata?: JsonObject;
 };
 
@@ -152,7 +194,13 @@ export function normalizeTableauMetadataExecutionResult(
     ...(candidateOutput.warnings ?? []),
     ...(input.transportResult?.warnings ?? []),
     ...(input.precondition.warnings ?? []),
+    ...buildDiscoveryWarnings(
+      candidateOutput,
+      input.toolName,
+      input.precondition,
+    ),
   ]);
+  const permissionSummary = buildPermissionSummary(input.precondition);
   const transportFailure =
     input.transportResult &&
     input.transportResult.status !== "success" &&
@@ -176,6 +224,13 @@ export function normalizeTableauMetadataExecutionResult(
   const omissions = normalizeOmissions(
     candidateOutput.omissions ?? input.fallbackOutput.omissions,
   );
+  const envelopeSummary = buildDiscoveryEnvelopeSummary(
+    candidateOutput,
+    input.toolName,
+    truncation,
+    omissions,
+    permissionSummary,
+  );
   const trace = buildTraceSummary({
     input,
     status: normalizedStatus,
@@ -183,7 +238,15 @@ export function normalizeTableauMetadataExecutionResult(
     error,
     truncation,
     omissions,
+    envelopeSummary,
+    permissionSummary,
   });
+  const safeMessage =
+    envelopeSummary.safeMessage ??
+    permissionSummary.permissionNotes?.[0] ??
+    (normalizedStatus === "blocked"
+      ? (input.precondition.userFacingMessage ?? input.precondition.message)
+      : undefined);
   const metadata = sanitizeJsonObject({
     source: "tableau_metadata_output_normalization",
     requestId: input.request.requestId,
@@ -231,6 +294,54 @@ export function normalizeTableauMetadataExecutionResult(
     ...(omissions?.length ? { omissions } : {}),
     ...(resolution ? { resolution } : {}),
     ...(trace ? { trace } : {}),
+    traceSafeSummary: buildTraceSafeSummary({
+      input,
+      status: normalizedStatus,
+      warnings,
+      error,
+      truncation,
+      omissions,
+      envelopeSummary,
+      permissionSummary,
+      safeMessage,
+    }),
+    ...(envelopeSummary.truncated !== undefined
+      ? { truncated: envelopeSummary.truncated }
+      : {}),
+    ...(envelopeSummary.limitApplied !== undefined
+      ? { limitApplied: envelopeSummary.limitApplied }
+      : {}),
+    ...(envelopeSummary.returnedCount !== undefined
+      ? { returnedCount: envelopeSummary.returnedCount }
+      : {}),
+    ...(envelopeSummary.totalCountKnown !== undefined
+      ? { totalCountKnown: envelopeSummary.totalCountKnown }
+      : {}),
+    ...(envelopeSummary.totalCount !== undefined
+      ? { totalCount: envelopeSummary.totalCount }
+      : {}),
+    ...(envelopeSummary.omittedCountKnown !== undefined
+      ? { omittedCountKnown: envelopeSummary.omittedCountKnown }
+      : {}),
+    ...(envelopeSummary.omittedCount !== undefined
+      ? { omittedCount: envelopeSummary.omittedCount }
+      : {}),
+    ...(envelopeSummary.omissionReasons?.length
+      ? { omissionReasons: [...envelopeSummary.omissionReasons] }
+      : {}),
+    ...(envelopeSummary.truncationReason
+      ? { truncationReason: envelopeSummary.truncationReason }
+      : {}),
+    ...(permissionSummary.permissionLimited !== undefined
+      ? { permissionLimited: permissionSummary.permissionLimited }
+      : {}),
+    ...(permissionSummary.permissionStatus
+      ? { permissionStatus: permissionSummary.permissionStatus }
+      : {}),
+    ...(permissionSummary.permissionNotes?.length
+      ? { permissionNotes: [...permissionSummary.permissionNotes] }
+      : {}),
+    ...(safeMessage ? { safeMessage } : {}),
     ...(Object.keys(metadata).length > 0 ? { metadata } : {}),
   };
 
@@ -287,7 +398,18 @@ function buildTraceEvent(
     warningCount: input.warningCount,
     errorCode: input.errorCode,
     truncated: input.truncated,
+    limitApplied: input.limitApplied,
+    returnedCount: input.returnedCount,
+    totalCountKnown: input.totalCountKnown,
+    totalCount: input.totalCount,
+    omittedCountKnown: input.omittedCountKnown,
     omittedCount: input.omittedCount,
+    omissionReasons: input.omissionReasons,
+    truncationReason: input.truncationReason,
+    permissionLimited: input.permissionLimited,
+    permissionStatus: input.permissionStatus,
+    permissionNotes: input.permissionNotes,
+    safeMessage: input.safeMessage,
     fakeNoNetwork: input.fakeNoNetwork,
     metadata: input.metadata ? sanitizeJsonObject(input.metadata) : undefined,
   };
@@ -300,6 +422,8 @@ function buildTraceSummary(input: {
   error?: TableauMetadataErrorSummary;
   truncation?: TableauMetadataTruncationSummary;
   omissions?: readonly TableauMetadataOmissionSummary[];
+  envelopeSummary: DiscoveryEnvelopeSummary;
+  permissionSummary: DiscoveryPermissionSummary;
 }): TableauMetadataTraceSummary {
   const startedAt =
     input.input.startedAt ??
@@ -353,10 +477,24 @@ function buildTraceSummary(input: {
     warningCount: input.warnings.length,
     errorCode: input.error?.code,
     truncated: input.truncation?.truncated,
+    limitApplied: input.envelopeSummary.limitApplied,
+    returnedCount: input.envelopeSummary.returnedCount,
+    totalCountKnown: input.envelopeSummary.totalCountKnown,
+    totalCount: input.envelopeSummary.totalCount,
+    omittedCountKnown: input.envelopeSummary.omittedCountKnown,
     omittedCount:
-      typeof omittedCount === "number" && Number.isFinite(omittedCount)
+      input.envelopeSummary.omittedCount ??
+      (typeof omittedCount === "number" && Number.isFinite(omittedCount)
         ? omittedCount
-        : undefined,
+        : undefined),
+    omissionReasons: input.envelopeSummary.omissionReasons,
+    truncationReason: input.envelopeSummary.truncationReason,
+    permissionLimited: input.permissionSummary.permissionLimited,
+    permissionStatus: input.permissionSummary.permissionStatus,
+    permissionNotes: input.permissionSummary.permissionNotes,
+    safeMessage:
+      input.envelopeSummary.safeMessage ??
+      input.permissionSummary.permissionNotes?.[0],
     fakeNoNetwork:
       input.input.transportResult?.transportKind === "fake" ||
       input.input.request.metadata?.noNetwork === true,
@@ -369,6 +507,42 @@ function buildTraceSummary(input: {
       preconditionStatus: input.input.precondition.status,
       warningCount: input.warnings.length,
       ...(input.error?.code ? { errorCode: input.error.code } : {}),
+      ...(input.envelopeSummary.truncated !== undefined
+        ? { truncated: input.envelopeSummary.truncated }
+        : {}),
+      ...(input.envelopeSummary.limitApplied !== undefined
+        ? { limitApplied: input.envelopeSummary.limitApplied }
+        : {}),
+      ...(input.envelopeSummary.returnedCount !== undefined
+        ? { returnedCount: input.envelopeSummary.returnedCount }
+        : {}),
+      ...(input.envelopeSummary.totalCountKnown !== undefined
+        ? { totalCountKnown: input.envelopeSummary.totalCountKnown }
+        : {}),
+      ...(input.envelopeSummary.totalCount !== undefined
+        ? { totalCount: input.envelopeSummary.totalCount }
+        : {}),
+      ...(input.envelopeSummary.omittedCountKnown !== undefined
+        ? { omittedCountKnown: input.envelopeSummary.omittedCountKnown }
+        : {}),
+      ...(input.envelopeSummary.omittedCount !== undefined
+        ? { omittedCount: input.envelopeSummary.omittedCount }
+        : {}),
+      ...(input.envelopeSummary.omissionReasons?.length
+        ? { omissionReasons: [...input.envelopeSummary.omissionReasons] }
+        : {}),
+      ...(input.envelopeSummary.truncationReason
+        ? { truncationReason: input.envelopeSummary.truncationReason }
+        : {}),
+      ...(input.permissionSummary.permissionLimited !== undefined
+        ? { permissionLimited: input.permissionSummary.permissionLimited }
+        : {}),
+      ...(input.permissionSummary.permissionStatus
+        ? { permissionStatus: input.permissionSummary.permissionStatus }
+        : {}),
+      ...(input.permissionSummary.permissionNotes?.length
+        ? { permissionNotes: [...input.permissionSummary.permissionNotes] }
+        : {}),
       ...(traceTransportContext.requestedTransportKind
         ? {
             requestedTransportKind:
@@ -397,6 +571,62 @@ function buildTraceSummary(input: {
         : {}),
     }),
   };
+}
+
+function buildTraceSafeSummary(input: {
+  input: TableauMetadataOutputNormalizationInput;
+  status: TableauMetadataNormalizedStatus;
+  warnings: readonly TableauMetadataWarningSummary[];
+  error?: TableauMetadataErrorSummary;
+  truncation?: TableauMetadataTruncationSummary;
+  omissions?: readonly TableauMetadataOmissionSummary[];
+  envelopeSummary: DiscoveryEnvelopeSummary;
+  permissionSummary: DiscoveryPermissionSummary;
+  safeMessage?: string;
+}): JsonObject {
+  return sanitizeJsonObject({
+    source: "tableau_metadata_trace_safe_summary",
+    requestId: input.input.request.requestId,
+    correlationId: input.input.request.correlationId,
+    agentRunId: input.input.request.agentRunId,
+    toolName: input.input.toolName,
+    status: input.status,
+    transportStatus: input.input.transportResult?.status,
+    transportKind:
+      input.input.transportResult?.transportKind ??
+      readTransportKind(input.input.request.metadata?.transportKind) ??
+      "unknown",
+    truncated: input.envelopeSummary.truncated,
+    limitApplied: input.envelopeSummary.limitApplied,
+    returnedCount: input.envelopeSummary.returnedCount,
+    totalCountKnown: input.envelopeSummary.totalCountKnown,
+    totalCount: input.envelopeSummary.totalCount,
+    omittedCountKnown: input.envelopeSummary.omittedCountKnown,
+    omittedCount: input.envelopeSummary.omittedCount,
+    omissionReasons: input.envelopeSummary.omissionReasons,
+    truncationReason: input.envelopeSummary.truncationReason,
+    permissionLimited: input.permissionSummary.permissionLimited,
+    permissionStatus: input.permissionSummary.permissionStatus,
+    permissionNotes: input.permissionSummary.permissionNotes,
+    warningCodes: input.warnings.map((warning) => warning.code),
+    warningCount: input.warnings.length,
+    errorCode: input.error?.code,
+    fakeNoNetwork:
+      input.input.transportResult?.transportKind === "fake" ||
+      input.input.request.metadata?.noNetwork === true,
+    safeMessage: input.safeMessage,
+    metadata: sanitizeJsonObject({
+      source: "tableau_metadata_trace_safe_summary",
+      transportEventId: input.input.transportResult?.trace?.transportEventId,
+      remoteTraceId: input.input.transportResult?.trace?.remoteTraceId,
+      hostedSessionId: input.input.transportResult?.trace?.hostedSessionId,
+      transportStatus: input.input.transportResult?.status,
+      preconditionStatus: input.input.precondition.status,
+      warningCount: input.warnings.length,
+      ...(input.error?.code ? { errorCode: input.error.code } : {}),
+      ...(input.safeMessage ? { safeMessage: input.safeMessage } : {}),
+    }),
+  });
 }
 
 function buildTraceTransportContext(
@@ -445,6 +675,299 @@ function buildTraceTransportContext(
       "noNetworkRequested",
     ),
   };
+}
+
+type DiscoveryEnvelopeSummary = {
+  truncated?: boolean;
+  limitApplied?: number;
+  returnedCount?: number;
+  totalCountKnown?: boolean;
+  totalCount?: number;
+  omittedCountKnown?: boolean;
+  omittedCount?: number;
+  omissionReasons?: readonly TableauMetadataOmissionReason[];
+  truncationReason?: TableauMetadataOmissionReason;
+  permissionLimited?: boolean;
+  permissionStatus?: TableauMetadataPermissionStatus;
+  permissionNotes?: readonly string[];
+  safeMessage?: string;
+};
+
+type DiscoveryPermissionSummary = {
+  permissionLimited?: boolean;
+  permissionStatus?: TableauMetadataPermissionStatus;
+  permissionNotes?: readonly string[];
+};
+
+function buildDiscoveryWarnings(
+  output: TableauDescribeDatasourceOutput | TableauListFieldsOutput,
+  toolName: string,
+  precondition: TableauMetadataPreconditionResult,
+): TableauMetadataWarningSummary[] {
+  const warnings: TableauMetadataWarningSummary[] = [];
+  const envelope = buildDiscoveryEnvelopeSummary(
+    output,
+    toolName,
+    normalizeTruncation(output.truncation),
+    normalizeOmissions(output.omissions),
+    buildPermissionSummary(precondition),
+  );
+  const hasTruncationWarning =
+    output.warnings?.some((warning) => {
+      const code = normalizeWarningCode(warning.code ?? "UNKNOWN_WARNING");
+      return code === "OUTPUT_TRUNCATED" || code === "FIELD_LIST_TRUNCATED";
+    }) ?? false;
+
+  if (envelope.truncated && !hasTruncationWarning) {
+    warnings.push({
+      code:
+        toolName === "tableau.metadata.listFields"
+          ? "FIELD_LIST_TRUNCATED"
+          : "OUTPUT_TRUNCATED",
+      message:
+        toolName === "tableau.metadata.listFields"
+          ? "The field list was truncated to stay within safe bounds."
+          : "The metadata response was truncated to stay within safe bounds.",
+      metadata: sanitizeJsonObject({
+        source: "tableau_metadata_output_normalization",
+        limitApplied: envelope.limitApplied,
+        returnedCount: envelope.returnedCount,
+        totalCountKnown: envelope.totalCountKnown,
+        totalCount: envelope.totalCount,
+      }),
+    });
+  }
+
+  const hasPermissionWarning =
+    precondition.warnings?.some(
+      (warning) =>
+        normalizeWarningCode(warning.code) === "PERMISSION_NOT_VERIFIED",
+    ) ?? false;
+
+  if (envelope.permissionStatus === "unknown" && !hasPermissionWarning) {
+    warnings.push({
+      code: "PERMISSION_NOT_VERIFIED",
+      message:
+        "Permission could not be fully verified, so some metadata may be omitted.",
+      metadata: sanitizeJsonObject({
+        source: "tableau_metadata_output_normalization",
+        permissionStatus: envelope.permissionStatus,
+      }),
+    });
+  }
+
+  return warnings;
+}
+
+function buildDiscoveryEnvelopeSummary(
+  output: TableauDescribeDatasourceOutput | TableauListFieldsOutput,
+  toolName: string,
+  truncation: TableauMetadataTruncationSummary | undefined,
+  omissions: readonly TableauMetadataOmissionSummary[] | undefined,
+  permissionSummary: DiscoveryPermissionSummary,
+): DiscoveryEnvelopeSummary {
+  const listFieldSummary =
+    toolName === "tableau.metadata.listFields"
+      ? (output as TableauListFieldsOutput).fieldCountSummary
+      : undefined;
+  const describeFieldSummary =
+    toolName === "tableau.metadata.describeDatasource"
+      ? (output as TableauDescribeDatasourceOutput).fieldsSummary
+      : undefined;
+  const returnedCount =
+    listFieldSummary?.returned ??
+    describeFieldSummary?.returnedSampleCount ??
+    truncation?.returned;
+  const totalCount =
+    listFieldSummary?.totalAvailable ??
+    describeFieldSummary?.totalFields ??
+    truncation?.totalAvailable;
+  const totalCountKnown = typeof totalCount === "number";
+  const truncated =
+    truncation?.truncated ??
+    Boolean(
+      toolName === "tableau.metadata.listFields"
+        ? listFieldSummary &&
+            typeof listFieldSummary.totalAvailable === "number" &&
+            typeof listFieldSummary.returned === "number" &&
+            listFieldSummary.returned < listFieldSummary.totalAvailable
+        : describeFieldSummary &&
+            typeof describeFieldSummary.totalFields === "number" &&
+            typeof describeFieldSummary.returnedSampleCount === "number" &&
+            describeFieldSummary.returnedSampleCount <
+              describeFieldSummary.totalFields,
+    );
+  const limitApplied =
+    truncation?.limit ??
+    (toolName === "tableau.metadata.listFields"
+      ? listFieldSummary?.returned
+      : describeFieldSummary?.returnedSampleCount);
+  const truncationReason =
+    truncation?.reason ??
+    (truncated
+      ? toolName === "tableau.metadata.listFields"
+        ? "field_limit"
+        : "output_limit"
+      : undefined);
+  const omissionReasons = dedupeOmissionReasons(omissions);
+  if (truncationReason && !omissionReasons.includes(truncationReason)) {
+    omissionReasons.push(truncationReason);
+  }
+  const omittedCountFromOmissions =
+    calculateOmittedCountFromOmissions(omissions);
+  const omittedCount =
+    omittedCountFromOmissions ??
+    (totalCountKnown && typeof returnedCount === "number"
+      ? Math.max(0, totalCount - returnedCount)
+      : undefined);
+  const omittedCountKnown =
+    omittedCount !== undefined ||
+    omittedCountFromOmissions !== undefined ||
+    (totalCountKnown && typeof returnedCount === "number");
+  const safeMessage = buildDiscoverySafeMessage(
+    toolName,
+    truncated,
+    permissionSummary.permissionNotes,
+  );
+
+  return {
+    truncated,
+    ...(typeof limitApplied === "number" ? { limitApplied } : {}),
+    ...(typeof returnedCount === "number" ? { returnedCount } : {}),
+    totalCountKnown,
+    ...(totalCountKnown ? { totalCount: totalCount } : {}),
+    omittedCountKnown,
+    ...(typeof omittedCount === "number" ? { omittedCount } : {}),
+    ...(omissionReasons.length ? { omissionReasons } : {}),
+    ...(truncationReason ? { truncationReason } : {}),
+    ...(safeMessage ? { safeMessage } : {}),
+    permissionLimited: permissionSummary.permissionLimited,
+    permissionStatus: permissionSummary.permissionStatus,
+    ...(permissionSummary.permissionNotes?.length
+      ? { permissionNotes: [...permissionSummary.permissionNotes] }
+      : {}),
+  };
+}
+
+function buildDiscoverySafeMessage(
+  toolName: string,
+  truncated: boolean,
+  permissionNotes?: readonly string[],
+): string | undefined {
+  const messages: string[] = [];
+
+  if (truncated) {
+    messages.push(
+      toolName === "tableau.metadata.listFields"
+        ? "The field list was truncated to stay within safe bounds."
+        : "The metadata response was truncated to stay within safe bounds.",
+    );
+  }
+
+  if (permissionNotes?.length) {
+    messages.push(...permissionNotes);
+  }
+
+  return messages.length > 0 ? messages.join(" ") : undefined;
+}
+
+function buildPermissionSummary(
+  precondition: TableauMetadataPreconditionResult,
+): DiscoveryPermissionSummary {
+  const permission = precondition.governance?.permission;
+
+  switch (permission) {
+    case "verified":
+      return {
+        permissionLimited: false,
+        permissionStatus: "verified",
+      };
+    case "blocked":
+      return {
+        permissionLimited: true,
+        permissionStatus: "limited",
+        permissionNotes: [
+          "Some metadata may be omitted because permissions are restricted.",
+        ],
+      };
+    case "not_verified":
+    case "not_checked":
+    default:
+      return {
+        permissionLimited: true,
+        permissionStatus: "unknown",
+        permissionNotes: [
+          "Permission could not be fully verified, so some metadata may be omitted.",
+        ],
+      };
+  }
+}
+
+function dedupeOmissionReasons(
+  omissions: readonly TableauMetadataOmissionSummary[] | undefined,
+): TableauMetadataOmissionReason[] {
+  if (!omissions?.length) {
+    return [];
+  }
+
+  const seen = new Set<string>();
+  const reasons: TableauMetadataOmissionReason[] = [];
+
+  for (const omission of omissions) {
+    if (!omission.reason) {
+      continue;
+    }
+    const reason = normalizeOmissionReason(omission.reason);
+    if (seen.has(reason)) {
+      continue;
+    }
+    seen.add(reason);
+    reasons.push(reason);
+  }
+
+  return reasons;
+}
+
+function calculateOmittedCountFromOmissions(
+  omissions: readonly TableauMetadataOmissionSummary[] | undefined,
+): number | undefined {
+  if (!omissions?.length) {
+    return undefined;
+  }
+
+  let total = 0;
+  let sawKnownCount = false;
+
+  for (const omission of omissions) {
+    if (
+      typeof omission.count !== "number" ||
+      !Number.isFinite(omission.count)
+    ) {
+      return undefined;
+    }
+    sawKnownCount = true;
+    total += omission.count;
+  }
+
+  return sawKnownCount ? total : undefined;
+}
+
+function normalizeOmissionReason(
+  reason: TableauMetadataOmissionReason | string,
+): TableauMetadataOmissionReason {
+  switch (reason) {
+    case "output_limit":
+    case "field_limit":
+    case "permission":
+    case "not_requested":
+    case "not_available":
+    case "hidden_by_default":
+    case "technical_metadata_disabled":
+    case "unknown":
+      return reason;
+    default:
+      return "unknown";
+  }
 }
 
 function readTransportKindFromMetadata(

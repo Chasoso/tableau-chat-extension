@@ -80,6 +80,7 @@ export type {
   TableauMetadataNormalizedResult,
   TableauMetadataNormalizedStatus,
   TableauMetadataOutputNormalizationInput,
+  TableauMetadataPermissionStatus,
   TableauMetadataTraceEvent,
   TableauMetadataTraceEventName,
   TableauMetadataTraceSummary,

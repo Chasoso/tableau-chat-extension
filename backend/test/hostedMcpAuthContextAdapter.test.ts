@@ -11,7 +11,11 @@ import {
 } from "../src/agent";
 
 const FIXED_NOW = new Date("2026-07-04T00:00:00.000Z");
-const FUTURE_EXPIRES_AT = new Date("2026-07-05T00:00:00.000Z").toISOString();
+const DAY_IN_MS = 24 * 60 * 60 * 1000;
+const FUTURE_EXPIRES_AT = new Date(
+  FIXED_NOW.getTime() + DAY_IN_MS,
+).toISOString();
+const PAST_EXPIRES_AT = new Date(FIXED_NOW.getTime() - DAY_IN_MS).toISOString();
 
 function createInput(
   overrides: Partial<HostedMcpAuthContextAdapterInput> = {},
@@ -181,7 +185,7 @@ describe("Hosted MCP auth context adapter", () => {
       createInput({
         tokenReference: {
           referenceId: "reference-2",
-          expiresAt: "2024-01-01T00:00:00.000Z",
+          expiresAt: PAST_EXPIRES_AT,
           source: "oauth",
         },
       }),
@@ -250,12 +254,12 @@ describe("Hosted MCP auth context adapter", () => {
       maskTokenReferenceForTrace({
         kind: "token_reference",
         referenceId: "reference-3",
-        expiresAt: "2026-07-04T00:00:00.000Z",
+        expiresAt: FIXED_NOW.toISOString(),
       }),
     ).toEqual({
       tokenReferencePresent: true,
       tokenReferenceMasked: true,
-      tokenReferenceExpiresAt: "2026-07-04T00:00:00.000Z",
+      tokenReferenceExpiresAt: FIXED_NOW.toISOString(),
     });
   });
 
@@ -310,7 +314,7 @@ describe("Hosted MCP auth context adapter", () => {
         protocol: "streamable_http",
       },
       {
-        now: () => new Date("2026-07-04T00:00:00.000Z"),
+        now: () => new Date(FIXED_NOW.getTime()),
         requestClient: client,
       },
     );
@@ -342,7 +346,7 @@ describe("Hosted MCP auth context adapter", () => {
         protocol: "streamable_http",
       },
       {
-        now: () => new Date("2026-07-04T00:00:00.000Z"),
+        now: () => new Date(FIXED_NOW.getTime()),
         requestClient: client as HostedMcpRequestClient,
       },
     );
