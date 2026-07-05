@@ -54,6 +54,8 @@ The initial focus is to keep the deterministic baseline while improving user-fac
 
 The LLM ResponseComposer safety boundary is documented in `docs/v0.10-llm-response-composer-safety-boundary.md`.
 
+The response material contract for `#211 Define response material contract for LLM composition` is documented in `docs/v0.10-llm-response-material-contract.md`.
+
 ### Deferred path
 
 Branch B is deferred for now.
