@@ -19,8 +19,8 @@ Selected branch: LLM ResponseComposer
 
 Planned child issue titles, in order:
 
-1. `v0.10.0 planning and branch decision`
-2. `Define LLM ResponseComposer safety boundary`
+1. `#209 v0.10.0 planning and branch decision`
+2. `#210 Define LLM ResponseComposer safety boundary`
 3. `Define response material contract for LLM composition`
 4. `Add guarded LLM ResponseComposer prototype`
 5. `Add LLM ResponseComposer fallback and regression tests`
@@ -51,6 +51,8 @@ Exploration Session focuses on safe session continuity for selected marks, metad
 Branch A is selected for v0.10.0.
 
 The initial focus is to keep the deterministic baseline while improving user-facing summary and explanation quality with optional guarded composition.
+
+The LLM ResponseComposer safety boundary is documented in `docs/v0.10-llm-response-composer-safety-boundary.md`.
 
 ### Deferred path
 
