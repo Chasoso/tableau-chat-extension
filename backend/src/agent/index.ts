@@ -255,6 +255,15 @@ export {
   createMinimalResponseComposer,
   MinimalResponseComposer,
 } from "./responseComposer";
+export {
+  buildLlmResponseMaterial,
+  createFakeLlmResponseComposerAdapter,
+  createGuardedLlmResponseComposer,
+  GuardedLlmResponseComposer,
+  readGuardedLlmResponseComposerConfig,
+  validateLlmResponseMaterial,
+  validateLlmResponseOutput,
+} from "./guardedLlmResponseComposer";
 export type {
   MinimalResponseComposerOptions,
   ResponseComposer,
@@ -264,6 +273,20 @@ export type {
   ResponseComposerStatus,
   ResponseType,
 } from "./responseComposer";
+export type {
+  GuardedLlmResponseComposerConfig,
+  GuardedLlmResponseComposerFallbackReason,
+  GuardedLlmResponseComposerMode,
+  GuardedLlmResponseComposerOptions,
+  LlmResponseComposerAdapter,
+  LlmResponseComposerAdapterMode,
+  LlmResponseComposerCitation,
+  LlmResponseComposerEvidence,
+  LlmResponseComposerEvidenceSourceType,
+  LlmResponseComposerMaterial,
+  LlmResponseComposerSourceKind,
+  LlmResponseComposerValidationResult,
+} from "./guardedLlmResponseComposer";
 export {
   buildToolExecutionTraceMetadata,
   createDefaultToolExecutionWrapper,
