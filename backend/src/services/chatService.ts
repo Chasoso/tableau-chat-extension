@@ -22,7 +22,10 @@ import type {
   DatasourceFieldProfile,
   QueryDatasourceInsight,
   QuestionInterpretation,
+  TableauAdditionalContext,
 } from "../types/tableau";
+import { runMetadataDiscoveryOrchestration } from "../agent/metadataDiscoveryOrchestration";
+import { createAgentRunId } from "../agent/runId";
 import {
   detectRankingIntent,
   interpretQuestion,
@@ -108,6 +111,50 @@ export class ChatService {
       questionLength: request.question.length,
       question: clipForDebugLog(request.question),
     });
+    const metadataDiscoveryStructuredPathAnswer =
+      await buildMetadataDiscoveryStructuredPathAnswer({
+        request,
+        requestInterpretation,
+      });
+    if (metadataDiscoveryStructuredPathAnswer) {
+      logInfo("chat.service.metadata_discovery_structured_path.used", {
+        sessionId,
+        messageId,
+        requestType: requestInterpretation.requestType,
+        requestTypeConfidence: requestInterpretation.requestTypeConfidence,
+        requestTypeSignals: requestInterpretation.requestTypeSignals,
+      });
+      await progressReporter.report({
+        stage: "finalizing",
+        message: "構造化メタデータ探索の結果を保存中...",
+        debug: {
+          sessionId,
+          messageId,
+          path: "metadata_discovery_structured_path",
+        },
+      });
+      return this.persistAndBuildResponse({
+        sessionId,
+        messageId,
+        ownerUserId,
+        request,
+        answer: metadataDiscoveryStructuredPathAnswer,
+        notionPostIdeaDraft: buildNotionDraft(
+          request.question,
+          metadataDiscoveryStructuredPathAnswer,
+          request,
+          {
+            provider: "mock",
+            questionInterpretation: requestInterpretation,
+          },
+        ),
+        debug: {
+          usedMock: this.answerGenerator.name === "mock",
+          tableauContextProvider: this.contextProvider
+            .name as TableauAdditionalContext["provider"],
+        },
+      });
+    }
     const fastPathAnswer = buildDatasourceInventoryFastPathAnswer(
       request,
       requestInterpretation,
@@ -1686,6 +1733,117 @@ function buildDatasourceInventoryFastPathAnswer(
   return lines.join("\n");
 }
 
+async function buildMetadataDiscoveryStructuredPathAnswer(input: {
+  request: ChatRequest;
+  requestInterpretation: QuestionInterpretation;
+}): Promise<string | undefined> {
+  if (!isStrongDatasourceInventoryRequest(input.requestInterpretation)) {
+    return undefined;
+  }
+
+  const datasourceNames =
+    input.request.dashboardContext.dataSources
+      ?.map((datasource) => datasource.name?.trim())
+      .filter((name): name is string => Boolean(name)) ?? [];
+  const uniqueDatasourceNames = [...new Set(datasourceNames)];
+  if (uniqueDatasourceNames.length !== 1) {
+    return undefined;
+  }
+
+  const orchestration = await runMetadataDiscoveryOrchestration({
+    intentResolutionInput: {
+      agentRunId: createAgentRunId(),
+      message: input.request.question,
+      contextSummary: {
+        dashboardName: input.request.dashboardContext.dashboardName,
+        ...(readString(input.request.dashboardContext.workbookName)
+          ? {
+              workbookName: readString(
+                input.request.dashboardContext.workbookName,
+              ),
+            }
+          : {}),
+        worksheetNames: input.request.dashboardContext.worksheets.map(
+          (worksheet) => worksheet.name,
+        ),
+      },
+      targetContext: {
+        targetType: "datasource",
+        identifier: uniqueDatasourceNames[0],
+        source: "chat_service",
+      },
+      metadata: {
+        source: "chat_service",
+        requestType: input.requestInterpretation.requestType,
+        ...(typeof input.requestInterpretation.requestTypeConfidence ===
+        "number"
+          ? {
+              requestTypeConfidence:
+                input.requestInterpretation.requestTypeConfidence,
+            }
+          : {}),
+        ...(input.requestInterpretation.requestTypeSignals?.length
+          ? {
+              requestTypeSignals:
+                input.requestInterpretation.requestTypeSignals,
+            }
+          : {}),
+      },
+    },
+  });
+
+  if (
+    orchestration.plan.planState !== "executable" ||
+    orchestration.plan.targetType !== "datasource"
+  ) {
+    return undefined;
+  }
+
+  return buildMetadataDiscoveryStructuredAnswer(
+    input.request,
+    orchestration.placeholderResponse,
+    orchestration.execution?.normalizedOutput?.summary,
+  );
+}
+
+function buildMetadataDiscoveryStructuredAnswer(
+  request: ChatRequest,
+  fallbackMessage: string,
+  summary: unknown,
+): string {
+  const datasourceSummary = readJsonObject(readJsonObject(summary)?.datasource);
+  const datasourceName =
+    readString(datasourceSummary?.datasourceName) ??
+    request.dashboardContext.dataSources?.[0]?.name?.trim() ??
+    "対象データソース";
+  const workbookName =
+    readString(datasourceSummary?.workbookName) ??
+    readString(request.dashboardContext.workbookName ?? undefined);
+  const fieldCount = readNumber(datasourceSummary?.fieldCount);
+  const visibleFieldCount = readNumber(datasourceSummary?.visibleFieldCount);
+  const hiddenFieldCount = readNumber(datasourceSummary?.hiddenFieldCount);
+
+  const lines = [
+    "## データソース概要",
+    "",
+    `このダッシュボードで使用されているデータソースは ${datasourceName} です。`,
+    workbookName ? `- ワークブック: \`${workbookName}\`` : undefined,
+    typeof fieldCount === "number"
+      ? `- フィールド数: ${fieldCount}件`
+      : undefined,
+    typeof visibleFieldCount === "number"
+      ? `- 表示フィールド数: ${visibleFieldCount}件`
+      : undefined,
+    typeof hiddenFieldCount === "number"
+      ? `- 非表示フィールド数: ${hiddenFieldCount}件`
+      : undefined,
+    "",
+    fallbackMessage,
+  ].filter((line): line is string => typeof line === "string");
+
+  return lines.join("\n");
+}
+
 function buildDeadlineAwareDeterministicAnswer(
   request: ChatRequest,
   additionalContext: Awaited<
@@ -2452,6 +2610,24 @@ function findArraysByKey(value: unknown, key: string): unknown[][] {
     ...direct,
     ...Object.values(record).flatMap((item) => findArraysByKey(item, key)),
   ];
+}
+
+function readString(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function readNumber(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value)
+    ? value
+    : undefined;
+}
+
+function readJsonObject(value: unknown): Record<string, unknown> | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return undefined;
+  }
+
+  return value as Record<string, unknown>;
 }
 
 function extractName(value: unknown): string | undefined {
