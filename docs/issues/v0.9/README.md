@@ -15,6 +15,9 @@ This directory is reserved for v0.9.0 issue planning references.
 - Make sure the `v0.9.0` milestone exists, or let the script create it.
 - Issue #182 is the planning boundary for this milestone.
 - #186 defines the structured metadata discovery plan shape that later issues build on.
+- #188 defines the controlled `listFields` discovery contract, including caps,
+  truncation, and permission-aware omission behavior.
+- The contract details live in `docs/v0.9-controlled-listfields-discovery-contract.md`.
 
 ## After running
 
