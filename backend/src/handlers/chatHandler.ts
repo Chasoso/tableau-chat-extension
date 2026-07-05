@@ -5,6 +5,7 @@ import {
   buildOrchestrationIntentResolutionTraceMetadata,
   createDefaultIntentResolver,
   createLambdaAgentRunner,
+  runMetadataDiscoveryOrchestration,
   runSelectedMarkExplanationOrchestration,
   type AgentIntent,
   type AgentRunInput,
@@ -32,6 +33,7 @@ import type {
   LambdaExecutionContext,
 } from "../types/api";
 import type { ChatRequest, ContextRequest } from "../types/chat";
+import type { AuthenticatedUser } from "../types/auth";
 import type {
   ResolveIntentRequest,
   ResolveIntentResponse,
@@ -197,6 +199,8 @@ export async function handler(
       const intentResolutionInput = buildIntentResolutionInput(intentRequest);
       const shouldRunOrchestration =
         intentRequest.runMode === "resolve_and_execute_fixed_plan";
+      const shouldRunMetadataDiscoveryOrchestration =
+        intentRequest.runMode === "resolve_and_execute_metadata_discovery";
 
       if (shouldRunOrchestration) {
         const agentRunInput = buildSelectedMarkAgentRunInput(
@@ -300,6 +304,35 @@ export async function handler(
           executionStatus: orchestrationResult.execution?.status,
           runnerKind: agentRunResult.runner?.kind,
           runnerStatus: agentRunResult.status,
+        });
+        return jsonResponse(200, response);
+      }
+
+      if (shouldRunMetadataDiscoveryOrchestration) {
+        const metadataDiscoveryOrchestration =
+          await runMetadataDiscoveryOrchestration({
+            intentResolutionInput,
+            executionContext: buildMetadataDiscoveryExecutionContext(
+              intentRequest,
+              authResult.user,
+              requestId,
+            ),
+          });
+        const response: ResolveIntentResponse = {
+          result: metadataDiscoveryOrchestration.intentResolution,
+          metadataDiscoveryOrchestration,
+        };
+
+        logInfo("chat.metadata_discovery_orchestration.completed", {
+          requestId,
+          agentRunId:
+            metadataDiscoveryOrchestration.intentResolution.agentRunId,
+          resolvedIntentId:
+            metadataDiscoveryOrchestration.intentResolution.resolvedIntentId,
+          status: metadataDiscoveryOrchestration.status,
+          planState: metadataDiscoveryOrchestration.plan.planState,
+          executionStatus:
+            metadataDiscoveryOrchestration.execution?.status ?? null,
         });
         return jsonResponse(200, response);
       }
@@ -423,6 +456,10 @@ function validateResolveIntentRequest(
     }
   }
 
+  if (request.targetContext && !isJsonObject(request.targetContext)) {
+    return "targetContext must be an object.";
+  }
+
   return null;
 }
 
@@ -520,6 +557,55 @@ function buildIntentResolutionInput(
     metadata: request.metadata
       ? ({ ...request.metadata } as JsonObject)
       : undefined,
+    targetContext: request.targetContext
+      ? ({ ...request.targetContext } as JsonObject)
+      : undefined,
+  };
+}
+
+function buildMetadataDiscoveryExecutionContext(
+  request: ResolveIntentRequest,
+  authenticatedUser?: AuthenticatedUser,
+  requestId?: string,
+): NonNullable<
+  Parameters<typeof runMetadataDiscoveryOrchestration>[0]["executionContext"]
+> {
+  return {
+    authenticatedUser,
+    tableauMetadataTransportKind:
+      typeof request.metadata?.tableauMetadataTransportKind === "string"
+        ? (request.metadata.tableauMetadataTransportKind as
+            | "stdio"
+            | "hosted"
+            | "remote"
+            | "fake"
+            | "unknown")
+        : "fake",
+    tableauMetadataHostedExecutionEnabled:
+      request.metadata?.tableauMetadataHostedExecutionEnabled === true,
+    tableauMetadataNoNetwork:
+      request.metadata?.tableauMetadataNoNetwork !== false,
+    tableauMetadataRequestContext: {
+      requestId: requestId ?? request.actionId ?? "metadata-discovery-request",
+      correlationId:
+        request.clientTimestamp ??
+        request.actionId ??
+        requestId ??
+        "metadata-discovery-request",
+      agentRunId: requestId ?? request.actionId ?? "metadata-discovery-request",
+      locale:
+        typeof request.metadata?.locale === "string"
+          ? request.metadata.locale
+          : "en-US",
+    },
+    tableauMetadataPreconditionInput: request.metadata
+      ?.tableauMetadataPreconditionInput as
+      | NonNullable<
+          Parameters<
+            typeof runMetadataDiscoveryOrchestration
+          >[0]["executionContext"]
+        >["tableauMetadataPreconditionInput"]
+      | undefined,
   };
 }
 
@@ -597,6 +683,10 @@ function buildSelectedMarkAgentRunInput(
       ? ({ ...request.metadata } as JsonObject)
       : undefined,
   };
+}
+
+function isJsonObject(value: unknown): value is JsonObject {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
 function buildSelectedMarkAgentRunContextSummary(

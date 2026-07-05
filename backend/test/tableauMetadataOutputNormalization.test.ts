@@ -186,42 +186,174 @@ describe("Tableau metadata output normalization and trace events", () => {
       completedAt: "2026-07-03T00:00:00.010Z",
     });
 
-    expect(result).toEqual(
-      expect.objectContaining({
-        toolName: request.toolName,
-        status: "success",
-        summary: expect.objectContaining({
-          datasource: expect.objectContaining({
-            datasourceId: "datasource-1",
-            datasourceName: "Datasource One",
-            connectionType: "fake",
-          }),
-          fieldsSummary: expect.objectContaining({
-            totalFields: 2,
-          }),
-        }),
-        warnings: expect.arrayContaining([
-          expect.objectContaining({
-            code: "TRANSPORT_WARNING",
-          }),
-        ]),
-        trace: expect.objectContaining({
-          eventNames: expect.arrayContaining([
-            "tableau_metadata_tool.started",
-            "tableau_metadata_tool.completed",
-          ]),
-          fakeNoNetwork: true,
-        }),
-        metadata: expect.objectContaining({
-          source: "fake_no_network",
-          transportKind: "fake",
-          transportStatus: "success",
-        }),
+    expect(result.toolName).toBe(request.toolName);
+    expect(result.status).toBe("success");
+    expect(result.truncated).toBe(false);
+    expect(result.returnedCount).toBe(2);
+    expect(result.totalCountKnown).toBe(true);
+    expect(result.totalCount).toBe(2);
+    expect(result.omittedCountKnown).toBe(true);
+    expect(result.omittedCount).toBe(0);
+    expect(result.permissionLimited).toBe(false);
+    expect(result.permissionStatus).toBe("verified");
+    expect(result.summary).toMatchObject({
+      datasource: expect.objectContaining({
+        datasourceId: "datasource-1",
+        datasourceName: "Datasource One",
+        connectionType: "fake",
       }),
+      fieldsSummary: expect.objectContaining({
+        totalFields: 2,
+      }),
+    });
+    expect(result.warnings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: "TRANSPORT_WARNING",
+        }),
+      ]),
     );
+    expect(result.trace).toMatchObject({
+      eventNames: expect.arrayContaining([
+        "tableau_metadata_tool.started",
+        "tableau_metadata_tool.completed",
+      ]),
+      fakeNoNetwork: true,
+      returnedCount: 2,
+      totalCountKnown: true,
+      totalCount: 2,
+      omittedCountKnown: true,
+      omittedCount: 0,
+      permissionLimited: false,
+      permissionStatus: "verified",
+    });
+    expect(result.traceSafeSummary).toMatchObject({
+      truncated: false,
+      returnedCount: 2,
+      totalCountKnown: true,
+      totalCount: 2,
+      omittedCountKnown: true,
+      omittedCount: 0,
+      permissionLimited: false,
+      permissionStatus: "verified",
+    });
+    expect(result.metadata).toMatchObject({
+      source: "fake_no_network",
+      transportKind: "fake",
+      transportStatus: "success",
+    });
     expect(JSON.stringify(result)).not.toContain("accessToken");
     expect(JSON.stringify(result)).not.toContain("rawMcpResult");
     expect(JSON.stringify(result)).not.toContain("stdout");
+    expect(JSON.stringify(result)).not.toContain("stack");
+  });
+
+  it("normalizes permission-limited discovery output with safe notes", () => {
+    const request = createRequest(
+      TABLEAU_METADATA_DESCRIBE_DATASOURCE_TOOL_NAME,
+    );
+    const transportResult: TableauMcpTransportResult = {
+      requestId: request.requestId,
+      transportKind: "fake",
+      status: "success",
+      toolName: request.toolName,
+      data: {
+        status: "success",
+        summary: {
+          datasourceId: "datasource-1",
+          datasourceName: "Datasource One",
+          connectionType: "fake",
+          fieldCount: 1,
+          visibleFieldCount: 1,
+          hiddenFieldCount: 0,
+        },
+        fieldsSummary: {
+          totalFields: 1,
+          visibleFields: 1,
+          hiddenFields: 0,
+          returnedSampleCount: 1,
+          sampleFieldNames: ["Region"],
+          truncated: false,
+        },
+        warnings: [],
+      } as unknown as TableauDescribeDatasourceOutput,
+      trace: {
+        correlationId: request.correlationId,
+        agentRunId: request.agentRunId,
+        transportEventId: "transport-event-permission",
+        startedAt: "2026-07-03T00:00:00.000Z",
+        completedAt: "2026-07-03T00:00:00.001Z",
+        durationMs: 1,
+        transportKind: "fake",
+        toolName: request.toolName,
+      },
+      timing: {
+        startedAt: "2026-07-03T00:00:00.000Z",
+        completedAt: "2026-07-03T00:00:00.001Z",
+        durationMs: 1,
+        timeoutMs: request.timeoutMs,
+        timedOut: false,
+      },
+    };
+
+    const result = normalizeTableauMetadataExecutionResult({
+      toolName: request.toolName,
+      request,
+      precondition: {
+        status: "warning",
+        canExecute: true,
+        warnings: [
+          {
+            code: "PERMISSION_NOT_VERIFIED",
+            message:
+              "Tableau permission was not verified before metadata execution.",
+          },
+        ],
+        governance: {
+          readOnly: "allowed",
+          safeForPreview: "allowed",
+          externalAccess: "allowed",
+          underlyingDataAccess: "not_requested",
+          writeOperation: "not_requested",
+          allowedToolPolicy: "allowed",
+          permission: "not_verified",
+          siteSettings: "enabled",
+        },
+        metadata: {
+          source: "fake_no_network",
+        },
+      },
+      transportResult,
+      fallbackOutput: {
+        status: "success",
+        summary: {
+          datasourceId: "datasource-1",
+          datasourceName: "Datasource One",
+        },
+      } as TableauDescribeDatasourceOutput,
+      startedAt: "2026-07-03T00:00:00.000Z",
+      completedAt: "2026-07-03T00:00:00.001Z",
+    });
+
+    expect(result).toEqual(
+      expect.objectContaining({
+        status: "success",
+        permissionLimited: true,
+        permissionStatus: "unknown",
+        permissionNotes: expect.arrayContaining([
+          expect.stringContaining("Permission could not be fully verified"),
+        ]),
+        safeMessage: expect.stringContaining(
+          "Permission could not be fully verified",
+        ),
+        traceSafeSummary: expect.objectContaining({
+          permissionLimited: true,
+          permissionStatus: "unknown",
+        }),
+      }),
+    );
+    expect(JSON.stringify(result)).not.toContain("rawMcpResult");
+    expect(JSON.stringify(result)).not.toContain("accessToken");
     expect(JSON.stringify(result)).not.toContain("stack");
   });
 
@@ -523,38 +655,68 @@ describe("Tableau metadata output normalization and trace events", () => {
       completedAt: "2026-07-03T00:00:00.002Z",
     });
 
-    expect(result).toEqual(
-      expect.objectContaining({
-        status: "partial",
-        summary: expect.objectContaining({
-          datasource: expect.objectContaining({
-            datasourceId: "datasource-1",
-            connectionType: "fake",
-          }),
-          fields: expect.arrayContaining([
-            expect.objectContaining({
-              fieldName: "Region",
-            }),
-          ]),
-        }),
-        truncation: expect.objectContaining({
-          truncated: true,
-          limit: 1,
-        }),
-        omissions: expect.arrayContaining([
-          expect.objectContaining({
-            reason: "hidden_by_default",
-          }),
-        ]),
-        trace: expect.objectContaining({
-          eventNames: expect.arrayContaining([
-            "tableau_metadata_tool.started",
-            "tableau_metadata_tool.completed",
-          ]),
-          omittedCount: 1,
-        }),
-      }),
+    expect(result.status).toBe("partial");
+    expect(result.truncated).toBe(true);
+    expect(result.limitApplied).toBe(1);
+    expect(result.returnedCount).toBe(1);
+    expect(result.totalCountKnown).toBe(true);
+    expect(result.totalCount).toBe(2);
+    expect(result.omittedCountKnown).toBe(true);
+    expect(result.omittedCount).toBe(1);
+    expect(result.omissionReasons).toEqual(
+      expect.arrayContaining(["hidden_by_default", "field_limit"]),
     );
+    expect(result.truncationReason).toBe("field_limit");
+    expect(result.permissionLimited).toBe(false);
+    expect(result.permissionStatus).toBe("verified");
+    expect(result.summary).toMatchObject({
+      datasource: expect.objectContaining({
+        datasourceId: "datasource-1",
+        connectionType: "fake",
+      }),
+      fields: expect.arrayContaining([
+        expect.objectContaining({
+          fieldName: "Region",
+        }),
+      ]),
+    });
+    expect(result.truncation).toMatchObject({
+      truncated: true,
+      limit: 1,
+    });
+    expect(result.omissions).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          reason: "hidden_by_default",
+        }),
+      ]),
+    );
+    expect(result.trace).toMatchObject({
+      eventNames: expect.arrayContaining([
+        "tableau_metadata_tool.started",
+        "tableau_metadata_tool.completed",
+      ]),
+      truncated: true,
+      limitApplied: 1,
+      returnedCount: 1,
+      totalCountKnown: true,
+      totalCount: 2,
+      omittedCountKnown: true,
+      omittedCount: 1,
+      permissionLimited: false,
+      permissionStatus: "verified",
+    });
+    expect(result.traceSafeSummary).toMatchObject({
+      truncated: true,
+      limitApplied: 1,
+      returnedCount: 1,
+      totalCountKnown: true,
+      totalCount: 2,
+      omittedCountKnown: true,
+      omittedCount: 1,
+      permissionLimited: false,
+      permissionStatus: "verified",
+    });
     expect(JSON.stringify(result)).not.toContain("rawMcpResult");
     expect(JSON.stringify(result)).not.toContain("accessToken");
   });

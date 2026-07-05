@@ -68,6 +68,27 @@ describe("MinimalIntentResolver", () => {
     );
   });
 
+  it("keeps selected_mark_explanation ahead of metadata_discovery when both are available", async () => {
+    const resolver = createResolver();
+    const result = await resolver.resolve({
+      agentRunId: createAgentRunId(),
+      message: "Please explain this selection.",
+      contextSummary: createContextSummary(2),
+      availableIntentIds: [
+        "selected_mark_explanation",
+        "metadata_discovery",
+        "current_dashboard_summary",
+      ],
+    });
+
+    expectCommonShape(result, {
+      status: "resolved",
+      resolvedIntentId: "selected_mark_explanation",
+      source: "deterministic_rule",
+    });
+    expect(result.reason).toContain("selected-mark explanation");
+  });
+
   it("returns unresolved when explicit selected_mark_explanation has no selected marks", async () => {
     const resolver = createResolver();
     const result = await resolver.resolve({

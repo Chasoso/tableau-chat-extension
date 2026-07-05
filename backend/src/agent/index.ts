@@ -80,6 +80,7 @@ export type {
   TableauMetadataNormalizedResult,
   TableauMetadataNormalizedStatus,
   TableauMetadataOutputNormalizationInput,
+  TableauMetadataPermissionStatus,
   TableauMetadataTraceEvent,
   TableauMetadataTraceEventName,
   TableauMetadataTraceSummary,
@@ -160,6 +161,63 @@ export {
   createUnresolvedIntentResolution,
   normalizeIntentConfidence,
 } from "./intent";
+export {
+  buildMetadataDiscoveryClarificationResponse,
+  buildMetadataDiscoveryClarificationTraceMetadata,
+} from "./metadataDiscoveryClarification";
+export {
+  buildMetadataDiscoveryPlan,
+  buildMetadataDiscoveryPlanTraceMetadata,
+} from "./metadataDiscoveryPlan";
+export { runMetadataDiscoveryOrchestration } from "./metadataDiscoveryOrchestration";
+export {
+  buildMetadataDiscoveryIntentTraceMetadata,
+  classifyMetadataDiscoveryIntent,
+} from "./metadataDiscoveryIntent";
+export type {
+  MetadataDiscoveryOrchestrationExecutionContext,
+  MetadataDiscoveryOrchestrationExecutionResult,
+  MetadataDiscoveryOrchestrationInput,
+  MetadataDiscoveryOrchestrationResponse,
+  MetadataDiscoveryOrchestrationStatus,
+} from "./metadataDiscoveryOrchestration";
+export type {
+  MetadataDiscoveryClarificationAction,
+  MetadataDiscoveryClarificationOption,
+  MetadataDiscoveryClarificationReasonCode,
+  MetadataDiscoveryClarificationResponse,
+  MetadataDiscoveryClarificationResponseKind,
+  MetadataDiscoveryClarificationResumeContract,
+  MetadataDiscoveryClarificationResumeField,
+} from "./metadataDiscoveryClarification";
+export type {
+  MetadataDiscoveryClarificationGate,
+  MetadataDiscoveryExecutionGate,
+  MetadataDiscoveryFallbackGate,
+  MetadataDiscoveryMetadataBoundary,
+  MetadataDiscoveryPlan,
+  MetadataDiscoveryPlanInput,
+  MetadataDiscoveryPlanKind,
+  MetadataDiscoveryPlanReasonCode,
+  MetadataDiscoveryPlanState,
+  MetadataDiscoveryPlanTransition,
+  MetadataDiscoveryToolCandidate,
+  MetadataDiscoveryToolCandidateOperation,
+  MetadataDiscoveryToolCandidateStatus,
+  MetadataDiscoveryUnsupportedGate,
+} from "./metadataDiscoveryPlan";
+export type {
+  MetadataDiscoveryAmbiguityState,
+  MetadataDiscoveryDecisionKind,
+  MetadataDiscoveryIntentDecision,
+  MetadataDiscoveryIntentId,
+  MetadataDiscoveryIntentInput,
+  MetadataDiscoveryNextStep,
+  MetadataDiscoveryPreconditionCheck,
+  MetadataDiscoveryPreconditionId,
+  MetadataDiscoveryTargetContext,
+  MetadataDiscoveryTargetType,
+} from "./metadataDiscoveryIntent";
 export {
   createDefaultIntentResolver,
   createMinimalIntentResolver,
