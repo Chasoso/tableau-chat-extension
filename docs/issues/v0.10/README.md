@@ -5,7 +5,7 @@ This directory is reserved for v0.10.0 milestone planning references.
 ## Purpose
 
 - v0.10.0 chooses between LLM ResponseComposer and Exploration Session.
-- Issue 1 is the branch decision issue.
+- Issue 1 is the branch decision issue and selected LLM ResponseComposer.
 - Branch A and Branch B are alternatives, not both mandatory implementation tracks.
 - AgentCore remains deferred.
 
@@ -15,6 +15,8 @@ This directory is reserved for v0.10.0 milestone planning references.
 
 ## Child issues
 
+Selected branch: LLM ResponseComposer
+
 Planned child issue titles, in order:
 
 1. `v0.10.0 planning and branch decision`
@@ -23,12 +25,7 @@ Planned child issue titles, in order:
 4. `Add guarded LLM ResponseComposer prototype`
 5. `Add LLM ResponseComposer fallback and regression tests`
 6. `Document LLM ResponseComposer result`
-7. `Define Exploration Session safety boundary`
-8. `Define session state schema and lifecycle`
-9. `Add minimal Exploration Session prototype`
-10. `Add Exploration Session fallback and regression tests`
-11. `Document Exploration Session result`
-12. `v0.10.0 wrap-up`
+7. `v0.10.0 wrap-up`
 
 Issue numbers will be assigned by GitHub when the script is run.
 
@@ -36,8 +33,8 @@ Issue numbers will be assigned by GitHub when the script is run.
 
 - Child issue 1 depends on the parent issue and records the branch decision.
 - Child issues 2-6 depend on branch A being selected.
-- Child issues 7-11 depend on branch B being selected.
-- Child issue 12 depends on completion of the selected branch and closes out the milestone.
+- Child issue 7 closes out the milestone after the selected branch is complete.
+- The Exploration Session path is deferred to a later milestone unless the decision is revisited.
 
 ## Branch positions
 
@@ -48,6 +45,18 @@ LLM ResponseComposer focuses on safer natural-language composition while keeping
 ### Branch B
 
 Exploration Session focuses on safe session continuity for selected marks, metadata discovery, and interaction history.
+
+### Selected path
+
+Branch A is selected for v0.10.0.
+
+The initial focus is to keep the deterministic baseline while improving user-facing summary and explanation quality with optional guarded composition.
+
+### Deferred path
+
+Branch B is deferred for now.
+
+It can be revisited in a later milestone if session continuity becomes the stronger product need.
 
 ## Safety boundaries
 
@@ -79,3 +88,4 @@ The script expects `gh auth status` to succeed and will use the configured miles
 
 - Update this README with the created issue numbers after the script runs if desired.
 - Keep the branch decision issue first so the milestone can switch direction cleanly before implementation starts.
+- The wrap-up issue closes the selected branch path for v0.10.0.
