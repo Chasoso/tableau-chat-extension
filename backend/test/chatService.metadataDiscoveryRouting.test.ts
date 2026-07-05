@@ -187,6 +187,34 @@ describe("ChatService metadata discovery routing", () => {
     expect(response.answer).toContain("legacy answer");
   });
 
+  it("keeps datasource-adjacent free-form analysis questions on the legacy path", async () => {
+    const contextProvider = createLegacyContextProvider();
+    const answerGenerator = createAnswerGenerator("legacy analysis answer");
+    const repository = createRepository();
+    const service = new ChatService(
+      contextProvider,
+      answerGenerator,
+      repository,
+    );
+
+    const response = await service.generateAnswer({
+      question: "Can you analyze this datasource?",
+      dashboardContext: {
+        dashboardName: "Overview",
+        workbookName: "Sales Workbook",
+        worksheets: [],
+        filters: [],
+        parameters: [],
+        dataSources: [{ name: "Sales Datasource" }],
+        capturedAt: "2026-07-05T00:00:00.000Z",
+      },
+    });
+
+    expect(runMetadataDiscoveryOrchestrationMock).not.toHaveBeenCalled();
+    expect(answerGenerator.generate).toHaveBeenCalledTimes(1);
+    expect(response.answer).toContain("legacy analysis answer");
+  });
+
   it("does not steal selected_mark_explanation requests", async () => {
     const contextProvider = createLegacyContextProvider();
     const answerGenerator = createAnswerGenerator("selected mark legacy");
@@ -198,6 +226,34 @@ describe("ChatService metadata discovery routing", () => {
     );
 
     const response = await service.generateAnswer(buildSelectedMarkRequest());
+
+    expect(runMetadataDiscoveryOrchestrationMock).not.toHaveBeenCalled();
+    expect(answerGenerator.generate).toHaveBeenCalledTimes(1);
+    expect(response.answer).toContain("selected mark legacy");
+  });
+
+  it("does not route selected_mark_explanation requests into metadata discovery when datasource context is present", async () => {
+    const contextProvider = createLegacyContextProvider();
+    const answerGenerator = createAnswerGenerator("selected mark legacy");
+    const repository = createRepository();
+    const service = new ChatService(
+      contextProvider,
+      answerGenerator,
+      repository,
+    );
+
+    const response = await service.generateAnswer({
+      question: "Explain the selected marks.",
+      dashboardContext: {
+        dashboardName: "Overview",
+        workbookName: "Sales Workbook",
+        worksheets: [],
+        filters: [],
+        parameters: [],
+        dataSources: [{ name: "Sales Datasource" }],
+        capturedAt: "2026-07-05T00:00:00.000Z",
+      },
+    });
 
     expect(runMetadataDiscoveryOrchestrationMock).not.toHaveBeenCalled();
     expect(answerGenerator.generate).toHaveBeenCalledTimes(1);
