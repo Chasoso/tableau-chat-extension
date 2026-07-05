@@ -62,6 +62,8 @@ The fallback and regression coverage for `#213 Add LLM ResponseComposer fallback
 
 The Branch A result document for `#214 Document LLM ResponseComposer result` is documented in `docs/v0.10-llm-response-composer-result.md`.
 
+The v0.10.0 wrap-up document for `#220 v0.10.0 wrap-up` is documented in `docs/v0.10-wrap-up.md`.
+
 ### Deferred path
 
 Branch B is deferred for now.
@@ -99,3 +101,4 @@ The script expects `gh auth status` to succeed and will use the configured miles
 - Update this README with the created issue numbers after the script runs if desired.
 - Keep the branch decision issue first so the milestone can switch direction cleanly before implementation starts.
 - The wrap-up issue closes the selected branch path for v0.10.0.
+- After the wrap-up, the next step is v0.11.0 planning.
