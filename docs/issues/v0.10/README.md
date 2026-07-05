@@ -24,8 +24,8 @@ Planned child issue titles, in order:
 3. `#211 Define response material contract for LLM composition`
 4. `#212 Add guarded LLM ResponseComposer prototype`
 5. `#213 Add LLM ResponseComposer fallback and regression tests`
-6. `Document LLM ResponseComposer result`
-7. `v0.10.0 wrap-up`
+6. `#214 Document LLM ResponseComposer result`
+7. `#220 v0.10.0 wrap-up`
 
 Issue numbers will be assigned by GitHub when the script is run.
 
@@ -59,6 +59,8 @@ The response material contract for `#211 Define response material contract for L
 The guarded prototype for `#212 Add guarded LLM ResponseComposer prototype` is documented in `docs/v0.10-guarded-llm-response-composer-prototype.md`.
 
 The fallback and regression coverage for `#213 Add LLM ResponseComposer fallback and regression tests` is documented in `docs/v0.10-llm-response-composer-fallback-regressions.md`.
+
+The Branch A result document for `#214 Document LLM ResponseComposer result` is documented in `docs/v0.10-llm-response-composer-result.md`.
 
 ### Deferred path
 
