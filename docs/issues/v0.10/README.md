@@ -21,8 +21,8 @@ Planned child issue titles, in order:
 
 1. `#209 v0.10.0 planning and branch decision`
 2. `#210 Define LLM ResponseComposer safety boundary`
-3. `Define response material contract for LLM composition`
-4. `Add guarded LLM ResponseComposer prototype`
+3. `#211 Define response material contract for LLM composition`
+4. `#212 Add guarded LLM ResponseComposer prototype`
 5. `Add LLM ResponseComposer fallback and regression tests`
 6. `Document LLM ResponseComposer result`
 7. `v0.10.0 wrap-up`
@@ -55,6 +55,8 @@ The initial focus is to keep the deterministic baseline while improving user-fac
 The LLM ResponseComposer safety boundary is documented in `docs/v0.10-llm-response-composer-safety-boundary.md`.
 
 The response material contract for `#211 Define response material contract for LLM composition` is documented in `docs/v0.10-llm-response-material-contract.md`.
+
+The guarded prototype for `#212 Add guarded LLM ResponseComposer prototype` is documented in `docs/v0.10-guarded-llm-response-composer-prototype.md`.
 
 ### Deferred path
 
