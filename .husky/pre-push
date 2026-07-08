@@ -1,4 +1,4 @@
 #!/usr/bin/env sh
 set -eu
 
-node scripts/quality-prepush.mjs
+sh scripts/quality/prepush.sh
