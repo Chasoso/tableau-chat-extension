@@ -2,6 +2,7 @@
   "name": "tableau-chat-extension",
   "private": true,
   "scripts": {
+    "prepare": "node scripts/setup-git-hooks.mjs",
     "lint": "npm --prefix backend run lint && npm --prefix frontend run lint",
     "typecheck": "npm --prefix backend run typecheck && npm --prefix frontend run typecheck",
     "test": "npm run test:unit",
@@ -10,6 +11,10 @@
     "test:coverage:frontend": "npm --prefix frontend run test:coverage",
     "test:unit": "npm --prefix backend run test:unit && npm --prefix frontend run test:unit",
     "test:e2e": "npm --prefix frontend run test:e2e",
+    "quality:precommit": "node scripts/quality-precommit.mjs",
+    "quality:prepush": "npm run ci",
+    "quality:ci-local": "npm run quality:prepush",
+    "setup:hooks": "node scripts/setup-git-hooks.mjs",
     "issues:v0.7.0": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/create-v0.7.0-issues.ps1",
     "build": "npm --prefix backend run build && npm --prefix backend run build:lambda && npm --prefix frontend run build",
     "ci": "npm run lint && npm run typecheck && npm run test:coverage && npm run build && npm run test:e2e"

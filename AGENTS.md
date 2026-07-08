@@ -3,9 +3,10 @@
 This document defines the mandatory operational constraints for the AI Agent when interacting with this repository.
 
 ## 1. File System & Path Operations (Critical)
-- **Environment Awareness**: You are operating in a Windows-based environment. 
+
+- **Environment Awareness**: You are operating in a Windows-based environment.
 - **Relative Path Supremacy**: Always use relative paths from the project root (e.g., `tableau-chat-extension/src/index.ts`). Avoid absolute paths that include drive letters (e.g., `D:\...`).
-- **Pre-flight Verification (The "No-Guessing" Rule)**: 
+- **Pre-flight Verification (The "No-Guessing" Rule)**:
   - NEVER use `read_file` on a path without first verifying its existence and type (file vs. directory) using `ls`.
   - When navigating deep structures (e-g, `.github/workflows/`), use incremental traversal:
     1. `ls .github`
@@ -22,15 +23,18 @@ This document defines the mandatory operational constraints for the AI Agent whe
 - **Error Recovery Protocol**: If `read_file` or `ls` fails with a path-related error (`ENOTDIR`, `ENOENT`), do **not** retry the same command. Instead, execute `ls` on the immediate parent directory to re-verify the structure.
 
 ## 2. Tool Usage Standards
+
 - **Atomic Operations**: Prefer small, targeted reads and writes.
 - **Context Integrity**: Before editing a file, use `read_file` to ensure you have the most recent version of the content.
 - **Verification**: After any file modification, perform a type check or build command relevant to the changed module (Frontend or Backend) to ensure no regressions were introduced.
 
 ## 3. Architecture Compliance
+
 - Ensure all business logic (prompt construction, tool planning) is implemented in the **Backend** services, not the Frontend API client.
 - Respect the established boundaries between `frontend/` and `backend/`.
 
 ## 4. Agentic Principles (Mandatory)
+
 - **Action Over Declaration**: Never just declare that a file will be created or modified in text. **Always execute the corresponding tool (`create_new_file`, `edit_existing_file`, etc.) immediately.**
 - **Physical Reality Rule**: A task is only "done" when the change is reflected in the file system, not when it is described in the chat.
 - **Verification Required**: Every tool execution that modifies the file system must be followed by a verification step (e-g, `ls` or `read_file`) to ensure the change was successful.
@@ -49,11 +53,13 @@ This document defines the mandatory operational constraints for the AI Agent whe
 Before reporting completion, run the relevant checks.
 
 For backend changes:
+
 - Run backend lint.
 - Run backend typecheck.
 - Run backend tests.
 
 For frontend changes:
+
 - Run frontend lint.
 - Run frontend typecheck.
 - Run frontend tests when available or relevant.
@@ -61,8 +67,21 @@ For frontend changes:
 If a script does not exist, inspect the relevant package.json and report that it is unavailable.
 
 The final report must include:
+
 - Changed files
 - Summary of implementation
 - Commands executed
 - Result of each command
 - Known limitations or follow-up work
+
+## 7. Codex PR Workflow
+
+- One issue maps to one branch and one pull request.
+- Base branch is `develop`.
+- Do not push directly to `develop` or `main`.
+- Do not bypass hooks with `--no-verify`.
+- Run `npm run quality:precommit` and `npm run quality:prepush` before opening a PR.
+- If validation fails, fix the issue when it is clearly in scope and rerun the check.
+- If validation still fails or appears unrelated, stop and report the failure instead of bypassing it.
+- Keep default checks no-network.
+- Keep Hosted integration tests opt-in or gated.
