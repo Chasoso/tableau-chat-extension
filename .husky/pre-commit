@@ -1,4 +1,4 @@
 #!/usr/bin/env sh
 set -eu
 
-node scripts/quality-precommit.mjs
+sh scripts/quality/precommit.sh
