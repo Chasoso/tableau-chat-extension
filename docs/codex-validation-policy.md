@@ -26,7 +26,7 @@ Required:
 - unit tests with coverage
 - build
 - Playwright E2E
-- secret scan
+- secret scan with Gitleaks
 - local quality gate / pre-push check if configured
 
 ## Test-Only Changes
@@ -63,6 +63,7 @@ Required:
 - `npm run quality:precommit` is the lightweight local gate.
 - `npm run quality:prepush` is the CI-equivalent local gate.
 - If direct hook scripts are present, verify them directly when the issue changes hooks or scripts.
+- If Gitleaks is not installed, set `GITLEAKS_BIN` or install the binary before rerunning the gates.
 
 ## Reporting
 

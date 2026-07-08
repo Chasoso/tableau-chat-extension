@@ -36,6 +36,7 @@ This document describes how to hand Codex a batch of issues overnight so the res
 - Do not create PRs for failed issues.
 - Do not create PRs if validation fails.
 - Do not use `--no-verify`.
+- Do not bypass Gitleaks failures with allowlists or `--no-verify`.
 - If a failure is clearly in scope, fix it and rerun validation.
 - If the failure is unrelated, unclear, or looks like a false positive, stop and report it.
 

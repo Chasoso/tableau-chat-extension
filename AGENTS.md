@@ -53,6 +53,8 @@ This repository is maintained with durable rules so Codex and other agents can w
 - For docs-only changes, run docs validation only if it exists.
 - For tooling or configuration changes, run the relevant local quality gates and verify hooks directly when possible.
 - For code-bearing changes, run lint, typecheck, unit tests with coverage, build, Playwright E2E, and secret scan.
+- Secret scan uses Gitleaks as the primary scanner.
+- If Gitleaks is missing, install it or set `GITLEAKS_BIN` before rerunning validation.
 - For test-only changes, run affected tests plus any broader checks required by shared fixtures or test setup changes.
 - For hosted or external integration changes, keep default validation no-network and gated.
 
@@ -104,6 +106,7 @@ Do not add the following unless the issue explicitly requires it:
 - Do not expand scope without a clear reason from the issue body.
 - Do not introduce secrets, tokens, credentials, or real service data into the repository.
 - Do not weaken or remove existing CI gates to make local validation pass.
+- Do not silence or bypass Gitleaks findings without human review.
 
 ## Failure handling
 

@@ -48,7 +48,9 @@ This repository uses repository-level guardrails so Codex can implement one issu
 
 - Run the required validation for the change type.
 - Verify that secret scanning passes.
+- Verify that secret scanning passes with Gitleaks.
 - Verify that no secret or credential file paths were introduced.
+- If Gitleaks is missing, install it or set `GITLEAKS_BIN` before rerunning validation.
 - Fix clearly in-scope failures before committing.
 
 ## Before Push
@@ -106,3 +108,4 @@ If validation passes, push and create a PR.
 - If the repository already has the needed tooling, use it instead of introducing a duplicate command path.
 - Keep default validation no-network.
 - Keep hosted or external integration tests gated.
+- Do not bypass Gitleaks failures with `--no-verify`.
