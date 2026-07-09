@@ -5,6 +5,7 @@ import {
   buildOrchestrationIntentResolutionTraceMetadata,
   createDefaultIntentResolver,
   createLambdaAgentRunner,
+  createHostedMetadataDiscoveryTransport,
   runMetadataDiscoveryOrchestration,
   runSelectedMarkExplanationOrchestration,
   type AgentIntent,
@@ -309,6 +310,14 @@ export async function handler(
       }
 
       if (shouldRunMetadataDiscoveryOrchestration) {
+        const hostedTransport = createHostedMetadataDiscoveryTransport({
+          authenticatedUser: authResult.user,
+          tableauSubject: authResult.user?.tableauSubject,
+          requestId,
+          correlationId:
+            intentRequest.clientTimestamp ?? intentRequest.actionId,
+          agentRunId: requestId ?? intentRequest.actionId,
+        });
         const metadataDiscoveryOrchestration =
           await runMetadataDiscoveryOrchestration({
             intentResolutionInput,
@@ -317,6 +326,11 @@ export async function handler(
               authResult.user,
               requestId,
             ),
+            executionBoundary: hostedTransport
+              ? {
+                  hostedTransport,
+                }
+              : undefined,
           });
         const response: ResolveIntentResponse = {
           result: metadataDiscoveryOrchestration.intentResolution,

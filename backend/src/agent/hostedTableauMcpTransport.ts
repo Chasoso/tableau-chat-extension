@@ -10,10 +10,7 @@ import type {
   TableauMcpTransportWarning,
   TableauMcpTransportKind,
 } from "./tableauMetadataToolRuntime";
-import {
-  TABLEAU_METADATA_DESCRIBE_DATASOURCE_TOOL_NAME,
-  TABLEAU_METADATA_LIST_FIELDS_TOOL_NAME,
-} from "./tableauMetadataTools";
+import { TABLEAU_METADATA_DESCRIBE_DATASOURCE_TOOL_NAME } from "./tableauMetadataTools";
 
 export type HostedTableauMcpTransportProtocol =
   | "streamable_http"
@@ -23,6 +20,7 @@ export type HostedTableauMcpTransportProtocol =
 export type HostedTableauMcpTransportAuthMode =
   | "oauth_delegated"
   | "token_reference"
+  | "direct_trust"
   | "unknown";
 
 export type HostedTableauMcpTransportConfig = {
@@ -86,7 +84,6 @@ type HostedTableauMcpTransportAuthState =
 
 const HOSTED_TOOL_ALLOWLIST = new Set([
   TABLEAU_METADATA_DESCRIBE_DATASOURCE_TOOL_NAME,
-  TABLEAU_METADATA_LIST_FIELDS_TOOL_NAME,
 ]);
 
 export class HostedTableauMcpTransport implements TableauMcpTransport {
