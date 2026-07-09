@@ -17,16 +17,19 @@ export default defineConfig({
     screenshot: "only-on-failure",
     video: "retain-on-failure",
   },
-  webServer: {
-    command: "npm run dev -- --host 127.0.0.1",
-    url: "http://127.0.0.1:5173",
-    reuseExistingServer: !process.env.CI,
-    env: {
-      VITE_USE_MOCK_TABLEAU: "true",
-      VITE_AUTH_REQUIRED: process.env.PW_VITE_AUTH_REQUIRED ?? "false",
-      VITE_API_BASE_URL: "/api",
-    },
-  },
+  webServer:
+    process.env.PLAYWRIGHT_SKIP_WEB_SERVER === "1"
+      ? undefined
+      : {
+          command: "node scripts/start-playwright-web-server.mjs",
+          url: "http://127.0.0.1:5173",
+          reuseExistingServer: !process.env.CI,
+          env: {
+            VITE_USE_MOCK_TABLEAU: "true",
+            VITE_AUTH_REQUIRED: process.env.PW_VITE_AUTH_REQUIRED ?? "false",
+            VITE_API_BASE_URL: "/api",
+          },
+        },
   projects: [
     {
       name: "chromium",

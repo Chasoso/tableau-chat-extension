@@ -364,6 +364,7 @@ export {
   createHostedTableauMcpTransport,
   HostedTableauMcpTransport,
 } from "./hostedTableauMcpTransport";
+export { createHostedMetadataDiscoveryTransport } from "./hostedMetadataDiscoveryTransport";
 export type {
   HostedMcpRequestClient,
   HostedMcpRequestClientResult,

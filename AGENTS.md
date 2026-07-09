@@ -1,68 +1,116 @@
-# AI Agent Operating Protocol
+# AGENTS.md
 
-This document defines the mandatory operational constraints for the AI Agent when interacting with this repository.
+This repository is maintained with durable rules so Codex and other agents can work safely with short prompts.
 
-## 1. File System & Path Operations (Critical)
-- **Environment Awareness**: You are operating in a Windows-based environment. 
-- **Relative Path Supremacy**: Always use relative paths from the project root (e.g., `tableau-chat-extension/src/index.ts`). Avoid absolute paths that include drive letters (e.g., `D:\...`).
-- **Pre-flight Verification (The "No-Guessing" Rule)**: 
-  - NEVER use `read_file` on a path without first verifying its existence and type (file vs. directory) using `ls`.
-  - When navigating deep structures (e-g, `.github/workflows/`), use incremental traversal:
-    1. `ls .github`
-    2. `ls .github/workflows`
-    3. `read_file .github/workflows/deploy-aws.yml`
-- **Exploration Integrity (No Assumptions)**:
-  - **No Shortcuts**: Never skip `ls` or `read_file` commands based on assumptions about the directory structure.
-  - **Complete Verification**: Even if a directory appears to follow a standard pattern, you **must** verify its actual contents using `ls` before proceeding to the next level or file.
-  - **Exhaustive Investigation**: Do not declare a search "complete" based on a guess; continue until the target is found or the search space is exhausted.
-- **Path Delimiters**: Always use forward slashes (`/`) in tool arguments to ensure cross-platform compatibility within tool logic.
-- **Avoid URL-Encoded Absolute Paths**:
-  - **CRITICAL**: Do NOT pass paths as absolute URLs (e.g., `file:///D%3A/...`). This causes decoding errors in Windows environments.
-  - **ALWAYS** use simple relative paths from the workspace root (e.g., `tableau-chat-extension/.agent-rules.md`) to ensure the tool correctly interprets the drive letter and path structure.
-- **Error Recovery Protocol**: If `read_file` or `ls` fails with a path-related error (`ENOTDIR`, `ENOENT`), do **not** retry the same command. Instead, execute `ls` on the immediate parent directory to re-verify the structure.
+## Repository rules
 
-## 2. Tool Usage Standards
-- **Atomic Operations**: Prefer small, targeted reads and writes.
-- **Context Integrity**: Before editing a file, use `read_file` to ensure you have the most recent version of the content.
-- **Verification**: After any file modification, perform a type check or build command relevant to the changed module (Frontend or Backend) to ensure no regressions were introduced.
+- Base branch is `develop`.
+- Use one branch per issue.
+- Use one PR per issue.
+- Do not combine unrelated issues in one branch or PR.
+- Always read the full issue body before implementing.
+- Follow the issue `Scope`, `Out of scope`, `Acceptance criteria`, and `Validation`.
+- Do not use `git commit --no-verify`.
+- Do not use `git push --no-verify`.
+- Do not create a PR if required validation fails.
+- If validation fails and the fix is clearly in scope, fix it and rerun validation.
+- If validation fails and the cause is unrelated, unclear, or a likely false positive, stop and report it.
+- Do not silently skip required validation.
+- Default validation must remain no-network.
+- Hosted/external integration tests must remain opt-in or gated.
+- Do not modify GitHub Actions, package files, lock files, deployment config, or frontend UI unless the issue explicitly requires it.
 
-## 3. Architecture Compliance
-- Ensure all business logic (prompt construction, tool planning) is implemented in the **Backend** services, not the Frontend API client.
-- Respect the established boundaries between `frontend/` and `backend/`.
+## Git workflow
 
-## 4. Agentic Principles (Mandatory)
-- **Action Over Declaration**: Never just declare that a file will be created or modified in text. **Always execute the corresponding tool (`create_new_file`, `edit_existing_file`, etc.) immediately.**
-- **Physical Reality Rule**: A task is only "done" when the change is reflected in the file system, not when it is described in the chat.
-- **Verification Required**: Every tool execution that modifies the file system must be followed by a verification step (e-g, `ls` or `read_file`) to ensure the change was successful.
+- Fetch the latest `develop` before starting work.
+- Create a branch named for the issue, for example `chore/issue-233-codex-quality-gates`.
+- Never push directly to `develop` or `main`.
+- Keep branch history focused on the issue.
+- Commit with Conventional Commits.
+- Push only after the required validation passes.
 
-## 5. Issue and Scope Control
+## Issue workflow
 
-- Work on one GitHub Issue at a time.
-- Keep changes focused on the target Issue.
-- Do not make unrelated refactors or formatting-only changes.
-- Preserve existing runtime behavior unless the target Issue explicitly requires a behavior change.
-- Do not change public API responses, authentication, deployment, or infrastructure unless explicitly requested.
-- If a scope expansion is necessary, explain why before making the change.
+- Read the full issue body first.
+- Confirm the scope, out of scope, acceptance criteria, and validation before changing files.
+- Implement only the requested scope.
+- Reuse existing scripts, workflows, and docs whenever possible.
+- Keep local quality gates aligned with CI, but do not weaken CI to make local checks pass.
+- When an issue is documentation or tooling only, avoid runtime or product behavior changes.
 
-## 6. Required Checks and Final Report
+## Branch naming
 
-Before reporting completion, run the relevant checks.
+- Use `docs/issue-<number>-<slug>` for documentation-only work.
+- Use `feat/issue-<number>-<slug>` for new user-facing functionality.
+- Use `fix/issue-<number>-<slug>` for bug fixes.
+- Use `test/issue-<number>-<slug>` for test-only changes.
+- Use `chore/issue-<number>-<slug>` for workflow, tooling, or maintenance work.
+- Keep the slug short and descriptive.
 
-For backend changes:
-- Run backend lint.
-- Run backend typecheck.
-- Run backend tests.
+## Validation policy
 
-For frontend changes:
-- Run frontend lint.
-- Run frontend typecheck.
-- Run frontend tests when available or relevant.
+- Run the validation requested by the issue body.
+- For docs-only changes, run docs validation only if it exists.
+- For tooling or configuration changes, run the relevant local quality gates and verify hooks directly when possible.
+- For code-bearing changes, run lint, typecheck, unit tests with coverage, build, Playwright E2E, and secret scan.
+- Secret scan uses Gitleaks as the primary scanner.
+- If Gitleaks is missing, install it or set `GITLEAKS_BIN` before rerunning validation.
+- For test-only changes, run affected tests plus any broader checks required by shared fixtures or test setup changes.
+- For hosted or external integration changes, keep default validation no-network and gated.
 
-If a script does not exist, inspect the relevant package.json and report that it is unavailable.
+## PR requirements
 
-The final report must include:
-- Changed files
-- Summary of implementation
-- Commands executed
-- Result of each command
-- Known limitations or follow-up work
+- Use the PR template.
+- Include the related issue number.
+- Include the commands that were run.
+- Include the validation results.
+- Include the safety confirmation checklist.
+- Include reviewer notes when there are caveats or skipped checks.
+
+## Safety boundaries
+
+Do not add the following unless the issue explicitly requires it:
+
+- Hosted MCP implementation
+- Direct Trust JWT implementation
+- OAuth / token handling
+- token storage / refresh
+- DCR support
+- OAuth 2.0 Trust / EAS
+- PAT handling
+- raw MCP tool exposure
+- raw MCP output exposure
+- raw transport output exposure
+- arbitrary query generation
+- arbitrary query execution
+- underlying data access
+- field values / row data retrieval
+- sample values / domain values retrieval
+- write-capable tools
+- broad ChatService replacement
+- broad free-form chat routing rewrite
+- selected_mark_explanation behavior changes
+- LLM ResponseComposer behavior changes
+- Exploration Session
+- AgentCore
+- frontend UI / UX changes
+- deployment config changes
+- application runtime behavior changes
+
+## Prohibited actions
+
+- Do not push directly to `develop` or `main`.
+- Do not use `--no-verify`.
+- Do not create a PR before validation passes.
+- Do not bypass hooks.
+- Do not expand scope without a clear reason from the issue body.
+- Do not introduce secrets, tokens, credentials, or real service data into the repository.
+- Do not weaken or remove existing CI gates to make local validation pass.
+- Do not silence or bypass Gitleaks findings without human review.
+
+## Failure handling
+
+- If a check fails and the fix is clearly in scope, fix it and rerun validation.
+- If a check fails and the cause is unrelated, unclear, or a likely false positive, stop and report the failure.
+- If the issue scope is unclear, pause and ask for clarification before changing behavior.
+- If validation cannot be completed because of missing local setup, report the missing prerequisite and the exact command that was blocked.

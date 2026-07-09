@@ -51,6 +51,14 @@ export type AppConfig = {
     defaultSubject: string;
     scopes: string[];
     contextProvider: "mock" | "direct-api" | "mcp";
+    hostedMcp: {
+      enabled: boolean;
+      endpoint: string;
+      timeoutMs: number;
+      siteId: string;
+      siteContentUrl: string;
+      integrationTests: boolean;
+    };
     mcp: {
       serverUrl: string;
       transport: string;
@@ -179,6 +187,18 @@ export function getConfig(): AppConfig {
       contextProvider: parseContextProvider(
         process.env.TABLEAU_CONTEXT_PROVIDER,
       ),
+      hostedMcp: {
+        enabled: process.env.TABLEAU_MCP_HOSTED_ENABLED === "true",
+        endpoint: process.env.TABLEAU_MCP_HOSTED_ENDPOINT ?? "",
+        timeoutMs: parsePositiveInt(
+          process.env.TABLEAU_MCP_HOSTED_TIMEOUT_MS,
+          5_000,
+        ),
+        siteId: process.env.TABLEAU_MCP_HOSTED_SITE_ID ?? "",
+        siteContentUrl: process.env.TABLEAU_MCP_HOSTED_SITE_CONTENT_URL ?? "",
+        integrationTests:
+          process.env.TABLEAU_MCP_HOSTED_INTEGRATION_TESTS === "true",
+      },
       mcp: {
         serverUrl: process.env.TABLEAU_MCP_SERVER_URL ?? "",
         transport: process.env.TABLEAU_MCP_TRANSPORT ?? "stdio",
