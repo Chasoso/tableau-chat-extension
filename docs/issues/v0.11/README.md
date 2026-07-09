@@ -71,6 +71,17 @@ Issue #238 captures the result and wrap-up after implementation lands.
 - Default CI remains no-network.
 - Hosted / external integration tests remain opt-in or gated.
 
+## Milestone Docs
+
+- Result: [`docs/v0.11-hosted-metadata-discovery-result.md`](../../v0.11-hosted-metadata-discovery-result.md)
+- Wrap-up: [`docs/v0.11-wrap-up.md`](../../v0.11-wrap-up.md)
+
+## Notes
+
+- Issue #237 is the functional milestone for usable Hosted `describeDatasource`.
+- Issue #238 records what actually shipped, what remains gated, and the remaining limitations.
+- The docs in this folder intentionally stay compact so the issue flow remains easy to follow.
+
 ## Short Prompts
 
 ### Issue #236
