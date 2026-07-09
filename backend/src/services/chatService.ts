@@ -25,6 +25,7 @@ import type {
   TableauAdditionalContext,
 } from "../types/tableau";
 import { runMetadataDiscoveryOrchestration } from "../agent/metadataDiscoveryOrchestration";
+import { createHostedMetadataDiscoveryTransport } from "../agent/hostedMetadataDiscoveryTransport";
 import { createAgentRunId } from "../agent/runId";
 import {
   detectRankingIntent,
@@ -115,6 +116,7 @@ export class ChatService {
       await buildMetadataDiscoveryStructuredPathAnswer({
         request,
         requestInterpretation,
+        authenticatedUser,
       });
     if (metadataDiscoveryStructuredPathAnswer) {
       logInfo("chat.service.metadata_discovery_structured_path.used", {
@@ -1736,6 +1738,7 @@ function buildDatasourceInventoryFastPathAnswer(
 async function buildMetadataDiscoveryStructuredPathAnswer(input: {
   request: ChatRequest;
   requestInterpretation: QuestionInterpretation;
+  authenticatedUser?: AuthenticatedUser;
 }): Promise<string | undefined> {
   if (!isStrongDatasourceInventoryRequest(input.requestInterpretation)) {
     return undefined;
@@ -1749,6 +1752,11 @@ async function buildMetadataDiscoveryStructuredPathAnswer(input: {
   if (uniqueDatasourceNames.length !== 1) {
     return undefined;
   }
+
+  const hostedTransport = createHostedMetadataDiscoveryTransport({
+    authenticatedUser: input.authenticatedUser,
+    tableauSubject: resolveTableauSubject(input.authenticatedUser),
+  });
 
   const orchestration = await runMetadataDiscoveryOrchestration({
     intentResolutionInput: {
@@ -1790,6 +1798,11 @@ async function buildMetadataDiscoveryStructuredPathAnswer(input: {
           : {}),
       },
     },
+    executionBoundary: hostedTransport
+      ? {
+          hostedTransport,
+        }
+      : undefined,
   });
 
   if (
