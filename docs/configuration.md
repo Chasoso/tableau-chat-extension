@@ -103,6 +103,8 @@ Hosted Tableau MCP settings are usually supplied by GitHub Actions Variables / S
 | `TABLEAU_MCP_HOSTED_TEST_DATASOURCE_NAME` | 任意                              | opt-in hosted integration test で使う datasource name         |
 | `TABLEAU_MCP_HOSTED_INTEGRATION_TESTS`    | 任意                              | opt-in hosted integration test switch                         |
 
+Hosted execution を有効にする場合は `TABLEAU_MCP_HOSTED_ENDPOINT` が必要ですが、`TABLEAU_MCP_HOSTED_SITE_ID` と `TABLEAU_MCP_HOSTED_SITE_CONTENT_URL` は任意です。
+
 ## 生成AI / Bedrock
 
 | 変数                                   | 必須                     | 意味                                           |

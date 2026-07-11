@@ -56,6 +56,22 @@ Use GitHub Actions Variables for Hosted Tableau MCP connection settings and keep
 - `ci.yml` は lint / typecheck / unit tests / build / Playwright E2E を実行します。
 - `deploy-aws.yml` は同じ品質ゲートに加えて AWS へのデプロイを行います。
 
+### Hosted Tableau MCP settings
+
+Hosted Tableau MCP の接続設定は GitHub Actions Variables で管理します。  
+`TABLEAU_MCP_HOSTED_ENDPOINT` は必須ですが、`TABLEAU_MCP_HOSTED_SITE_ID` と `TABLEAU_MCP_HOSTED_SITE_CONTENT_URL` は任意です。
+
+| Name                                      | Source   | Purpose                                         |
+| ----------------------------------------- | -------- | ----------------------------------------------- |
+| `TABLEAU_MCP_HOSTED_ENABLED`              | Variable | Enable Hosted Tableau MCP in deployed workflows |
+| `TABLEAU_MCP_HOSTED_ENDPOINT`             | Variable | Hosted MCP server URL                           |
+| `TABLEAU_MCP_HOSTED_TIMEOUT_MS`           | Variable | Hosted request timeout                          |
+| `TABLEAU_MCP_HOSTED_SITE_ID`              | Variable | Optional hosted Tableau site ID                 |
+| `TABLEAU_MCP_HOSTED_SITE_CONTENT_URL`     | Variable | Optional hosted Tableau site content URL        |
+| `TABLEAU_MCP_HOSTED_TEST_DATASOURCE_ID`   | Variable | Optional hosted test datasource ID              |
+| `TABLEAU_MCP_HOSTED_TEST_DATASOURCE_NAME` | Variable | Optional hosted test datasource name            |
+| `TABLEAU_MCP_HOSTED_INTEGRATION_TESTS`    | Variable | Opt-in hosted integration tests                 |
+
 ## 初回セットアップ
 
 1. AWS で OIDC 用の GitHub Actions ロールを用意します。
