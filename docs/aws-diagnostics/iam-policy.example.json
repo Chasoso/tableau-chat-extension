@@ -1,0 +1,47 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "AllowReadOnlyCloudWatchDiagnostics",
+      "Effect": "Allow",
+      "Action": [
+        "logs:StartQuery",
+        "logs:GetQueryResults",
+        "logs:StopQuery",
+        "logs:DescribeLogGroups",
+        "logs:DescribeLogStreams",
+        "logs:FilterLogEvents",
+        "logs:GetLogEvents",
+        "lambda:GetFunctionConfiguration",
+        "lambda:ListVersionsByFunction",
+        "cloudformation:DescribeStacks",
+        "cloudformation:DescribeStackResources"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "DenySensitiveOrMutatingAccess",
+      "Effect": "Deny",
+      "Action": [
+        "logs:Unmask",
+        "logs:Delete*",
+        "logs:Put*",
+        "lambda:Update*",
+        "lambda:InvokeFunction",
+        "cloudformation:Create*",
+        "cloudformation:Update*",
+        "cloudformation:Delete*",
+        "secretsmanager:GetSecretValue",
+        "ssm:GetParameter",
+        "ssm:GetParameters",
+        "ssm:GetParametersByPath",
+        "iam:*",
+        "sts:AssumeRole",
+        "s3:GetObject",
+        "dynamodb:*",
+        "ecs:Update*"
+      ],
+      "Resource": "*"
+    }
+  ]
+}

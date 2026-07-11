@@ -1,0 +1,23 @@
+# Example local CloudWatch MCP configuration for Codex.
+# Replace the command with the approved local CloudWatch MCP server binary or package
+# used in your environment.
+
+[mcp_servers.cloudwatch]
+command = "npx"
+args = [
+  "-y",
+  "cloudwatch-mcp-server",
+  "--profile",
+  "tableau-chat-diagnostics",
+  "--region",
+  "ap-northeast-1",
+  "--environment",
+  "dev",
+]
+
+[mcp_servers.cloudwatch.env]
+AWS_PROFILE = "tableau-chat-diagnostics"
+AWS_REGION = "ap-northeast-1"
+AWS_DEFAULT_REGION = "ap-northeast-1"
+TABLEAU_CHAT_DIAGNOSTICS_ENVIRONMENT = "dev"
+
