@@ -90,19 +90,20 @@
 
 ### Hosted Tableau MCP
 
-Hosted Tableau MCP は、GitHub Actions Variables などのデプロイ環境変数から与える想定です。  
-Hosted execution を有効にする場合は `TABLEAU_MCP_HOSTED_ENDPOINT` が必要ですが、`TABLEAU_MCP_HOSTED_SITE_ID` と `TABLEAU_MCP_HOSTED_SITE_CONTENT_URL` は任意です。
+Hosted Tableau MCP settings are usually supplied by GitHub Actions Variables / Secrets in deployed environments rather than `.env`.
 
-| 変数                                      | 必須                              | 意味                                                  |
-| ----------------------------------------- | --------------------------------- | ----------------------------------------------------- |
-| `TABLEAU_MCP_HOSTED_ENABLED`              | 任意                              | Hosted Tableau MCP の有効化                           |
-| `TABLEAU_MCP_HOSTED_ENDPOINT`             | `TABLEAU_MCP_HOSTED_ENABLED=true` | Hosted MCP server URL                                 |
-| `TABLEAU_MCP_HOSTED_TIMEOUT_MS`           | 任意                              | Hosted request timeout。既定 5000                     |
-| `TABLEAU_MCP_HOSTED_SITE_ID`              | 任意                              | Hosted execution 用の Tableau site ID                 |
-| `TABLEAU_MCP_HOSTED_SITE_CONTENT_URL`     | 任意                              | Hosted execution 用の Tableau site content URL        |
-| `TABLEAU_MCP_HOSTED_TEST_DATASOURCE_ID`   | 任意                              | opt-in hosted integration test で使う datasource ID   |
-| `TABLEAU_MCP_HOSTED_TEST_DATASOURCE_NAME` | 任意                              | opt-in hosted integration test で使う datasource name |
-| `TABLEAU_MCP_HOSTED_INTEGRATION_TESTS`    | 任意                              | opt-in hosted integration test switch                 |
+| 変数                                      | 必須                              | 意味                                                          |
+| ----------------------------------------- | --------------------------------- | ------------------------------------------------------------- |
+| `TABLEAU_MCP_HOSTED_ENABLED`              | 任意                              | GitHub Actions Variables で管理する hosted execution の有効化 |
+| `TABLEAU_MCP_HOSTED_ENDPOINT`             | 任意                              | GitHub Actions Variables で管理する Hosted MCP server URL     |
+| `TABLEAU_MCP_HOSTED_TIMEOUT_MS`           | 任意                              | Hosted execution の timeout                                   |
+| `TABLEAU_MCP_HOSTED_SITE_ID`              | `TABLEAU_MCP_HOSTED_ENABLED=true` | Hosted execution 用 Tableau site ID                           |
+| `TABLEAU_MCP_HOSTED_SITE_CONTENT_URL`     | `TABLEAU_MCP_HOSTED_ENABLED=true` | Hosted execution 用 site content URL                          |
+| `TABLEAU_MCP_HOSTED_TEST_DATASOURCE_ID`   | 任意                              | opt-in hosted integration test で使う datasource ID           |
+| `TABLEAU_MCP_HOSTED_TEST_DATASOURCE_NAME` | 任意                              | opt-in hosted integration test で使う datasource name         |
+| `TABLEAU_MCP_HOSTED_INTEGRATION_TESTS`    | 任意                              | opt-in hosted integration test switch                         |
+
+Hosted execution を有効にする場合は `TABLEAU_MCP_HOSTED_ENDPOINT` が必要ですが、`TABLEAU_MCP_HOSTED_SITE_ID` と `TABLEAU_MCP_HOSTED_SITE_CONTENT_URL` は任意です。
 
 ## 生成AI / Bedrock
 

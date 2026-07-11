@@ -27,6 +27,21 @@ AWS 側の主な構成要素は次の通りです。
 
 ## GitHub Actions
 
+### Hosted Tableau MCP settings
+
+Use GitHub Actions Variables for Hosted Tableau MCP connection settings and keep the existing Tableau Connected App values in Secrets.
+
+| Name                                      | Source   | Purpose                                         |
+| ----------------------------------------- | -------- | ----------------------------------------------- |
+| `TABLEAU_MCP_HOSTED_ENABLED`              | Variable | Enable Hosted Tableau MCP in deployed workflows |
+| `TABLEAU_MCP_HOSTED_ENDPOINT`             | Variable | Hosted MCP server URL                           |
+| `TABLEAU_MCP_HOSTED_TIMEOUT_MS`           | Variable | Hosted request timeout                          |
+| `TABLEAU_MCP_HOSTED_SITE_ID`              | Variable | Tableau site ID for Hosted requests             |
+| `TABLEAU_MCP_HOSTED_SITE_CONTENT_URL`     | Variable | Tableau site content URL for Hosted requests    |
+| `TABLEAU_MCP_HOSTED_TEST_DATASOURCE_ID`   | Variable | Optional hosted test datasource ID              |
+| `TABLEAU_MCP_HOSTED_TEST_DATASOURCE_NAME` | Variable | Optional hosted test datasource name            |
+| `TABLEAU_MCP_HOSTED_INTEGRATION_TESTS`    | Variable | Opt-in hosted integration tests                 |
+
 ### ワークフロー
 
 - `ci.yml`

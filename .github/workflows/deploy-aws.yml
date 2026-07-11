@@ -181,6 +181,14 @@ jobs:
             "$TABLEAU_CONNECTED_APP_SECRET_ID" \
             "$TABLEAU_CONNECTED_APP_SECRET_VALUE" \
             "$TABLEAU_DEFAULT_SUBJECT" \
+            "$TABLEAU_MCP_HOSTED_ENABLED" \
+            "$TABLEAU_MCP_HOSTED_ENDPOINT" \
+            "$TABLEAU_MCP_HOSTED_TIMEOUT_MS" \
+            "$TABLEAU_MCP_HOSTED_SITE_ID" \
+            "$TABLEAU_MCP_HOSTED_SITE_CONTENT_URL" \
+            "$TABLEAU_MCP_HOSTED_TEST_DATASOURCE_ID" \
+            "$TABLEAU_MCP_HOSTED_TEST_DATASOURCE_NAME" \
+            "$TABLEAU_MCP_HOSTED_INTEGRATION_TESTS" \
             "$TABLEAU_API_VERSION" \
             "$TABLEAU_SCOPES" \
             "$TABLEAU_CONTEXT_PROVIDER" \
@@ -265,6 +273,19 @@ jobs:
               exit 1
             fi
           done
+          if [ "${TABLEAU_MCP_HOSTED_ENABLED:-false}" = "true" ]; then
+            hosted_required_settings=(
+              TABLEAU_MCP_HOSTED_ENDPOINT
+              TABLEAU_MCP_HOSTED_SITE_ID
+              TABLEAU_MCP_HOSTED_SITE_CONTENT_URL
+            )
+            for name in "${hosted_required_settings[@]}"; do
+              if [ -z "${!name:-}" ]; then
+                echo "A required Hosted Tableau MCP setting is missing."
+                exit 1
+              fi
+            done
+          fi
           if [ "$AUTH_REQUIRED" = "true" ]; then
             auth_required_settings=(
               COGNITO_USER_POOL_ID
@@ -439,6 +460,14 @@ jobs:
               TableauMcpDebugLogResults="$TABLEAU_MCP_DEBUG_LOG_RESULTS" \
               TableauMcpToolPlanningEnabled="$TABLEAU_MCP_TOOL_PLANNING_ENABLED" \
               TableauMcpPlannerMaxOutputTokens="$TABLEAU_MCP_PLANNER_MAX_OUTPUT_TOKENS" \
+              TableauMcpHostedEnabled="$TABLEAU_MCP_HOSTED_ENABLED" \
+              TableauMcpHostedEndpoint="$TABLEAU_MCP_HOSTED_ENDPOINT" \
+              TableauMcpHostedTimeoutMs="$TABLEAU_MCP_HOSTED_TIMEOUT_MS" \
+              TableauMcpHostedSiteId="$TABLEAU_MCP_HOSTED_SITE_ID" \
+              TableauMcpHostedSiteContentUrl="$TABLEAU_MCP_HOSTED_SITE_CONTENT_URL" \
+              TableauMcpHostedTestDatasourceId="$TABLEAU_MCP_HOSTED_TEST_DATASOURCE_ID" \
+              TableauMcpHostedTestDatasourceName="$TABLEAU_MCP_HOSTED_TEST_DATASOURCE_NAME" \
+              TableauMcpHostedIntegrationTests="$TABLEAU_MCP_HOSTED_INTEGRATION_TESTS" \
               ModelProvider="$MODEL_PROVIDER" \
               BedrockRegion="$BEDROCK_REGION" \
               BedrockModelId="$BEDROCK_MODEL_ID" \
