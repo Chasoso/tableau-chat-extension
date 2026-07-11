@@ -190,6 +190,9 @@ Parameters:
       - info
       - warn
       - error
+  DeploymentVersion:
+    Type: String
+    Default: "unknown"
   ChatDebugMaxChars:
     Type: Number
     Default: 12000
@@ -515,6 +518,7 @@ Resources:
           BEDROCK_TEMPERATURE: !Sub "${BedrockTemperature}"
           CHAT_MEMORY_MESSAGE_LIMIT: !Sub "${ChatMemoryMessageLimit}"
           LOG_LEVEL: !Ref LogLevel
+          DEPLOYMENT_VERSION: !Ref DeploymentVersion
           CHAT_DEBUG_MAX_CHARS: !Sub "${ChatDebugMaxChars}"
           NOTION_MCP_ENABLED: !Ref NotionMcpEnabled
           NOTION_MCP_URL: !Ref NotionMcpUrl
@@ -595,6 +599,7 @@ Resources:
           BEDROCK_TEMPERATURE: !Sub "${BedrockTemperature}"
           CHAT_MEMORY_MESSAGE_LIMIT: !Sub "${ChatMemoryMessageLimit}"
           LOG_LEVEL: !Ref LogLevel
+          DEPLOYMENT_VERSION: !Ref DeploymentVersion
           CHAT_DEBUG_MAX_CHARS: !Sub "${ChatDebugMaxChars}"
           NOTION_MCP_ENABLED: !Ref NotionMcpEnabled
           NOTION_MCP_URL: !Ref NotionMcpUrl
@@ -624,6 +629,7 @@ Resources:
       Environment:
         Variables:
           CORS_ALLOWED_ORIGIN: !Ref CorsAllowedOrigin
+          DEPLOYMENT_VERSION: !Ref DeploymentVersion
 
   HttpApi:
     Type: AWS::ApiGatewayV2::Api
