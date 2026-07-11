@@ -27,6 +27,7 @@ let closing = false;
 
 child.on("exit", (code, signal) => {
   if (closing) {
+    process.exit(code ?? 0);
     return;
   }
 
@@ -45,6 +46,13 @@ function shutdown(signal) {
   }
 
   closing = true;
+  if (process.platform === "win32") {
+    spawn("taskkill", ["/pid", String(child.pid), "/t", "/f"], {
+      stdio: "ignore",
+    });
+    return;
+  }
+
   child.kill(signal);
 }
 
