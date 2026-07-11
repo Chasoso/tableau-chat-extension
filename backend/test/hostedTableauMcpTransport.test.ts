@@ -111,6 +111,32 @@ describe("HostedTableauMcpTransport skeleton", () => {
     expect(client).not.toHaveBeenCalled();
   });
 
+  it("allows hosted execution when site settings are omitted", async () => {
+    const client = vi.fn(async () => ({
+      status: "success",
+      data: {
+        status: "ok",
+      },
+    })) as HostedMcpRequestClient;
+
+    const transport = createTransport(
+      {
+        siteId: undefined,
+        siteContentUrl: undefined,
+        networkEnabled: true,
+      },
+      client,
+    );
+
+    const result = await transport.call(createRequest());
+
+    expect(result.status).toBe("success");
+    expect(client).toHaveBeenCalledTimes(1);
+    expect(JSON.stringify(result)).not.toContain(
+      "request-token-should-not-leak",
+    );
+  });
+
   it("returns not_configured when network access is disabled", async () => {
     const client = vi.fn();
     const transport = createTransport(

@@ -123,6 +123,14 @@ jobs:
       TABLEAU_MCP_TRANSPORT: ${{ vars.TABLEAU_MCP_TRANSPORT || 'stdio' }}
       TABLEAU_MCP_AUTH_MODE: ${{ vars.TABLEAU_MCP_AUTH_MODE || 'direct-trust' }}
       TABLEAU_MCP_TIMEOUT_MS: ${{ vars.TABLEAU_MCP_TIMEOUT_MS || '5000' }}
+      TABLEAU_MCP_HOSTED_ENABLED: ${{ vars.TABLEAU_MCP_HOSTED_ENABLED || 'false' }}
+      TABLEAU_MCP_HOSTED_ENDPOINT: ${{ vars.TABLEAU_MCP_HOSTED_ENDPOINT || '' }}
+      TABLEAU_MCP_HOSTED_TIMEOUT_MS: ${{ vars.TABLEAU_MCP_HOSTED_TIMEOUT_MS || '5000' }}
+      TABLEAU_MCP_HOSTED_SITE_ID: ${{ vars.TABLEAU_MCP_HOSTED_SITE_ID || '' }}
+      TABLEAU_MCP_HOSTED_SITE_CONTENT_URL: ${{ vars.TABLEAU_MCP_HOSTED_SITE_CONTENT_URL || '' }}
+      TABLEAU_MCP_HOSTED_TEST_DATASOURCE_ID: ${{ vars.TABLEAU_MCP_HOSTED_TEST_DATASOURCE_ID || '' }}
+      TABLEAU_MCP_HOSTED_TEST_DATASOURCE_NAME: ${{ vars.TABLEAU_MCP_HOSTED_TEST_DATASOURCE_NAME || '' }}
+      TABLEAU_MCP_HOSTED_INTEGRATION_TESTS: ${{ vars.TABLEAU_MCP_HOSTED_INTEGRATION_TESTS || 'false' }}
       TABLEAU_MCP_COMMAND: ${{ secrets.TABLEAU_MCP_COMMAND }}
       TABLEAU_MCP_ARGS: ${{ secrets.TABLEAU_MCP_ARGS }}
       TABLEAU_MCP_ALLOWED_TOOLS: ${{ vars.TABLEAU_MCP_ALLOWED_TOOLS || '' }}
@@ -192,6 +200,14 @@ jobs:
             "$TABLEAU_MCP_TRANSPORT" \
             "$TABLEAU_MCP_AUTH_MODE" \
             "$TABLEAU_MCP_TIMEOUT_MS" \
+            "$TABLEAU_MCP_HOSTED_ENABLED" \
+            "$TABLEAU_MCP_HOSTED_ENDPOINT" \
+            "$TABLEAU_MCP_HOSTED_TIMEOUT_MS" \
+            "$TABLEAU_MCP_HOSTED_SITE_ID" \
+            "$TABLEAU_MCP_HOSTED_SITE_CONTENT_URL" \
+            "$TABLEAU_MCP_HOSTED_TEST_DATASOURCE_ID" \
+            "$TABLEAU_MCP_HOSTED_TEST_DATASOURCE_NAME" \
+            "$TABLEAU_MCP_HOSTED_INTEGRATION_TESTS" \
             "$TABLEAU_MCP_COMMAND" \
             "$TABLEAU_MCP_ARGS" \
             "$TABLEAU_MCP_ALLOWED_TOOLS" \
@@ -262,6 +278,17 @@ jobs:
             for name in "${auth_required_settings[@]}"; do
               if [ -z "${!name:-}" ]; then
                 echo "A required authentication setting is missing."
+                exit 1
+              fi
+            done
+          fi
+          if [ "${TABLEAU_MCP_HOSTED_ENABLED:-false}" = "true" ]; then
+            hosted_required_settings=(
+              TABLEAU_MCP_HOSTED_ENDPOINT
+            )
+            for name in "${hosted_required_settings[@]}"; do
+              if [ -z "${!name:-}" ]; then
+                echo "A required Hosted Tableau MCP setting is missing."
                 exit 1
               fi
             done
@@ -397,6 +424,14 @@ jobs:
               TableauMcpTransport="$TABLEAU_MCP_TRANSPORT" \
               TableauMcpAuthMode="$TABLEAU_MCP_AUTH_MODE" \
               TableauMcpTimeoutMs="$TABLEAU_MCP_TIMEOUT_MS" \
+              TableauMcpHostedEnabled="$TABLEAU_MCP_HOSTED_ENABLED" \
+              TableauMcpHostedEndpoint="$TABLEAU_MCP_HOSTED_ENDPOINT" \
+              TableauMcpHostedTimeoutMs="$TABLEAU_MCP_HOSTED_TIMEOUT_MS" \
+              TableauMcpHostedSiteId="$TABLEAU_MCP_HOSTED_SITE_ID" \
+              TableauMcpHostedSiteContentUrl="$TABLEAU_MCP_HOSTED_SITE_CONTENT_URL" \
+              TableauMcpHostedTestDatasourceId="$TABLEAU_MCP_HOSTED_TEST_DATASOURCE_ID" \
+              TableauMcpHostedTestDatasourceName="$TABLEAU_MCP_HOSTED_TEST_DATASOURCE_NAME" \
+              TableauMcpHostedIntegrationTests="$TABLEAU_MCP_HOSTED_INTEGRATION_TESTS" \
               TableauMcpCommand="$TABLEAU_MCP_COMMAND" \
               TableauMcpArgs="$TABLEAU_MCP_ARGS" \
               TableauMcpAllowedTools="$TABLEAU_MCP_ALLOWED_TOOLS" \
