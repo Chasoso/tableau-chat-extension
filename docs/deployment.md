@@ -27,6 +27,21 @@ AWS 側の主な構成要素は次の通りです。
 
 ## GitHub Actions
 
+### Hosted Tableau MCP settings
+
+Use GitHub Actions Variables for Hosted Tableau MCP connection settings and keep the existing Tableau Connected App values in Secrets.
+
+| Name                                      | Source   | Purpose                                         |
+| ----------------------------------------- | -------- | ----------------------------------------------- |
+| `TABLEAU_MCP_HOSTED_ENABLED`              | Variable | Enable Hosted Tableau MCP in deployed workflows |
+| `TABLEAU_MCP_HOSTED_ENDPOINT`             | Variable | Hosted MCP server URL                           |
+| `TABLEAU_MCP_HOSTED_TIMEOUT_MS`           | Variable | Hosted request timeout                          |
+| `TABLEAU_MCP_HOSTED_SITE_ID`              | Variable | Tableau site ID for Hosted requests             |
+| `TABLEAU_MCP_HOSTED_SITE_CONTENT_URL`     | Variable | Tableau site content URL for Hosted requests    |
+| `TABLEAU_MCP_HOSTED_TEST_DATASOURCE_ID`   | Variable | Optional hosted test datasource ID              |
+| `TABLEAU_MCP_HOSTED_TEST_DATASOURCE_NAME` | Variable | Optional hosted test datasource name            |
+| `TABLEAU_MCP_HOSTED_INTEGRATION_TESTS`    | Variable | Opt-in hosted integration tests                 |
+
 ### ワークフロー
 
 - `ci.yml`
@@ -57,28 +72,28 @@ AWS 側の主な構成要素は次の通りです。
 詳細な意味は [docs/configuration.md](configuration.md) を参照してください。  
 デプロイに直接必要なものだけを抜粋します。
 
-| 種別 | 名前 | 用途 |
-| --- | --- | --- |
-| Secret | `AWS_CFN_STACK_NAME` | CloudFormation スタック名 |
-| Secret | `AWS_GHA_DEPLOY_ROLE_ARN` | GitHub OIDC 用 IAM role ARN |
-| Secret | `AWS_CFN_EXECUTION_ROLE_ARN` | CloudFormation execution role ARN |
-| Secret | `AWS_ARTIFACT_BUCKET` | Lambda artifact 用 S3 バケット |
-| Secret | `FRONTEND_BUCKET_NAME` | frontend 配信用 S3 バケット |
-| Secret | `VITE_API_BASE_URL` | frontend から見た API base URL |
-| Secret | `EXTENSION_SOURCE_URL` | `.trex` に書き込む公開 URL |
-| Secret | `CORS_ALLOWED_ORIGIN` | 許可する frontend origin |
-| Secret | `TABLEAU_SERVER_URL` | Tableau Server / Cloud URL |
-| Secret | `TABLEAU_SITE_CONTENT_URL` | Tableau site content URL |
-| Secret | `TABLEAU_CONNECTED_APP_CLIENT_ID` | Connected App client ID |
-| Secret | `TABLEAU_CONNECTED_APP_SECRET_ID` | Connected App secret ID |
-| Secret | `TABLEAU_CONNECTED_APP_SECRET_VALUE` | Connected App secret value |
-| Secret | `TABLEAU_DEFAULT_SUBJECT` | Tableau subject の既定値 |
-| Variable | `AWS_REGION` | デプロイ先リージョン |
-| Variable | `TABLEAU_API_VERSION` | Tableau REST API version |
-| Variable | `TABLEAU_SCOPES` | Connected App scopes |
-| Variable | `TABLEAU_CONTEXT_PROVIDER` | `mock` / `direct-api` / `mcp` |
-| Variable | `AUTH_REQUIRED` | Cognito 認証の有効化 |
-| Variable | `COGNITO_REGION` | Cognito リージョン |
+| 種別     | 名前                                 | 用途                              |
+| -------- | ------------------------------------ | --------------------------------- |
+| Secret   | `AWS_CFN_STACK_NAME`                 | CloudFormation スタック名         |
+| Secret   | `AWS_GHA_DEPLOY_ROLE_ARN`            | GitHub OIDC 用 IAM role ARN       |
+| Secret   | `AWS_CFN_EXECUTION_ROLE_ARN`         | CloudFormation execution role ARN |
+| Secret   | `AWS_ARTIFACT_BUCKET`                | Lambda artifact 用 S3 バケット    |
+| Secret   | `FRONTEND_BUCKET_NAME`               | frontend 配信用 S3 バケット       |
+| Secret   | `VITE_API_BASE_URL`                  | frontend から見た API base URL    |
+| Secret   | `EXTENSION_SOURCE_URL`               | `.trex` に書き込む公開 URL        |
+| Secret   | `CORS_ALLOWED_ORIGIN`                | 許可する frontend origin          |
+| Secret   | `TABLEAU_SERVER_URL`                 | Tableau Server / Cloud URL        |
+| Secret   | `TABLEAU_SITE_CONTENT_URL`           | Tableau site content URL          |
+| Secret   | `TABLEAU_CONNECTED_APP_CLIENT_ID`    | Connected App client ID           |
+| Secret   | `TABLEAU_CONNECTED_APP_SECRET_ID`    | Connected App secret ID           |
+| Secret   | `TABLEAU_CONNECTED_APP_SECRET_VALUE` | Connected App secret value        |
+| Secret   | `TABLEAU_DEFAULT_SUBJECT`            | Tableau subject の既定値          |
+| Variable | `AWS_REGION`                         | デプロイ先リージョン              |
+| Variable | `TABLEAU_API_VERSION`                | Tableau REST API version          |
+| Variable | `TABLEAU_SCOPES`                     | Connected App scopes              |
+| Variable | `TABLEAU_CONTEXT_PROVIDER`           | `mock` / `direct-api` / `mcp`     |
+| Variable | `AUTH_REQUIRED`                      | Cognito 認証の有効化              |
+| Variable | `COGNITO_REGION`                     | Cognito リージョン                |
 
 ### 認証を有効にする場合
 
@@ -127,4 +142,3 @@ AWS 側の主な構成要素は次の通りです。
 - CloudFormation 定義: `infra/cloudformation.yaml`
 - フロントエンドの `.trex` 更新: `frontend/scripts/update-trex-url.mjs`
 - 実行コマンド: `package.json`
-
