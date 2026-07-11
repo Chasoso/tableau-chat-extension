@@ -123,6 +123,36 @@ Parameters:
   TableauMcpPlannerMaxOutputTokens:
     Type: Number
     Default: 600
+  TableauMcpHostedEnabled:
+    Type: String
+    Default: "false"
+    AllowedValues:
+      - "true"
+      - "false"
+  TableauMcpHostedEndpoint:
+    Type: String
+    Default: ""
+  TableauMcpHostedTimeoutMs:
+    Type: Number
+    Default: 5000
+  TableauMcpHostedSiteId:
+    Type: String
+    Default: ""
+  TableauMcpHostedSiteContentUrl:
+    Type: String
+    Default: ""
+  TableauMcpHostedTestDatasourceId:
+    Type: String
+    Default: ""
+  TableauMcpHostedTestDatasourceName:
+    Type: String
+    Default: ""
+  TableauMcpHostedIntegrationTests:
+    Type: String
+    Default: "false"
+    AllowedValues:
+      - "true"
+      - "false"
   ModelProvider:
     Type: String
     Default: "mock"
@@ -465,6 +495,14 @@ Resources:
           TABLEAU_MCP_DEBUG_LOG_RESULTS: !Ref TableauMcpDebugLogResults
           TABLEAU_MCP_TOOL_PLANNING_ENABLED: !Ref TableauMcpToolPlanningEnabled
           TABLEAU_MCP_PLANNER_MAX_OUTPUT_TOKENS: !Sub "${TableauMcpPlannerMaxOutputTokens}"
+          TABLEAU_MCP_HOSTED_ENABLED: !Ref TableauMcpHostedEnabled
+          TABLEAU_MCP_HOSTED_ENDPOINT: !Ref TableauMcpHostedEndpoint
+          TABLEAU_MCP_HOSTED_TIMEOUT_MS: !Sub "${TableauMcpHostedTimeoutMs}"
+          TABLEAU_MCP_HOSTED_SITE_ID: !Ref TableauMcpHostedSiteId
+          TABLEAU_MCP_HOSTED_SITE_CONTENT_URL: !Ref TableauMcpHostedSiteContentUrl
+          TABLEAU_MCP_HOSTED_TEST_DATASOURCE_ID: !Ref TableauMcpHostedTestDatasourceId
+          TABLEAU_MCP_HOSTED_TEST_DATASOURCE_NAME: !Ref TableauMcpHostedTestDatasourceName
+          TABLEAU_MCP_HOSTED_INTEGRATION_TESTS: !Ref TableauMcpHostedIntegrationTests
           MODEL_PROVIDER: !Ref ModelProvider
           BEDROCK_REGION: !Ref BedrockRegion
           BEDROCK_MODEL_ID: !Ref BedrockModelId
@@ -537,6 +575,14 @@ Resources:
           TABLEAU_MCP_DEBUG_LOG_RESULTS: !Ref TableauMcpDebugLogResults
           TABLEAU_MCP_TOOL_PLANNING_ENABLED: !Ref TableauMcpToolPlanningEnabled
           TABLEAU_MCP_PLANNER_MAX_OUTPUT_TOKENS: !Sub "${TableauMcpPlannerMaxOutputTokens}"
+          TABLEAU_MCP_HOSTED_ENABLED: !Ref TableauMcpHostedEnabled
+          TABLEAU_MCP_HOSTED_ENDPOINT: !Ref TableauMcpHostedEndpoint
+          TABLEAU_MCP_HOSTED_TIMEOUT_MS: !Sub "${TableauMcpHostedTimeoutMs}"
+          TABLEAU_MCP_HOSTED_SITE_ID: !Ref TableauMcpHostedSiteId
+          TABLEAU_MCP_HOSTED_SITE_CONTENT_URL: !Ref TableauMcpHostedSiteContentUrl
+          TABLEAU_MCP_HOSTED_TEST_DATASOURCE_ID: !Ref TableauMcpHostedTestDatasourceId
+          TABLEAU_MCP_HOSTED_TEST_DATASOURCE_NAME: !Ref TableauMcpHostedTestDatasourceName
+          TABLEAU_MCP_HOSTED_INTEGRATION_TESTS: !Ref TableauMcpHostedIntegrationTests
           MODEL_PROVIDER: !Ref ModelProvider
           BEDROCK_REGION: !Ref BedrockRegion
           BEDROCK_MODEL_ID: !Ref BedrockModelId
