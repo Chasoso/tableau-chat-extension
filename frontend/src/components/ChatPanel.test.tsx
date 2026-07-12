@@ -7,6 +7,7 @@ import type { DashboardContext } from "../types/tableau";
 const mocks = vi.hoisted(() => ({
   createChatJob: vi.fn(),
   getChatJob: vi.fn(),
+  enrichDashboardContext: vi.fn(),
   loadChatJobOwnerToken: vi.fn(),
   storeChatJobOwnerToken: vi.fn(),
   getNotionStatus: vi.fn(),
@@ -17,6 +18,10 @@ const mocks = vi.hoisted(() => ({
 vi.mock("../api/chatApi", () => ({
   createChatJob: mocks.createChatJob,
   getChatJob: mocks.getChatJob,
+}));
+
+vi.mock("../api/contextApi", () => ({
+  enrichDashboardContext: mocks.enrichDashboardContext,
 }));
 
 vi.mock("../api/chatJobOwnerToken", () => ({
@@ -42,6 +47,7 @@ const dashboardContext: DashboardContext = {
 beforeEach(() => {
   mocks.createChatJob.mockReset();
   mocks.getChatJob.mockReset();
+  mocks.enrichDashboardContext.mockReset();
   mocks.loadChatJobOwnerToken.mockReset();
   mocks.storeChatJobOwnerToken.mockReset();
   mocks.getNotionStatus.mockReset();
@@ -157,6 +163,64 @@ describe("ChatPanel", () => {
       "owner-token-1",
     );
     expect(mocks.storeChatJobOwnerToken).toHaveBeenCalledWith("owner-token-1");
+  });
+
+  it("waits for workbook-name enrichment before creating a chat job", async () => {
+    const user = userEvent.setup();
+
+    mocks.enrichDashboardContext.mockResolvedValue({
+      dashboardContextPatch: {
+        workbookName: "Recovered Workbook",
+      },
+    });
+    mocks.createChatJob.mockResolvedValue({
+      jobId: "job-enriched",
+      status: "queued",
+      stage: "queued",
+      pollUrl: "/chat-jobs/job-enriched",
+      retryAfterMs: 1500,
+      ownerToken: "owner-token-enriched",
+    });
+    mocks.getChatJob.mockResolvedValue({
+      jobId: "job-enriched",
+      status: "completed",
+      stage: "completed",
+      progressMessages: [],
+      result: {
+        answer: "## Final answer\n\nOK.",
+        sessionId: "session-enriched",
+        messageId: "message-enriched",
+      },
+      createdAt: "2026-06-07T00:00:00.000Z",
+      updatedAt: "2026-06-07T00:00:01.000Z",
+      expiresAt: 1_999_999_999,
+      ownerType: "anonymous",
+    });
+
+    render(
+      <ChatPanel
+        dashboardContext={{
+          ...dashboardContext,
+          workbookName: null,
+        }}
+        isAuthenticated
+      />,
+    );
+
+    await user.type(screen.getByLabelText("質問"), "What changed?");
+    await user.click(screen.getByRole("button", { name: "送信" }));
+
+    await flushEffects();
+    expect(mocks.enrichDashboardContext).toHaveBeenCalledTimes(2);
+    expect(mocks.createChatJob).toHaveBeenCalledWith(
+      expect.objectContaining({
+        dashboardContext: expect.objectContaining({
+          workbookName: "Recovered Workbook",
+        }),
+      }),
+      undefined,
+      undefined,
+    );
   });
 
   it("shows an error and stops polling when the job fails", async () => {

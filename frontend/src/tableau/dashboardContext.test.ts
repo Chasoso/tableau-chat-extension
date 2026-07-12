@@ -142,4 +142,25 @@ describe("dashboardContext", () => {
     expect(summaryDataPreview.generatedAt).toEqual(expect.any(String));
     expect(summaryDataPreview.updatedAt).toEqual(expect.any(String));
   });
+
+  it("recovers the workbook name from workbook-like Tableau properties", async () => {
+    const dashboard = {
+      name: "Statistics",
+      workbook: {
+        workbookName: "Tableau Workbook Performance Monitor",
+        displayName: "Tableau Workbook Performance Monitor",
+      },
+      worksheets: [],
+    };
+
+    const context = await getDashboardContext(dashboard as never, {
+      workbook: {
+        displayName: "Ignored workbook label",
+      },
+      referrer:
+        "https://example.com/views/TableauWorkbookPerformanceMonitor/Statistics",
+    });
+
+    expect(context.workbookName).toBe("Tableau Workbook Performance Monitor");
+  });
 });
