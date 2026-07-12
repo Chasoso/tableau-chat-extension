@@ -274,19 +274,6 @@ jobs:
               exit 1
             fi
           done
-          if [ "${TABLEAU_MCP_HOSTED_ENABLED:-false}" = "true" ]; then
-            hosted_required_settings=(
-              TABLEAU_MCP_HOSTED_ENDPOINT
-              TABLEAU_MCP_HOSTED_SITE_ID
-              TABLEAU_MCP_HOSTED_SITE_CONTENT_URL
-            )
-            for name in "${hosted_required_settings[@]}"; do
-              if [ -z "${!name:-}" ]; then
-                echo "A required Hosted Tableau MCP setting is missing."
-                exit 1
-              fi
-            done
-          fi
           if [ "$AUTH_REQUIRED" = "true" ]; then
             auth_required_settings=(
               COGNITO_USER_POOL_ID
