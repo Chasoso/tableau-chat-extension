@@ -17,6 +17,7 @@ export type CompressedDashboardContext = {
   worksheets: string[];
   filters: string[];
   parameters: string[];
+  selectedMarks: string[];
   dataSources: string[];
   provider: TableauAdditionalContext["provider"];
   intent: string;
@@ -60,6 +61,17 @@ export function compressDashboardContext(
       const value = parameter.currentValue ?? "not specified";
       return `${parameter.name}: ${String(value)}`;
     }),
+    selectedMarks: (dashboardContext.selectedMarks ?? [])
+      .map((selectedMark) => {
+        const status = selectedMark.status ?? "notAvailable";
+        const rowCount = selectedMark.rowCount ?? 0;
+        const columns =
+          selectedMark.columns?.length && selectedMark.columns.length > 0
+            ? selectedMark.columns.join(", ")
+            : "no columns";
+        return `${selectedMark.worksheetName}: ${status}, ${rowCount} selected mark(s), columns: ${columns}`;
+      })
+      .filter(unique),
     dataSources: [
       ...extractAnswerDatasourceNames(
         dashboardContext.dataSources?.map((datasource) => datasource.name) ??
@@ -116,6 +128,7 @@ export function renderCompressedContext(
     `Worksheets: ${context.worksheets.join(", ") || "none"}`,
     `Filters: ${context.filters.join("; ") || "none"}`,
     `Parameters: ${context.parameters.join("; ") || "none"}`,
+    `Selected marks: ${context.selectedMarks.join("; ") || "none"}`,
     `Data sources: ${context.dataSources.join(", ") || "not available"}`,
     `Additional context provider: ${context.provider}`,
     `Question intent: ${context.intent}`,

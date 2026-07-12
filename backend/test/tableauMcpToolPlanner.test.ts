@@ -103,6 +103,32 @@ describe("tableauMcpToolPlanner", () => {
     expect(intent.needsMcp).toBe(false);
   });
 
+  it("classifies selected mark questions as selection state", () => {
+    const intent = classifyQuestionIntent(
+      "現在選択中のマークについて、詳しく教えてください。",
+      {
+        dashboardName: "Statistics",
+        workbookName: "Tableau Public Insights",
+        worksheets: [{ name: "Views" }],
+        filters: [],
+        parameters: [],
+        selectedMarks: [
+          {
+            worksheetName: "Views",
+            columns: ["Region", "Views"],
+            rowCount: 1,
+            status: "available",
+          },
+        ],
+        capturedAt: "2026-07-12T11:13:00.000Z",
+      },
+      ["list-views", "get-workbook"],
+    );
+
+    expect(intent.intent).toBe("filter_or_selection_state");
+    expect(intent.needsMcp).toBe(false);
+  });
+
   it("prioritizes metadata intent when question asks for datasource fields", () => {
     const intent = classifyQuestionIntent(
       "このダッシュボードで使われているデータソースのフィールドを説明して",
