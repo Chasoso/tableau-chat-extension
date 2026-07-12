@@ -162,6 +162,18 @@ jobs:
       NOTION_OAUTH_CLIENT_SECRET: ${{ secrets.NOTION_OAUTH_CLIENT_SECRET }}
 
     steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            frontend/package-lock.json
+            backend/package-lock.json
+
       - name: Mask configured values
         shell: bash
         run: |
@@ -249,71 +261,7 @@ jobs:
           done
 
       - name: Validate required deployment settings
-        shell: bash
-        run: |
-          set -euo pipefail
-          required=(
-            AWS_REGION
-            STACK_NAME
-            AWS_GHA_DEPLOY_ROLE_ARN
-            AWS_CFN_EXECUTION_ROLE_ARN
-            AWS_ARTIFACT_BUCKET
-            FRONTEND_BUCKET_NAME
-            VITE_API_BASE_URL
-            EXTENSION_SOURCE_URL
-            CORS_ALLOWED_ORIGIN
-            TABLEAU_SERVER_URL
-            TABLEAU_CONNECTED_APP_CLIENT_ID
-            TABLEAU_CONNECTED_APP_SECRET_ID
-            TABLEAU_CONNECTED_APP_SECRET_VALUE
-            TABLEAU_DEFAULT_SUBJECT
-          )
-          for name in "${required[@]}"; do
-            if [ -z "${!name:-}" ]; then
-              echo "A required deployment setting is missing."
-              exit 1
-            fi
-          done
-          if [ "$AUTH_REQUIRED" = "true" ]; then
-            auth_required_settings=(
-              COGNITO_USER_POOL_ID
-              COGNITO_CLIENT_ID
-              COGNITO_REGION
-              COGNITO_DOMAIN
-              COGNITO_POPUP_REDIRECT_URI
-              VITE_COGNITO_DOMAIN
-              VITE_COGNITO_REDIRECT_URI
-            )
-            for name in "${auth_required_settings[@]}"; do
-              if [ -z "${!name:-}" ]; then
-                echo "A required authentication setting is missing."
-                exit 1
-              fi
-            done
-          fi
-          if [ "${TABLEAU_MCP_HOSTED_ENABLED:-false}" = "true" ]; then
-            hosted_required_settings=(
-              TABLEAU_MCP_HOSTED_ENDPOINT
-            )
-            for name in "${hosted_required_settings[@]}"; do
-              if [ -z "${!name:-}" ]; then
-                echo "A required Hosted Tableau MCP setting is missing."
-                exit 1
-              fi
-            done
-          fi
-
-      - name: Checkout
-        uses: actions/checkout@v6
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v6
-        with:
-          node-version: 24
-          cache: npm
-          cache-dependency-path: |
-            frontend/package-lock.json
-            backend/package-lock.json
+        run: node scripts/quality/deploy-settings-check.mjs --deploy
 
       - name: Install and test backend
         shell: bash
