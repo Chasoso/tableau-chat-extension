@@ -313,12 +313,20 @@ function buildDescribeDatasourceExecutionInput(
   input: MetadataDiscoveryOrchestrationInput,
 ): TableauDescribeDatasourceInput {
   const targetIdentifier = plan.executionCandidate?.targetIdentifier ?? "";
+  const workbookName = input.intentResolutionInput.contextSummary?.workbookName;
   return {
     requestContext: buildRequestContext(input.intentResolutionInput, plan),
     datasource: {
       datasourceId: targetIdentifier,
       datasourceName: targetIdentifier,
     },
+    ...(workbookName
+      ? {
+          workbook: {
+            workbookName,
+          },
+        }
+      : {}),
     includeFieldsSummary: true,
     includeConnectionSummary: true,
     maxFieldsForSummary: 5,

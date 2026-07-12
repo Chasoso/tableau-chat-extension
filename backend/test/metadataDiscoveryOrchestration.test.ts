@@ -129,6 +129,10 @@ describe("metadata discovery orchestration", () => {
       intentResolutionInput: {
         agentRunId: createAgentRunId(),
         message: "Tell me about this datasource.",
+        contextSummary: {
+          dashboardName: "Statistics",
+          workbookName: "Tableau Workbook Performance Monitor",
+        },
         targetContext: {
           targetType: "datasource",
           identifier: "hosted-datasource",
@@ -168,6 +172,13 @@ describe("metadata discovery orchestration", () => {
             }),
           }),
         }),
+      }),
+    );
+    expect(hostedCalls[0]?.input).toEqual(
+      expect.objectContaining({
+        workbook: {
+          workbookName: "Tableau Workbook Performance Monitor",
+        },
       }),
     );
     expect(hostedCalls).toHaveLength(1);
