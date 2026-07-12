@@ -10,11 +10,18 @@ type TableauExtensionsGlobal = {
     initializeAsync: () => Promise<void>;
     workbook?: unknown;
     dashboardContent?: {
-      dashboard?: unknown;
+      dashboard?: TableauDashboardLike;
     };
   };
 };
-
+type TableauDashboardLike = {
+  workbook?: {
+    name?: string;
+    workbookName?: string;
+    displayName?: string;
+    title?: string;
+  };
+};
 declare global {
   interface Window {
     tableau?: TableauExtensionsGlobal;
@@ -44,8 +51,8 @@ export async function initializeTableauExtension(): Promise<DashboardContext> {
       );
     }
 
-    return getDashboardContext(dashboard, {
-      workbook: tableau.workbook,
+    return getDashboardContext(dashboard as never, {
+      workbook: dashboard.workbook ?? tableau.workbook,
       referrer: document.referrer,
     });
   } catch (error) {

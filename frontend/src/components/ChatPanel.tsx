@@ -332,10 +332,12 @@ export default function ChatPanel({
     setJobView(null);
 
     try {
+      const dashboardContextForSend =
+        await resolveDashboardContextForSend(dashboardContext);
       const response = await createChatJob(
         {
           question: trimmedQuestion,
-          dashboardContext,
+          dashboardContext: dashboardContextForSend,
           clientContext: {
             source: "tableau-extension",
             appVersion: env.appVersion,
@@ -375,6 +377,43 @@ export default function ChatPanel({
           ? unknownError.message
           : "回答ジョブの作成に失敗しました。";
       setError(message);
+    }
+  }
+
+  async function resolveDashboardContextForSend(
+    currentContext: DashboardContext,
+  ): Promise<DashboardContext> {
+    if (currentContext.workbookName) {
+      return currentContext;
+    }
+
+    if (env.authRequired && !authToken) {
+      return currentContext;
+    }
+
+    try {
+      const response = await enrichDashboardContext(
+        {
+          dashboardContext: currentContext,
+          clientContext: {
+            source: "tableau-extension",
+            appVersion: env.appVersion,
+          },
+        },
+        authToken,
+      );
+      const patch = response.dashboardContextPatch;
+      if (!patch?.workbookName) {
+        return currentContext;
+      }
+
+      onDashboardContextPatch?.(patch);
+      return {
+        ...currentContext,
+        ...patch,
+      };
+    } catch {
+      return currentContext;
     }
   }
 

@@ -136,15 +136,31 @@ function readContent(scanMode, file) {
 
 function runGitleaks(scanRoot) {
   const gitleaksCommand = resolveGitleaksCommand();
-  const result = spawnSync(
-    gitleaksCommand,
-    ["dir", "--no-banner", "--redact", "--no-color", scanRoot],
-    {
+  const gitleaksArgs = [
+    "dir",
+    "--no-banner",
+    "--redact",
+    "--no-color",
+    scanRoot,
+  ];
+  let result = spawnSync(gitleaksCommand, gitleaksArgs, {
+    cwd: repoRoot,
+    stdio: "inherit",
+    env: process.env,
+  });
+
+  if (
+    process.platform === "win32" &&
+    result.error &&
+    result.error.code === "EPERM"
+  ) {
+    result = spawnSync(gitleaksCommand, gitleaksArgs, {
       cwd: repoRoot,
       stdio: "inherit",
       env: process.env,
-    },
-  );
+      shell: true,
+    });
+  }
 
   if (result.error) {
     throw result.error;
@@ -178,6 +194,14 @@ function resolveGitleaksCommand() {
     return "gitleaks";
   }
 
+  const resolvedPath =
+    process.platform === "win32"
+      ? resolveExecutableWithWhere("gitleaks")
+      : resolveExecutableWithWhich("gitleaks");
+  if (resolvedPath) {
+    return resolvedPath;
+  }
+
   throw new Error(
     [
       "Gitleaks is not installed or not on PATH.",
@@ -185,6 +209,43 @@ function resolveGitleaksCommand() {
       "You can also set GITLEAKS_BIN to the full binary path for local validation.",
     ].join("\n"),
   );
+}
+
+function resolveExecutableWithWhere(commandName) {
+  const result = spawnSync("where.exe", [commandName], {
+    cwd: repoRoot,
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+    env: process.env,
+    maxBuffer: 1024 * 1024,
+  });
+
+  if (result.error || result.status !== 0) {
+    return undefined;
+  }
+
+  const candidate = result.stdout
+    ?.split(/\r?\n/)
+    .map((line) => line.trim())
+    .find(Boolean);
+  return candidate && fs.existsSync(candidate) ? candidate : undefined;
+}
+
+function resolveExecutableWithWhich(commandName) {
+  const result = spawnSync("which", [commandName], {
+    cwd: repoRoot,
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+    env: process.env,
+    maxBuffer: 1024 * 1024,
+  });
+
+  if (result.error || result.status !== 0) {
+    return undefined;
+  }
+
+  const candidate = result.stdout?.trim();
+  return candidate && fs.existsSync(candidate) ? candidate : undefined;
 }
 
 function reportFindings(findings) {
