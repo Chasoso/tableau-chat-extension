@@ -302,11 +302,6 @@ const DEFAULT_SITE_IDENTIFIER = {
   siteName: FAKE_DATASET.siteName,
 };
 
-const DEFAULT_WORKBOOK_IDENTIFIER = {
-  workbookId: FAKE_DATASET.workbookId,
-  workbookName: FAKE_DATASET.workbookName,
-};
-
 const DEFAULT_DATASOURCE_IDENTIFIER = {
   datasourceId: FAKE_DATASET.datasourceId,
   datasourceName: FAKE_DATASET.datasourceName,
@@ -1783,7 +1778,6 @@ function buildDatasourceSummary(
   placeholder = false,
 ): NonNullable<TableauDescribeDatasourceOutput["summary"]> {
   return {
-    ...DEFAULT_DATASOURCE_IDENTIFIER,
     datasourceId:
       input.datasource.datasourceId ??
       DEFAULT_DATASOURCE_IDENTIFIER.datasourceId,
@@ -1796,10 +1790,12 @@ function buildDatasourceSummary(
     ...(input.datasource.projectName
       ? { projectName: input.datasource.projectName }
       : { projectName: DEFAULT_DATASOURCE_IDENTIFIER.projectName }),
-    workbookId:
-      input.workbook?.workbookId ?? DEFAULT_WORKBOOK_IDENTIFIER.workbookId,
-    workbookName:
-      input.workbook?.workbookName ?? DEFAULT_WORKBOOK_IDENTIFIER.workbookName,
+    ...(input.workbook?.workbookId
+      ? { workbookId: input.workbook.workbookId }
+      : {}),
+    ...(input.workbook?.workbookName
+      ? { workbookName: input.workbook.workbookName }
+      : {}),
     siteId: input.site?.siteId ?? DEFAULT_SITE_IDENTIFIER.siteId,
     siteName: input.site?.siteName ?? DEFAULT_SITE_IDENTIFIER.siteName,
     ownerName: FAKE_DATASET.ownerName,

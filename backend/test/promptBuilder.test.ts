@@ -10,6 +10,14 @@ const request: ChatRequest = {
     worksheets: [{ name: "Sales Trend" }],
     filters: [{ fieldName: "Region", appliedValues: ["West"] }],
     parameters: [{ name: "Metric", currentValue: "Sales" }],
+    selectedMarks: [
+      {
+        worksheetName: "Sales Trend",
+        columns: ["Region", "Sales"],
+        rowCount: 1,
+        status: "available",
+      },
+    ],
     capturedAt: new Date().toISOString(),
   },
 };
@@ -25,6 +33,12 @@ describe("buildPrompt", () => {
     expect(prompt).toContain("Executive Workbook");
     expect(prompt).toContain("Sales Trend");
     expect(prompt).toContain("Region: West");
+    expect(prompt).toContain(
+      "Selected marks: Sales Trend: available, 1 selected mark(s), columns: Region, Sales",
+    );
+    expect(prompt).toContain(
+      "Selected marks are present in the dashboard context.",
+    );
     expect(prompt).toContain("Do not provide long HTTP status explanations");
     expect(prompt).toContain("Never mention internal MCP tool names");
   });
