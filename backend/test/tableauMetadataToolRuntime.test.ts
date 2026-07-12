@@ -106,9 +106,48 @@ describe("Tableau metadata tool runtime", () => {
         }),
       }),
     );
+    expect(result.output).toEqual(
+      expect.objectContaining({
+        summary: expect.objectContaining({
+          datasource: expect.objectContaining({
+            workbookName: "Sales Workbook",
+          }),
+        }),
+      }),
+    );
     expect(JSON.stringify(result.output)).not.toContain("accessToken");
     expect(JSON.stringify(result.output)).not.toContain("rawMcpResult");
     expect(JSON.stringify(result.output)).not.toContain("secret");
+  });
+
+  it("does not invent a workbook name when one is not provided", async () => {
+    const runtime = createTableauMetadataToolRuntime();
+    const result = await runtime.executionWrapper.execute({
+      toolName: TABLEAU_METADATA_DESCRIBE_DATASOURCE_TOOL_NAME,
+      input: {
+        datasource: {
+          datasourceId: "sales-datasource",
+          datasourceName: "Sales Datasource",
+        },
+        site: {
+          siteId: "site-1",
+          siteName: "Sales Site",
+        },
+      },
+      context: createFakeRuntimeContext(),
+    });
+
+    expect(result.status).toBe("completed");
+    expect(result.output).toEqual(
+      expect.objectContaining({
+        summary: expect.objectContaining({
+          datasource: expect.not.objectContaining({
+            workbookName: expect.any(String),
+          }),
+        }),
+      }),
+    );
+    expect(JSON.stringify(result.output)).not.toContain("Fake Workbook");
   });
 
   it("returns safe fake listFields output with truncation and omission signals", async () => {
