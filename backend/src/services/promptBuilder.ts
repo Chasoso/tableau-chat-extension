@@ -70,6 +70,9 @@ export function buildPrompt(
       : additionalContext.mcpConnectionFailed
         ? "MCP lookup failed before usable observations were collected. Rely only on dashboard context, clearly mention the limitation, and avoid treating the current filter scope as evidence that the entire datasource is empty."
         : "No MCP observations were collected. Rely only on dashboard context and clearly mention limitations.",
+    compressedContext.selectedMarks.length
+      ? "Selected marks are present in the dashboard context. Use them as the primary evidence for selected-mark questions and do not claim their details are unavailable."
+      : "",
     observationDigest ? `MCP evidence summary: ${observationDigest}` : "",
     "Respond in the same language as the user's question when practical.",
     executionDebug
