@@ -2,6 +2,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { getConfig } from "../config";
 import { getTableauConnectedAppSecrets } from "../aws/secrets";
+import { logError, logInfo, logWarn } from "../logging";
 import { generateTableauConnectedAppJwt } from "../tableau/tableauAuth";
 import type { AuthenticatedUser } from "../types/auth";
 import type { JsonObject } from "./types";
@@ -12,6 +13,7 @@ import type {
 import {
   createHostedTableauMcpTransport,
   type HostedMcpRequestClient,
+  type HostedMcpRequestClientResult,
 } from "./hostedTableauMcpTransport";
 import { normalizeHostedMcpMetadataErrorCode } from "./hostedMcpMetadataErrorNormalizer";
 
@@ -86,6 +88,8 @@ function createHostedMetadataDiscoveryRequestClient(input: {
   agentRunId?: string;
 }): HostedMcpRequestClient {
   return async (request) => {
+    const startedAt = new Date();
+    const operation = "describeDatasource";
     const subject =
       request.userContext?.tableauUserId ??
       request.userContext?.email ??
@@ -93,21 +97,59 @@ function createHostedMetadataDiscoveryRequestClient(input: {
       input.authenticatedUser?.tableauSubject ??
       input.authenticatedUser?.email;
 
+    logInfo("hosted.metadata.transport.started", {
+      component: "hosted_metadata_transport",
+      operation,
+      requestId: request.requestId,
+      correlationId: request.correlationId,
+      agentRunId: request.agentRunId,
+      transportKind: "hosted",
+      endpointConfigured: true,
+      siteConfigured: Boolean(input.siteId || input.siteContentUrl),
+      authMode: "direct_trust",
+      result: "started",
+      retryCount: 0,
+    });
+
     if (!subject) {
-      return buildNotConfiguredClientResult(
+      const result = buildNotConfiguredClientResult(
         "A Tableau subject is required for Direct Trust authentication.",
         request,
       );
+      logWarn("hosted.metadata.transport.not_configured", {
+        component: "hosted_metadata_transport",
+        operation,
+        requestId: request.requestId,
+        correlationId: request.correlationId,
+        agentRunId: request.agentRunId,
+        transportKind: "hosted",
+        result: "failure",
+        errorCode: result.error.code,
+        retryCount: 0,
+      });
+      return result;
     }
 
     let connectedApp;
     try {
       connectedApp = getTableauConnectedAppSecrets();
     } catch {
-      return buildNotConfiguredClientResult(
+      const result = buildNotConfiguredClientResult(
         "Tableau Connected App secrets are not configured.",
         request,
       );
+      logWarn("hosted.metadata.transport.not_configured", {
+        component: "hosted_metadata_transport",
+        operation,
+        requestId: request.requestId,
+        correlationId: request.correlationId,
+        agentRunId: request.agentRunId,
+        transportKind: "hosted",
+        result: "failure",
+        errorCode: result.error.code,
+        retryCount: 0,
+      });
+      return result;
     }
 
     const jwt = generateTableauConnectedAppJwt({
@@ -139,11 +181,11 @@ function createHostedMetadataDiscoveryRequestClient(input: {
       });
 
       if (isMcpErrorResult(rawResult)) {
-        return {
+        const result: HostedMcpRequestClientResult = {
           status: "failed",
           error: buildTransportError({
             toolName: request.toolName,
-            operation: "describeDatasource",
+            operation,
             transportKind: "hosted",
             message: summarizeMcpToolResult(rawResult),
             reason: "Hosted MCP tool returned an error result.",
@@ -151,25 +193,65 @@ function createHostedMetadataDiscoveryRequestClient(input: {
           warnings: [],
           metadata: buildClientMetadata(request, input, subject),
         };
+        const errorCode = result.error?.code ?? "UNKNOWN_ERROR";
+        logWarn("hosted.metadata.transport.failed", {
+          component: "hosted_metadata_transport",
+          operation,
+          requestId: request.requestId,
+          correlationId: request.correlationId,
+          agentRunId: request.agentRunId,
+          transportKind: "hosted",
+          result: "failure",
+          errorCode,
+          durationMs: Math.max(0, Date.now() - startedAt.getTime()),
+          retryCount: 0,
+        });
+        return result;
       }
 
-      return {
+      const result: HostedMcpRequestClientResult = {
         status: "success",
         data: parseHostedToolResult(rawResult),
         metadata: buildClientMetadata(request, input, subject),
       };
+      logInfo("hosted.metadata.transport.completed", {
+        component: "hosted_metadata_transport",
+        operation,
+        requestId: request.requestId,
+        correlationId: request.correlationId,
+        agentRunId: request.agentRunId,
+        transportKind: "hosted",
+        result: "success",
+        durationMs: Math.max(0, Date.now() - startedAt.getTime()),
+        retryCount: 0,
+      });
+      return result;
     } catch (error) {
-      return {
+      const result: HostedMcpRequestClientResult = {
         status: "failed",
         error: buildTransportError({
           toolName: request.toolName,
-          operation: "describeDatasource",
+          operation,
           transportKind: "hosted",
           message: error instanceof Error ? error.message : String(error),
           reason: "Hosted MCP request failed.",
         }),
         metadata: buildClientMetadata(request, input, subject),
       };
+      const errorCode = result.error?.code ?? "UNKNOWN_ERROR";
+      logError("hosted.metadata.transport.failed", {
+        component: "hosted_metadata_transport",
+        operation,
+        requestId: request.requestId,
+        correlationId: request.correlationId,
+        agentRunId: request.agentRunId,
+        transportKind: "hosted",
+        result: "failure",
+        errorCode,
+        durationMs: Math.max(0, Date.now() - startedAt.getTime()),
+        retryCount: 0,
+      });
+      return result;
     } finally {
       await transport.close().catch(() => undefined);
     }

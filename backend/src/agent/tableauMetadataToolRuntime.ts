@@ -37,6 +37,7 @@ import {
   type TableauMetadataToolPolicy,
   type TableauMetadataTransportKind,
 } from "./tableauMetadataPreconditions";
+import { logError, logInfo, logWarn } from "../logging";
 import type {
   ToolExecutionHandler,
   ToolExecutionInput,
@@ -574,8 +575,40 @@ async function executeTableauMetadataToolViaTransport<
     selection,
   );
   const fallbackOutput = successBuilder(normalizedInput, precondition);
+  const operation = getToolOperationName(toolName);
+
+  logInfo("tableau.metadata.execution.started", {
+    component: "tableau_metadata",
+    operation,
+    requestId: request.requestId,
+    correlationId: request.correlationId,
+    agentRunId: request.agentRunId,
+    requestedTransportKind: selection.requestedTransportKind,
+    selectedTransportKind: selection.selectedTransportKind,
+    hostedFeatureEnabled: selection.hostedFeatureEnabled,
+    fallbackUsed: selection.fallbackUsed,
+    noNetworkRequested: selection.noNetworkRequested,
+    result: "started",
+    retryCount: 0,
+  });
 
   if (!precondition.canExecute) {
+    logWarn("tableau.metadata.execution.blocked", {
+      component: "tableau_metadata",
+      operation,
+      requestId: request.requestId,
+      correlationId: request.correlationId,
+      agentRunId: request.agentRunId,
+      requestedTransportKind: selection.requestedTransportKind,
+      selectedTransportKind: selection.selectedTransportKind,
+      hostedFeatureEnabled: selection.hostedFeatureEnabled,
+      fallbackUsed: selection.fallbackUsed,
+      noNetworkRequested: selection.noNetworkRequested,
+      result: "failure",
+      errorCode: mapPreconditionFailureToErrorCode(precondition.failureCode),
+      durationMs: 0,
+      retryCount: 0,
+    });
     const fallback = withExecutionMetadata(
       failedBuilder(normalizedInput, precondition),
       buildExecutionMetadata({
@@ -675,6 +708,36 @@ async function executeTableauMetadataToolViaTransport<
             ],
           );
 
+    logInfo("tableau.metadata.execution.completed", {
+      component: "tableau_metadata",
+      operation,
+      requestId: request.requestId,
+      correlationId: request.correlationId,
+      agentRunId: request.agentRunId,
+      requestedTransportKind: selection.requestedTransportKind,
+      selectedTransportKind: selection.selectedTransportKind,
+      transportKind: transportResult.transportKind,
+      transportStatus: transportResult.status,
+      hostedFeatureEnabled: selection.hostedFeatureEnabled,
+      fallbackUsed: selection.fallbackUsed,
+      fallbackFrom: selection.fallbackFrom,
+      fallbackTo: selection.fallbackTo,
+      noNetworkRequested: selection.noNetworkRequested,
+      durationMs:
+        transportResult.trace?.durationMs ??
+        Math.max(0, completedAt.getTime() - startedAt.getTime()),
+      warningCount: transportResult.warnings?.length ?? 0,
+      errorCode: transportResult.error?.code,
+      retryCount: transportResult.trace?.attemptCount ?? 0,
+      result:
+        transportResult.status === "success" ||
+        transportResult.status === "partial"
+          ? selection.fallbackUsed
+            ? "fallback"
+            : "success"
+          : "failure",
+    });
+
     return normalizeTableauMetadataExecutionResult({
       toolName,
       request,
@@ -735,6 +798,28 @@ async function executeTableauMetadataToolViaTransport<
       }),
     );
 
+    logError("tableau.metadata.execution.failed", {
+      component: "tableau_metadata",
+      operation,
+      requestId: request.requestId,
+      correlationId: request.correlationId,
+      agentRunId: request.agentRunId,
+      requestedTransportKind: selection.requestedTransportKind,
+      selectedTransportKind: selection.selectedTransportKind,
+      transportKind: transportResult.transportKind,
+      transportStatus: transportResult.status,
+      hostedFeatureEnabled: selection.hostedFeatureEnabled,
+      fallbackUsed: selection.fallbackUsed,
+      fallbackFrom: selection.fallbackFrom,
+      fallbackTo: selection.fallbackTo,
+      noNetworkRequested: selection.noNetworkRequested,
+      durationMs: Math.max(0, completedAt.getTime() - startedAt.getTime()),
+      warningCount: 0,
+      errorCode: transportResult.error?.code,
+      retryCount: 0,
+      result: "failure",
+    });
+
     return normalizeTableauMetadataExecutionResult({
       toolName,
       request,
@@ -774,6 +859,25 @@ function buildTransportRequest<
     contextualPrecondition,
   });
   const transportKind = selection.selectedTransportKind;
+  const operation = getToolOperationName(toolName);
+
+  logInfo("tableau.metadata.hosted_auth.context_prepared", {
+    component: "tableau_metadata",
+    operation,
+    requestId,
+    correlationId,
+    agentRunId,
+    authState: hostedAuth.traceSummary.authState,
+    authMode: hostedAuth.traceSummary.authMode,
+    siteSettingsStatus: hostedAuth.traceSummary.siteSettingsStatus,
+    tokenReferencePresent: hostedAuth.traceSummary.tokenReferencePresent,
+    tokenReferenceMasked: hostedAuth.traceSummary.tokenReferenceMasked,
+    result:
+      hostedAuth.traceSummary.authState === "ready" ? "success" : "failure",
+    errorCode: hostedAuth.error?.code,
+    fallbackUsed: false,
+    retryCount: 0,
+  });
 
   return {
     requestId,
@@ -1097,6 +1201,18 @@ function getRequestedTransportKind(
     ) ??
     "unknown"
   );
+}
+
+function getToolOperationName(toolName: string): string {
+  if (toolName === TABLEAU_METADATA_DESCRIBE_DATASOURCE_TOOL_NAME) {
+    return "describeDatasource";
+  }
+
+  if (toolName === TABLEAU_METADATA_LIST_FIELDS_TOOL_NAME) {
+    return "listFields";
+  }
+
+  return toolName;
 }
 
 function readBoolean(value: unknown): boolean {

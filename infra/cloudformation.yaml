@@ -93,6 +93,41 @@ Parameters:
   TableauMcpTimeoutMs:
     Type: Number
     Default: 5000
+  TableauMcpHostedEnabled:
+    Type: String
+    Default: "false"
+    AllowedValues:
+      - "true"
+      - "false"
+  TableauMcpHostedEndpoint:
+    Type: String
+    NoEcho: true
+    Default: ""
+  TableauMcpHostedTimeoutMs:
+    Type: Number
+    Default: 5000
+  TableauMcpHostedSiteId:
+    Type: String
+    NoEcho: true
+    Default: ""
+  TableauMcpHostedSiteContentUrl:
+    Type: String
+    NoEcho: true
+    Default: ""
+  TableauMcpHostedTestDatasourceId:
+    Type: String
+    NoEcho: true
+    Default: ""
+  TableauMcpHostedTestDatasourceName:
+    Type: String
+    NoEcho: true
+    Default: ""
+  TableauMcpHostedIntegrationTests:
+    Type: String
+    Default: "false"
+    AllowedValues:
+      - "true"
+      - "false"
   TableauMcpCommand:
     Type: String
     NoEcho: true
@@ -155,6 +190,9 @@ Parameters:
       - info
       - warn
       - error
+  DeploymentVersion:
+    Type: String
+    Default: "unknown"
   ChatDebugMaxChars:
     Type: Number
     Default: 12000
@@ -458,6 +496,14 @@ Resources:
           TABLEAU_MCP_TRANSPORT: !Ref TableauMcpTransport
           TABLEAU_MCP_AUTH_MODE: !Ref TableauMcpAuthMode
           TABLEAU_MCP_TIMEOUT_MS: !Sub "${TableauMcpTimeoutMs}"
+          TABLEAU_MCP_HOSTED_ENABLED: !Ref TableauMcpHostedEnabled
+          TABLEAU_MCP_HOSTED_ENDPOINT: !Ref TableauMcpHostedEndpoint
+          TABLEAU_MCP_HOSTED_TIMEOUT_MS: !Sub "${TableauMcpHostedTimeoutMs}"
+          TABLEAU_MCP_HOSTED_SITE_ID: !Ref TableauMcpHostedSiteId
+          TABLEAU_MCP_HOSTED_SITE_CONTENT_URL: !Ref TableauMcpHostedSiteContentUrl
+          TABLEAU_MCP_HOSTED_TEST_DATASOURCE_ID: !Ref TableauMcpHostedTestDatasourceId
+          TABLEAU_MCP_HOSTED_TEST_DATASOURCE_NAME: !Ref TableauMcpHostedTestDatasourceName
+          TABLEAU_MCP_HOSTED_INTEGRATION_TESTS: !Ref TableauMcpHostedIntegrationTests
           TABLEAU_MCP_COMMAND: !Ref TableauMcpCommand
           TABLEAU_MCP_ARGS: !Ref TableauMcpArgs
           TABLEAU_MCP_ALLOWED_TOOLS: !Ref TableauMcpAllowedTools
@@ -472,6 +518,7 @@ Resources:
           BEDROCK_TEMPERATURE: !Sub "${BedrockTemperature}"
           CHAT_MEMORY_MESSAGE_LIMIT: !Sub "${ChatMemoryMessageLimit}"
           LOG_LEVEL: !Ref LogLevel
+          DEPLOYMENT_VERSION: !Ref DeploymentVersion
           CHAT_DEBUG_MAX_CHARS: !Sub "${ChatDebugMaxChars}"
           NOTION_MCP_ENABLED: !Ref NotionMcpEnabled
           NOTION_MCP_URL: !Ref NotionMcpUrl
@@ -530,6 +577,14 @@ Resources:
           TABLEAU_MCP_TRANSPORT: !Ref TableauMcpTransport
           TABLEAU_MCP_AUTH_MODE: !Ref TableauMcpAuthMode
           TABLEAU_MCP_TIMEOUT_MS: !Sub "${TableauMcpTimeoutMs}"
+          TABLEAU_MCP_HOSTED_ENABLED: !Ref TableauMcpHostedEnabled
+          TABLEAU_MCP_HOSTED_ENDPOINT: !Ref TableauMcpHostedEndpoint
+          TABLEAU_MCP_HOSTED_TIMEOUT_MS: !Sub "${TableauMcpHostedTimeoutMs}"
+          TABLEAU_MCP_HOSTED_SITE_ID: !Ref TableauMcpHostedSiteId
+          TABLEAU_MCP_HOSTED_SITE_CONTENT_URL: !Ref TableauMcpHostedSiteContentUrl
+          TABLEAU_MCP_HOSTED_TEST_DATASOURCE_ID: !Ref TableauMcpHostedTestDatasourceId
+          TABLEAU_MCP_HOSTED_TEST_DATASOURCE_NAME: !Ref TableauMcpHostedTestDatasourceName
+          TABLEAU_MCP_HOSTED_INTEGRATION_TESTS: !Ref TableauMcpHostedIntegrationTests
           TABLEAU_MCP_COMMAND: !Ref TableauMcpCommand
           TABLEAU_MCP_ARGS: !Ref TableauMcpArgs
           TABLEAU_MCP_ALLOWED_TOOLS: !Ref TableauMcpAllowedTools
@@ -544,6 +599,7 @@ Resources:
           BEDROCK_TEMPERATURE: !Sub "${BedrockTemperature}"
           CHAT_MEMORY_MESSAGE_LIMIT: !Sub "${ChatMemoryMessageLimit}"
           LOG_LEVEL: !Ref LogLevel
+          DEPLOYMENT_VERSION: !Ref DeploymentVersion
           CHAT_DEBUG_MAX_CHARS: !Sub "${ChatDebugMaxChars}"
           NOTION_MCP_ENABLED: !Ref NotionMcpEnabled
           NOTION_MCP_URL: !Ref NotionMcpUrl
@@ -573,6 +629,7 @@ Resources:
       Environment:
         Variables:
           CORS_ALLOWED_ORIGIN: !Ref CorsAllowedOrigin
+          DEPLOYMENT_VERSION: !Ref DeploymentVersion
 
   HttpApi:
     Type: AWS::ApiGatewayV2::Api

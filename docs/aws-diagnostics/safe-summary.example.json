@@ -1,0 +1,10 @@
+{
+  "component": "hosted_metadata_transport",
+  "operation": "describeDatasource",
+  "errorCode": "TIMEOUT",
+  "result": "failure",
+  "durationMs": 30000,
+  "fallbackUsed": true,
+  "requestId": "req-123",
+  "correlationId": "corr-123"
+}
