@@ -1,0 +1,63 @@
+name: Deploy Preflight
+
+on:
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-preflight-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: Validate deployment settings
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+      AWS_REGION: ${{ vars.AWS_REGION }}
+      STACK_NAME: ${{ secrets.AWS_CFN_STACK_NAME }}
+      AWS_GHA_DEPLOY_ROLE_ARN: ${{ secrets.AWS_GHA_DEPLOY_ROLE_ARN }}
+      AWS_CFN_EXECUTION_ROLE_ARN: ${{ secrets.AWS_CFN_EXECUTION_ROLE_ARN }}
+      AWS_ARTIFACT_BUCKET: ${{ secrets.AWS_ARTIFACT_BUCKET }}
+      FRONTEND_BUCKET_NAME: ${{ secrets.FRONTEND_BUCKET_NAME }}
+      VITE_API_BASE_URL: ${{ secrets.VITE_API_BASE_URL }}
+      EXTENSION_SOURCE_URL: ${{ secrets.EXTENSION_SOURCE_URL }}
+      CORS_ALLOWED_ORIGIN: ${{ secrets.CORS_ALLOWED_ORIGIN }}
+      TABLEAU_SERVER_URL: ${{ secrets.TABLEAU_SERVER_URL }}
+      TABLEAU_SITE_CONTENT_URL: ${{ secrets.TABLEAU_SITE_CONTENT_URL }}
+      TABLEAU_CONNECTED_APP_CLIENT_ID: ${{ secrets.TABLEAU_CONNECTED_APP_CLIENT_ID }}
+      TABLEAU_CONNECTED_APP_SECRET_ID: ${{ secrets.TABLEAU_CONNECTED_APP_SECRET_ID }}
+      TABLEAU_CONNECTED_APP_SECRET_VALUE: ${{ secrets.TABLEAU_CONNECTED_APP_SECRET_VALUE }}
+      TABLEAU_DEFAULT_SUBJECT: ${{ secrets.TABLEAU_DEFAULT_SUBJECT }}
+      AUTH_REQUIRED: ${{ vars.AUTH_REQUIRED || 'false' }}
+      COGNITO_USER_POOL_ID: ${{ secrets.COGNITO_USER_POOL_ID }}
+      COGNITO_CLIENT_ID: ${{ secrets.COGNITO_CLIENT_ID }}
+      COGNITO_REGION: ${{ vars.COGNITO_REGION }}
+      COGNITO_DOMAIN: ${{ secrets.VITE_COGNITO_DOMAIN }}
+      COGNITO_POPUP_REDIRECT_URI: ${{ secrets.COGNITO_POPUP_REDIRECT_URI }}
+      VITE_COGNITO_DOMAIN: ${{ secrets.VITE_COGNITO_DOMAIN }}
+      VITE_COGNITO_REDIRECT_URI: ${{ secrets.VITE_COGNITO_REDIRECT_URI }}
+      TABLEAU_MCP_HOSTED_ENABLED: ${{ vars.TABLEAU_MCP_HOSTED_ENABLED || 'false' }}
+      TABLEAU_MCP_HOSTED_ENDPOINT: ${{ vars.TABLEAU_MCP_HOSTED_ENDPOINT || '' }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            frontend/package-lock.json
+            backend/package-lock.json
+
+      - name: Validate deployment settings
+        run: node scripts/quality/deploy-settings-check.mjs --preflight
