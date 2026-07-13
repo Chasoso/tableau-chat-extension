@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen } from "@testing-library/react";
+﻿import { act, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import ChatPanel from "./ChatPanel";
@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   createChatJob: vi.fn(),
   getChatJob: vi.fn(),
   enrichDashboardContext: vi.fn(),
+  getDashboardContext: vi.fn(),
   loadChatJobOwnerToken: vi.fn(),
   storeChatJobOwnerToken: vi.fn(),
   getNotionStatus: vi.fn(),
@@ -22,6 +23,10 @@ vi.mock("../api/chatApi", () => ({
 
 vi.mock("../api/contextApi", () => ({
   enrichDashboardContext: mocks.enrichDashboardContext,
+}));
+
+vi.mock("../tableau/dashboardContext", () => ({
+  getDashboardContext: mocks.getDashboardContext,
 }));
 
 vi.mock("../api/chatJobOwnerToken", () => ({
@@ -48,6 +53,7 @@ beforeEach(() => {
   mocks.createChatJob.mockReset();
   mocks.getChatJob.mockReset();
   mocks.enrichDashboardContext.mockReset();
+  mocks.getDashboardContext.mockReset();
   mocks.loadChatJobOwnerToken.mockReset();
   mocks.storeChatJobOwnerToken.mockReset();
   mocks.getNotionStatus.mockReset();
@@ -59,6 +65,21 @@ beforeEach(() => {
     connected: false,
     targetParentPageIdConfigured: false,
     targetDatabaseIdConfigured: false,
+  });
+
+  Object.defineProperty(window, "tableau", {
+    configurable: true,
+    value: {
+      extensions: {
+        dashboardContent: {
+          dashboard: {
+            workbook: {
+              name: "Sales Workbook",
+            },
+          },
+        },
+      },
+    },
   });
 });
 
@@ -143,7 +164,7 @@ describe("ChatPanel", () => {
 
     render(<ChatPanel dashboardContext={dashboardContext} isAuthenticated />);
 
-    await user.type(screen.getByLabelText("質問"), "What changed?");
+    await user.type(screen.getByRole("textbox"), "What changed?");
     await user.click(screen.getByRole("button", { name: "送信" }));
 
     await flushEffects();
@@ -207,7 +228,7 @@ describe("ChatPanel", () => {
       />,
     );
 
-    await user.type(screen.getByLabelText("質問"), "What changed?");
+    await user.type(screen.getByRole("textbox"), "What changed?");
     await user.click(screen.getByRole("button", { name: "送信" }));
 
     await flushEffects();
@@ -216,6 +237,79 @@ describe("ChatPanel", () => {
       expect.objectContaining({
         dashboardContext: expect.objectContaining({
           workbookName: "Recovered Workbook",
+        }),
+      }),
+      undefined,
+      undefined,
+    );
+  });
+
+  it("refreshes selected-mark context before sending selected-mark questions", async () => {
+    const user = userEvent.setup();
+
+    mocks.getDashboardContext.mockResolvedValue({
+      ...dashboardContext,
+      selectedMarks: [
+        {
+          worksheetName: "Favorites",
+          status: "available",
+          rowCount: 1,
+          columns: ["Favorite Count"],
+          rows: [{ values: [] }],
+        },
+      ],
+    });
+    mocks.createChatJob.mockResolvedValue({
+      jobId: "job-selected-marks",
+      status: "queued",
+      stage: "queued",
+      pollUrl: "/chat-jobs/job-selected-marks",
+      retryAfterMs: 1500,
+      ownerToken: "owner-token-selected-marks",
+    });
+    mocks.getChatJob.mockResolvedValue({
+      jobId: "job-selected-marks",
+      status: "completed",
+      stage: "completed",
+      progressMessages: [],
+      result: {
+        answer: "## Final answer\n\nOK.",
+        sessionId: "session-selected-marks",
+        messageId: "message-selected-marks",
+      },
+      createdAt: "2026-06-07T00:00:00.000Z",
+      updatedAt: "2026-06-07T00:00:01.000Z",
+      expiresAt: 1_999_999_999,
+      ownerType: "anonymous",
+    });
+
+    render(
+      <ChatPanel
+        dashboardContext={{
+          ...dashboardContext,
+          selectedMarks: [],
+        }}
+        isAuthenticated
+      />,
+    );
+
+    await user.type(
+      screen.getByRole("textbox"),
+      "選択中のマークについて、詳しく教えてください。",
+    );
+    await user.click(screen.getByRole("button", { name: "送信" }));
+
+    await flushEffects();
+    expect(mocks.getDashboardContext).toHaveBeenCalledTimes(1);
+    expect(mocks.createChatJob).toHaveBeenCalledWith(
+      expect.objectContaining({
+        dashboardContext: expect.objectContaining({
+          selectedMarks: expect.arrayContaining([
+            expect.objectContaining({
+              worksheetName: "Favorites",
+              rowCount: 1,
+            }),
+          ]),
         }),
       }),
       undefined,
@@ -259,7 +353,7 @@ describe("ChatPanel", () => {
 
     render(<ChatPanel dashboardContext={dashboardContext} isAuthenticated />);
 
-    await user.type(screen.getByLabelText("質問"), "What changed?");
+    await user.type(screen.getByRole("textbox"), "What changed?");
     await user.click(screen.getByRole("button", { name: "送信" }));
 
     await flushEffects();
@@ -360,16 +454,15 @@ describe("ChatPanel", () => {
 
       render(<ChatPanel dashboardContext={dashboardContext} isAuthenticated />);
 
-      fireEvent.change(screen.getByLabelText("質問"), {
+      fireEvent.change(screen.getByRole("textbox"), {
         target: {
-          value:
-            "エンゲージメントが高い傾向にある投稿について、ハッシュタグごとに傾向を洗い出してください。",
+          value: "What changed?",
         },
       });
       fireEvent.click(screen.getByRole("button", { name: "送信" }));
 
       await flushEffects();
-      expect(screen.getByLabelText("質問")).toBeDisabled();
+      expect(screen.getByRole("textbox")).toBeDisabled();
       expect(screen.getByRole("button", { name: "送信" })).toBeDisabled();
       expect(document.querySelectorAll(".job-progress-inline")).toHaveLength(1);
       expect(screen.getByText("Job queued.")).toBeVisible();
@@ -389,7 +482,7 @@ describe("ChatPanel", () => {
       await flushEffects();
       expect(mocks.getChatJob).toHaveBeenCalledTimes(3);
       expect(screen.getByText("Final answer")).toBeVisible();
-      expect(screen.getByLabelText("質問")).toBeEnabled();
+      expect(screen.getByRole("textbox")).toBeEnabled();
       expect(mocks.getChatJob.mock.calls[0]?.[2]).toBe("owner-token-progress");
       expect(mocks.getChatJob.mock.calls[1]?.[2]).toBe("owner-token-progress");
       expect(mocks.getChatJob.mock.calls[2]?.[2]).toBe("owner-token-progress");
@@ -422,7 +515,8 @@ describe("ChatPanel", () => {
       ],
       error: {
         code: "worker_failed",
-        message: "## 回答できなかった理由\n\n- 実データの取得に失敗しました。",
+        message:
+          "## Answer unavailable\n\n- Failed to load the underlying data.",
       },
       createdAt: "2026-06-07T00:00:00.000Z",
       updatedAt: "2026-06-07T00:00:02.000Z",
@@ -432,20 +526,20 @@ describe("ChatPanel", () => {
 
     render(<ChatPanel dashboardContext={dashboardContext} isAuthenticated />);
 
-    await user.type(screen.getByLabelText("質問"), "What changed?");
+    await user.type(screen.getByRole("textbox"), "What changed?");
     await user.click(screen.getByRole("button", { name: "送信" }));
 
     await flushEffects();
     expect(
-      screen.getByText(/回答できなかった理由/, { selector: ".error-banner" }),
+      screen.getByText(/Answer unavailable/, { selector: ".error-banner" }),
     ).toBeVisible();
     expect(
-      screen.getByText(/実データの取得に失敗しました。/, {
+      screen.getByText(/Failed to load the underlying data\./, {
         selector: ".error-banner",
       }),
     ).toBeVisible();
     await flushEffects();
-    expect(screen.getByLabelText("質問")).toBeEnabled();
+    expect(screen.getByRole("textbox")).toBeEnabled();
   });
 
   it("retries a transient polling failure before completing", async () => {
@@ -486,10 +580,9 @@ describe("ChatPanel", () => {
 
       render(<ChatPanel dashboardContext={dashboardContext} isAuthenticated />);
 
-      fireEvent.change(screen.getByLabelText("質問"), {
+      fireEvent.change(screen.getByRole("textbox"), {
         target: {
-          value:
-            "エンゲージメント率が高い傾向にある投稿について、ハッシュタグごとに傾向を洗い出してください。",
+          value: "What changed?",
         },
       });
       fireEvent.click(screen.getByRole("button", { name: "送信" }));
@@ -690,7 +783,7 @@ describe("ChatPanel", () => {
       />,
     );
 
-    await user.type(screen.getByLabelText("質問"), "What changed?");
+    await user.type(screen.getByRole("textbox"), "What changed?");
     await user.click(screen.getByRole("button", { name: "送信" }));
 
     await flushEffects();
