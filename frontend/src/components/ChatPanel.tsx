@@ -13,6 +13,7 @@ import {
   type NotionStatusResponse,
 } from "../api/notionApi";
 import { env } from "../env";
+import { getDashboardContext } from "../tableau/dashboardContext";
 import type {
   ChatJobDisplayState,
   ChatJobGetResponse,
@@ -332,8 +333,10 @@ export default function ChatPanel({
     setJobView(null);
 
     try {
-      const dashboardContextForSend =
-        await resolveDashboardContextForSend(dashboardContext);
+      const dashboardContextForSend = await resolveDashboardContextForSend(
+        trimmedQuestion,
+        dashboardContext,
+      );
       const response = await createChatJob(
         {
           question: trimmedQuestion,
@@ -381,8 +384,17 @@ export default function ChatPanel({
   }
 
   async function resolveDashboardContextForSend(
+    question: string,
     currentContext: DashboardContext,
   ): Promise<DashboardContext> {
+    const refreshedSelectedMarkContext = await maybeRefreshSelectedMarkContext(
+      question,
+      currentContext,
+    );
+    if (refreshedSelectedMarkContext) {
+      currentContext = refreshedSelectedMarkContext;
+    }
+
     if (currentContext.workbookName) {
       return currentContext;
     }
@@ -415,6 +427,57 @@ export default function ChatPanel({
     } catch {
       return currentContext;
     }
+  }
+
+  async function maybeRefreshSelectedMarkContext(
+    question: string,
+    currentContext: DashboardContext,
+  ): Promise<DashboardContext | null> {
+    if (!looksLikeSelectedMarkQuestion(question)) {
+      return null;
+    }
+
+    if (hasMeaningfulSelectedMarks(currentContext)) {
+      return null;
+    }
+
+    const tableauDashboard =
+      window.tableau?.extensions?.dashboardContent?.dashboard;
+    if (!tableauDashboard) {
+      return null;
+    }
+
+    try {
+      return await getDashboardContext(tableauDashboard as never, {
+        workbook:
+          tableauDashboard.workbook ??
+          window.tableau?.extensions?.workbook ??
+          undefined,
+        referrer: document.referrer,
+      });
+    } catch {
+      return null;
+    }
+  }
+
+  function looksLikeSelectedMarkQuestion(question: string): boolean {
+    const normalizedQuestion = question.toLowerCase();
+    return (
+      normalizedQuestion.includes("selected mark") ||
+      normalizedQuestion.includes("selected marks") ||
+      normalizedQuestion.includes("selected-mark") ||
+      normalizedQuestion.includes("選択したマーク") ||
+      normalizedQuestion.includes("選択中のマーク")
+    );
+  }
+
+  function hasMeaningfulSelectedMarks(context: DashboardContext): boolean {
+    return (context.selectedMarks ?? []).some((summary) => {
+      if ((summary.rowCount ?? 0) > 0) {
+        return true;
+      }
+      return (summary.rows ?? []).length > 0;
+    });
   }
 
   async function handleCompletedJob(response: ChatJobGetResponse) {
