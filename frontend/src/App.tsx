@@ -68,14 +68,16 @@ function DashboardExtensionApp() {
       lastChangedWorksheet?: ContextPreviewLastChangedWorksheet,
     ) => {
       const tableau = window.tableau?.extensions;
-      const dashboard = tableau?.dashboardContent?.dashboard;
+      const dashboard = tableau?.dashboardContent?.dashboard as
+        | { workbook?: unknown }
+        | undefined;
 
       if (!tableau?.initializeAsync || !dashboard) {
         return;
       }
 
       const nextContext = await getDashboardContext(dashboard as never, {
-        workbook: tableau.workbook,
+        workbook: dashboard?.workbook ?? tableau?.workbook,
         referrer: document.referrer,
       });
 

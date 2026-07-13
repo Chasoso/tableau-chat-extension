@@ -171,9 +171,7 @@ function resolveWorkbookName(
 ): string | null {
   const urlName = parseWorkbookNameFromUrl(options.referrer);
   const explicitName =
-    normalizeName(readStringProperty(dashboard.workbook, "name")) ??
-    normalizeName(readStringProperty(options.workbook, "name")) ??
-    normalizeName(readStringProperty(options.workbook, "workbookName"));
+    readWorkbookName(dashboard.workbook) ?? readWorkbookName(options.workbook);
 
   if (urlName && (!explicitName || explicitName === dashboard.name)) {
     return urlName;
@@ -184,6 +182,15 @@ function resolveWorkbookName(
   }
 
   return urlName;
+}
+
+function readWorkbookName(value: unknown): string | null {
+  return (
+    normalizeName(readStringProperty(value, "name")) ??
+    normalizeName(readStringProperty(value, "workbookName")) ??
+    normalizeName(readStringProperty(value, "displayName")) ??
+    normalizeName(readStringProperty(value, "title"))
+  );
 }
 
 function parseWorkbookNameFromUrl(

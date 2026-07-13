@@ -1242,7 +1242,14 @@ export function buildRuleBasedInitialSelections(
   reasonBrief?: string;
   stopFallback?: boolean;
 } {
-  if (intent.intent !== "metadata_lookup" || maxToolCalls <= 0) {
+  const isAggregateAnalysisQuestionIntent =
+    intent.intent === "data_analysis" &&
+    isAggregateAnalysisQuestion(input.question);
+  if (
+    (intent.intent !== "metadata_lookup" &&
+      !isAggregateAnalysisQuestionIntent) ||
+    maxToolCalls <= 0
+  ) {
     return {
       selections: [],
       blockedTools: [],
@@ -1317,7 +1324,7 @@ export function buildRuleBasedInitialSelections(
       if (searchContentSelection) {
         selections.push(searchContentSelection);
         plannedTools.push("search-content");
-      } else {
+      } else if (intent.intent === "metadata_lookup") {
         blockedTools.push("list-datasources");
         blockedTools.push("search-content");
         return {
@@ -1330,7 +1337,7 @@ export function buildRuleBasedInitialSelections(
         };
       }
     }
-  } else {
+  } else if (intent.intent === "metadata_lookup") {
     const workbookResolutionTools = [
       "list-views",
       "list-workbooks",
@@ -2461,6 +2468,33 @@ export function buildDataAnalysisQueryRecoverySelection(input: {
       reason: "aggregate_query_args_not_buildable",
       resolvedDatasourceCount: resolved.length,
     });
+    if (
+      !input.calledToolNames.has("get-datasource-metadata") &&
+      input.allowedToolNames.includes("get-datasource-metadata")
+    ) {
+      const metadataTool = input.tools.find(
+        (tool) => tool.name === "get-datasource-metadata",
+      );
+      const datasourceLuid =
+        readString(selectedDatasource.luid) ??
+        readString(selectedDatasource.id);
+      if (metadataTool && datasourceLuid) {
+        const metadataArgs = inferPlannedToolArguments(
+          metadataTool,
+          { datasourceLuid },
+          input.input,
+        );
+        if (metadataArgs) {
+          return {
+            status: "ready",
+            tool: metadataTool,
+            arguments: metadataArgs,
+            reason:
+              "Load datasource metadata before building the aggregate query.",
+          };
+        }
+      }
+    }
     return undefined;
   }
 

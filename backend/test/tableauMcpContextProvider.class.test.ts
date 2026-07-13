@@ -7,6 +7,7 @@ import {
   TableauMcpToolPlanner,
   type ClassifiedQuestionIntent,
 } from "../src/services/tableauMcpToolPlanner";
+import { interpretQuestion } from "../src/services/questionInterpretation";
 import type { GetAdditionalContextInput } from "../src/tableau/contextProvider";
 
 const mocks = vi.hoisted(() => {
@@ -312,6 +313,165 @@ describe("TableauMcpContextProvider", () => {
         hasMetadata: true,
       }),
     );
+  });
+
+  it("walks aggregate ranking questions from datasource discovery to query execution", async () => {
+    setMcpEnv({
+      TABLEAU_MCP_TRANSPORT: "stdio",
+      TABLEAU_MCP_SERVER_URL: "",
+      TABLEAU_MCP_TIMEOUT_MS: "5000",
+      TABLEAU_MCP_ALLOWED_TOOLS: "",
+      TABLEAU_MCP_MAX_TOOL_CALLS: "4",
+      TABLEAU_MCP_COMMAND: "",
+      TABLEAU_MCP_ARGS: "",
+      TABLEAU_MCP_TOOL_PLANNING_ENABLED: "true",
+      TABLEAU_MCP_METADATA_CACHE_ENABLED: "false",
+    });
+
+    mocks.getTableauConnectedAppSecrets.mockResolvedValue({
+      clientId: "client-id",
+      secretId: "secret-id",
+      secretValue: "secret-value",
+    });
+    mocks.client.connect.mockResolvedValue(undefined);
+    mocks.client.listTools.mockResolvedValue({
+      tools: [
+        {
+          name: "list-datasources",
+          inputSchema: {
+            type: "object",
+            properties: {
+              filter: { type: "string" },
+              limit: { type: "number" },
+            },
+          },
+        },
+        {
+          name: "get-datasource-metadata",
+          inputSchema: {
+            type: "object",
+            required: ["datasourceLuid"],
+            properties: {
+              datasourceLuid: { type: "string" },
+            },
+          },
+        },
+        {
+          name: "query-datasource",
+          inputSchema: {
+            type: "object",
+            required: ["datasourceLuid", "query"],
+            properties: {
+              datasourceLuid: { type: "string" },
+              query: { type: "object" },
+              limit: { type: "number" },
+            },
+          },
+        },
+        {
+          name: "list-views",
+          inputSchema: {
+            type: "object",
+            properties: {
+              filter: { type: "string" },
+            },
+          },
+        },
+      ],
+    });
+    mocks.client.callTool.mockImplementation(async ({ name }) => {
+      if (name === "list-datasources") {
+        return {
+          content: [
+            {
+              text: JSON.stringify([
+                {
+                  name: "Tableau Public Per Day(2025/04-)",
+                  id: "datasource-123",
+                  project: { name: "Sandbox" },
+                },
+              ]),
+            },
+          ],
+        };
+      }
+
+      if (name === "get-datasource-metadata") {
+        return {
+          content: [
+            {
+              text: JSON.stringify({
+                datasourceModel: {
+                  name: "Tableau Public Per Day(2025/04-)",
+                  fields: [
+                    { name: "workbook_title" },
+                    { name: "workbook_viewCount" },
+                  ],
+                },
+              }),
+            },
+          ],
+        };
+      }
+
+      if (name === "query-datasource") {
+        return {
+          content: [
+            {
+              text: JSON.stringify({
+                data: [
+                  {
+                    rank_label: "Viz A",
+                    rank_metric: 321,
+                  },
+                ],
+              }),
+            },
+          ],
+        };
+      }
+
+      throw new Error(`Unexpected tool call: ${name}`);
+    });
+
+    const question = "2026年6月に最もView数が多かったVizは何ですか？";
+    const rankingDashboardContext = {
+      ...dashboardContext,
+      dataSources: [{ name: "Tableau Public Per Day(2025/04-)" }],
+    };
+
+    const result = await provider.getAdditionalContext({
+      dashboardContext: rankingDashboardContext,
+      question,
+      questionInterpretation: interpretQuestion({
+        question,
+        dashboardContext: rankingDashboardContext,
+      }),
+      intentHint: {
+        intent: "data_analysis",
+        confidence: 0.94,
+        reasonBrief: "The question asks for a ranked aggregate result.",
+        answerableFromDashboardContext: false,
+        needsMcp: true,
+        maxToolCalls: 4,
+      },
+      tableauSubject: "user@example.com",
+    });
+
+    expect(mocks.clientConstructor).toHaveBeenCalledTimes(1);
+    expect(mocks.client.listTools).toHaveBeenCalledTimes(1);
+    expect(mocks.client.callTool).toHaveBeenCalledTimes(3);
+    expect(mocks.client.callTool.mock.calls.map(([call]) => call.name)).toEqual(
+      ["list-datasources", "get-datasource-metadata", "query-datasource"],
+    );
+    expect(result.mcpExecutionDebug?.executedTools).toEqual([
+      "list-datasources",
+      "get-datasource-metadata",
+      "query-datasource",
+    ]);
+    expect(result.mcpExecutionDebug?.fallbackReason).toBeUndefined();
+    expect(result.queryInsights?.[0]?.requestedRanking).toBe(true);
+    expect(result.queryInsights?.[0]?.rows?.[0]?.label).toBe("Viz A");
   });
 
   it("blocks datasource-resolution tools when they are not allowlisted", () => {
