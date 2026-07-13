@@ -2,6 +2,8 @@
 
 This repository uses repository-level guardrails so Codex can implement one issue at a time and open safe pull requests with short prompts.
 
+For `main`-bound PRs, include `Closes #<issue-number>` for the related completed issue(s); for `develop`-bound PRs, omit `Closes` unless explicitly requested.
+
 ## Purpose
 
 - Keep the normal Codex prompt short.
@@ -34,7 +36,7 @@ This repository uses repository-level guardrails so Codex can implement one issu
 8. Commit without `--no-verify`.
 9. Push without `--no-verify`.
 10. Create one PR into `develop`.
-11. Include `Closes #<issue-number>`.
+11. Include `Closes #<issue-number>` when the target branch is `main`; omit it for PRs targeting `develop` unless the repository owner explicitly requests otherwise.
 12. Report the PR URL and validation results.
 
 ## Before Implementation
@@ -64,7 +66,7 @@ This repository uses repository-level guardrails so Codex can implement one issu
 
 - Confirm the branch contains only the issue scope.
 - Confirm the PR body includes the validation results and safety confirmation.
-- Confirm the PR body includes `Closes #<issue-number>`.
+- Confirm the PR body includes `Closes #<issue-number>` for PRs targeting `main`, and does not include it for PRs targeting `develop` unless explicitly requested.
 - Confirm no `--no-verify` bypass was used.
 
 ## PR Body Expectations
