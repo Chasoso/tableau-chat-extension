@@ -394,6 +394,12 @@ Closes #<issue-number>
 
 only when the issue is fully completed.
 
+### Branch-specific close rules
+
+- For PRs targeting `develop`, do not include `Closes #<issue-number>` unless the repository owner explicitly asks for it.
+- For PRs targeting `main`, identify the related issue(s) and include the appropriate `Closes #<issue-number>` entries in the PR body even when the prompt does not repeat them.
+- Do not use `Closes` for incomplete, skipped, or failed issues.
+
 ### Work-package PR
 
 List all included issues.

@@ -6,6 +6,8 @@
 
 Closes #
 
+Use `Closes` for `main` PRs when the related issue is fully completed, and omit it for `develop` PRs unless explicitly requested.
+
 ## Changes
 
 -
