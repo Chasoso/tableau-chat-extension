@@ -2,7 +2,7 @@
 
 This repository uses repository-level guardrails so Codex can implement one issue at a time and open safe pull requests with short prompts.
 
-For `main`-bound PRs, include `Closes #<issue-number>` for the related completed issue(s); for `develop`-bound PRs, omit `Closes` unless explicitly requested.
+For `main`-bound PRs, automatically identify the related completed Issue(s) from the change scope and include the appropriate `Closes #<issue-number>` entries in the PR body even when the prompt does not name the Issue numbers explicitly; for `develop`-bound PRs, omit `Closes` unless explicitly requested.
 
 ## Purpose
 

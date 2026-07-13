@@ -6,7 +6,7 @@
 
 Closes #
 
-Use `Closes` for `main` PRs when the related issue is fully completed, and omit it for `develop` PRs unless explicitly requested.
+For `main` PRs, automatically include `Closes #<issue-number>` for all related completed issues even if the prompt does not name the issue numbers; for `develop` PRs, omit `Closes` unless explicitly requested.
 
 ## Changes
 
