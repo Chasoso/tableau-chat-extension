@@ -227,8 +227,8 @@ function resolveExecutableWithWhere(commandName) {
   const candidate = result.stdout
     ?.split(/\r?\n/)
     .map((line) => line.trim())
-    .find(Boolean);
-  return candidate && fs.existsSync(candidate) ? candidate : undefined;
+    .find((line) => line && isRunnableExecutable(line, ["version"]));
+  return candidate;
 }
 
 function resolveExecutableWithWhich(commandName) {
@@ -245,7 +245,24 @@ function resolveExecutableWithWhich(commandName) {
   }
 
   const candidate = result.stdout?.trim();
-  return candidate && fs.existsSync(candidate) ? candidate : undefined;
+  return candidate && isRunnableExecutable(candidate, ["version"])
+    ? candidate
+    : undefined;
+}
+
+function isRunnableExecutable(command, args) {
+  if (!fs.existsSync(command)) {
+    return false;
+  }
+
+  const result = spawnSync(command, args, {
+    cwd: repoRoot,
+    stdio: "ignore",
+    env: process.env,
+    shell: false,
+  });
+
+  return !result.error && result.status === 0;
 }
 
 function reportFindings(findings) {

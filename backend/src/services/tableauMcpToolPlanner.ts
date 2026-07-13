@@ -125,7 +125,6 @@ const PREFERRED_TOOL_NAMES_FOR_INTENT: Record<QuestionIntent, string[]> = {
     "list-datasources",
     "get-datasource-metadata",
     "query-datasource",
-    "list-views",
   ],
   content_search: [
     "search-content",
@@ -1101,7 +1100,8 @@ function buildPlannerPrompt(
     input.allowIntentReclassification
       ? "You may adjust intent when the question and observations strongly disagree with the initial classifier."
       : "Treat the classified intent as fixed for this request.",
-    "Avoid query-datasource unless aggregate analysis is required.",
+    "For aggregate or ranking analysis, prefer query-datasource after resolving the datasource identifier and fields.",
+    "Do not choose list-views for aggregate analysis unless workbook/view context is the only way to find the datasource.",
     "For query-datasource, always include a small limit and aggregate fields.",
     `Maximum tool calls: ${input.maxToolCalls}`,
     `Allowed tools: ${input.allowedToolNames.join(", ") || "none"}`,
