@@ -56,6 +56,12 @@ const exampleQuestions = [
 ];
 
 const DEFAULT_JOB_POLL_DELAY_MS = 1500;
+const SELECTED_MARK_QUESTION_PATTERNS = [
+  /selected\s*marks?/i,
+  /selected-mark/i,
+  /選択(?:した|中の|している|されている)マーク/,
+  /現在選択中のマーク/,
+] as const;
 
 export default function ChatPanel({
   dashboardContext,
@@ -461,13 +467,8 @@ export default function ChatPanel({
   }
 
   function looksLikeSelectedMarkQuestion(question: string): boolean {
-    const normalizedQuestion = question.toLowerCase();
-    return (
-      normalizedQuestion.includes("selected mark") ||
-      normalizedQuestion.includes("selected marks") ||
-      normalizedQuestion.includes("selected-mark") ||
-      normalizedQuestion.includes("選択したマーク") ||
-      normalizedQuestion.includes("選択中のマーク")
+    return SELECTED_MARK_QUESTION_PATTERNS.some((pattern) =>
+      pattern.test(question),
     );
   }
 
