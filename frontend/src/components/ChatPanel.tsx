@@ -385,7 +385,7 @@ export default function ChatPanel({
     currentContext: DashboardContext,
   ): Promise<DashboardContext> {
     const refreshedSelectedMarkContext =
-      await maybeRefreshSelectedMarkContext(currentContext);
+      await maybeRefreshSelectedMarkContext();
     if (refreshedSelectedMarkContext) {
       currentContext = refreshedSelectedMarkContext;
     }
@@ -424,13 +424,7 @@ export default function ChatPanel({
     }
   }
 
-  async function maybeRefreshSelectedMarkContext(
-    currentContext: DashboardContext,
-  ): Promise<DashboardContext | null> {
-    if (hasMeaningfulSelectedMarks(currentContext)) {
-      return null;
-    }
-
+  async function maybeRefreshSelectedMarkContext(): Promise<DashboardContext | null> {
     const tableauDashboard =
       window.tableau?.extensions?.dashboardContent?.dashboard;
     if (!tableauDashboard) {
@@ -448,15 +442,6 @@ export default function ChatPanel({
     } catch {
       return null;
     }
-  }
-
-  function hasMeaningfulSelectedMarks(context: DashboardContext): boolean {
-    return (context.selectedMarks ?? []).some((summary) => {
-      if ((summary.rowCount ?? 0) > 0) {
-        return true;
-      }
-      return (summary.rows ?? []).length > 0;
-    });
   }
 
   async function handleCompletedJob(response: ChatJobGetResponse) {

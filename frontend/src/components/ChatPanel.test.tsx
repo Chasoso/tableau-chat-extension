@@ -244,17 +244,17 @@ describe("ChatPanel", () => {
     );
   });
 
-  it("refreshes selected-mark context before sending when the current selection is stale", async () => {
+  it("refreshes selected-mark context before sending when the selected sheet has changed", async () => {
     const user = userEvent.setup();
 
     mocks.getDashboardContext.mockResolvedValue({
       ...dashboardContext,
       selectedMarks: [
         {
-          worksheetName: "Favorites",
+          worksheetName: "Published",
           status: "available",
           rowCount: 1,
-          columns: ["Favorite Count"],
+          columns: ["Published Count"],
           rows: [{ values: [] }],
         },
       ],
@@ -287,7 +287,15 @@ describe("ChatPanel", () => {
       <ChatPanel
         dashboardContext={{
           ...dashboardContext,
-          selectedMarks: [],
+          selectedMarks: [
+            {
+              worksheetName: "Favorites",
+              status: "available",
+              rowCount: 1,
+              columns: ["Favorite Count"],
+              rows: [{ values: [] }],
+            },
+          ],
         }}
         isAuthenticated
       />,
@@ -306,7 +314,7 @@ describe("ChatPanel", () => {
         dashboardContext: expect.objectContaining({
           selectedMarks: expect.arrayContaining([
             expect.objectContaining({
-              worksheetName: "Favorites",
+              worksheetName: "Published",
               rowCount: 1,
             }),
           ]),
