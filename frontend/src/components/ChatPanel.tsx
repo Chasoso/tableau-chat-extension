@@ -333,10 +333,8 @@ export default function ChatPanel({
     setJobView(null);
 
     try {
-      const dashboardContextForSend = await resolveDashboardContextForSend(
-        trimmedQuestion,
-        dashboardContext,
-      );
+      const dashboardContextForSend =
+        await resolveDashboardContextForSend(dashboardContext);
       const response = await createChatJob(
         {
           question: trimmedQuestion,
@@ -384,13 +382,10 @@ export default function ChatPanel({
   }
 
   async function resolveDashboardContextForSend(
-    question: string,
     currentContext: DashboardContext,
   ): Promise<DashboardContext> {
-    const refreshedSelectedMarkContext = await maybeRefreshSelectedMarkContext(
-      question,
-      currentContext,
-    );
+    const refreshedSelectedMarkContext =
+      await maybeRefreshSelectedMarkContext(currentContext);
     if (refreshedSelectedMarkContext) {
       currentContext = refreshedSelectedMarkContext;
     }
@@ -430,13 +425,8 @@ export default function ChatPanel({
   }
 
   async function maybeRefreshSelectedMarkContext(
-    question: string,
     currentContext: DashboardContext,
   ): Promise<DashboardContext | null> {
-    if (!looksLikeSelectedMarkQuestion(question)) {
-      return null;
-    }
-
     if (hasMeaningfulSelectedMarks(currentContext)) {
       return null;
     }
@@ -458,17 +448,6 @@ export default function ChatPanel({
     } catch {
       return null;
     }
-  }
-
-  function looksLikeSelectedMarkQuestion(question: string): boolean {
-    const normalizedQuestion = question.toLowerCase();
-    return (
-      normalizedQuestion.includes("selected mark") ||
-      normalizedQuestion.includes("selected marks") ||
-      normalizedQuestion.includes("selected-mark") ||
-      normalizedQuestion.includes("選択したマーク") ||
-      normalizedQuestion.includes("選択中のマーク")
-    );
   }
 
   function hasMeaningfulSelectedMarks(context: DashboardContext): boolean {

@@ -143,6 +143,107 @@ describe("dashboardContext", () => {
     expect(summaryDataPreview.updatedAt).toEqual(expect.any(String));
   });
 
+  it("uses getWorksheetsAsync and the first populated selected-mark table", async () => {
+    const dashboard = {
+      name: "Sales Dashboard",
+      workbook: {
+        name: "Sales Workbook",
+      },
+      getWorksheetsAsync: async () => [
+        {
+          name: "Favorites",
+          sheetType: "worksheet",
+          getSelectedMarksAsync: async () => ({
+            data: [
+              {
+                columns: [],
+                data: [],
+              },
+              {
+                columns: [
+                  {
+                    fieldName: "Favorite Count",
+                  },
+                ],
+                data: [
+                  [
+                    {
+                      formattedValue: "4",
+                      value: 4,
+                    },
+                  ],
+                ],
+                totalRowCount: 1,
+              },
+            ],
+          }),
+        },
+      ],
+    };
+
+    const context = await getDashboardContext(dashboard as never, {
+      referrer: "https://example.com/views/SalesWorkbook/Sales%20Dashboard",
+    });
+
+    expect(context.worksheets).toEqual([
+      {
+        name: "Favorites",
+        sheetType: "worksheet",
+        size: undefined,
+        summary: "Worksheet available in the active dashboard: Favorites",
+      },
+    ]);
+    expect(context.selectedMarks).toEqual([
+      {
+        worksheetName: "Favorites",
+        columns: ["Favorite Count"],
+        rows: [
+          {
+            values: [
+              {
+                fieldName: "Favorite Count",
+                raw: 4,
+                display: "4",
+                isEmpty: false,
+              },
+            ],
+          },
+        ],
+        rowCount: 1,
+        status: "available",
+      },
+    ]);
+  });
+
+  it("marks empty selected-mark responses as not available", async () => {
+    const dashboard = {
+      name: "Sales Dashboard",
+      workbook: {
+        name: "Sales Workbook",
+      },
+      worksheets: [
+        {
+          name: "Favorites",
+          sheetType: "worksheet",
+          getSelectedMarksAsync: async () => ({
+            data: [],
+          }),
+        },
+      ],
+    };
+
+    const context = await getDashboardContext(dashboard as never, {
+      referrer: "https://example.com/views/SalesWorkbook/Sales%20Dashboard",
+    });
+
+    expect(context.selectedMarks).toEqual([
+      {
+        worksheetName: "Favorites",
+        status: "notAvailable",
+      },
+    ]);
+  });
+
   it("recovers the workbook name from workbook-like Tableau properties", async () => {
     const dashboard = {
       name: "Statistics",

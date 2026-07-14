@@ -17,6 +17,7 @@ type TableauDashboard = {
   name?: string;
   workbook?: { name?: string };
   worksheets?: TableauWorksheet[];
+  getWorksheetsAsync?: () => Promise<unknown[]>;
   getParametersAsync?: () => Promise<unknown[]>;
 };
 
@@ -108,7 +109,7 @@ export async function getDashboardContext(
   dashboard: TableauDashboard,
   options: DashboardContextOptions = {},
 ): Promise<DashboardContext> {
-  const worksheets = dashboard.worksheets ?? [];
+  const worksheets = await resolveWorksheets(dashboard);
   const workbookName = resolveWorkbookName(dashboard, options);
   const workbookId = resolveWorkbookId(options.workbook);
   const referrerParts = parseReferrerParts(options.referrer);
@@ -378,22 +379,27 @@ async function collectSelectedMarks(
 
       try {
         const selected = (await worksheet.getSelectedMarksAsync()) as {
-          data?: Array<{
-            columns?: Array<{ fieldName?: string }>;
-            data?: unknown[];
-          }>;
+          data?: unknown;
+          dataTable?: unknown;
+          tables?: unknown;
         };
-        const firstTable = selected.data?.[0];
-        const columns =
-          firstTable?.columns?.map(
-            (column) => column.fieldName ?? "Unknown column",
-          ) ?? [];
-        const rows = normalizeSelectedMarkRows(firstTable?.data, columns);
+        const selectedTable = resolveSelectedMarkTable(selected);
+        if (!selectedTable) {
+          return {
+            worksheetName: worksheet.name ?? "Untitled worksheet",
+            status: "notAvailable" as const,
+          };
+        }
+
+        const columns = selectedTable.columns.map((column) =>
+          normalizeSelectedMarkColumnName(column),
+        );
+        const rows = normalizeSelectedMarkRows(selectedTable.data, columns);
         return {
           worksheetName: worksheet.name ?? "Untitled worksheet",
           columns,
           rows,
-          rowCount: firstTable?.data?.length ?? 0,
+          rowCount: selectedTable.totalRowCount ?? selectedTable.data.length,
           status: "available" as const,
         };
       } catch {
@@ -406,6 +412,151 @@ async function collectSelectedMarks(
   );
 
   return summaries;
+}
+
+async function resolveWorksheets(
+  dashboard: TableauDashboard,
+): Promise<TableauWorksheet[]> {
+  if (Array.isArray(dashboard.worksheets)) {
+    return dashboard.worksheets.flatMap((worksheet) =>
+      isTableauWorksheetLike(worksheet) ? [worksheet] : [],
+    );
+  }
+
+  if (!dashboard.getWorksheetsAsync) {
+    return [];
+  }
+
+  try {
+    const worksheets = await dashboard.getWorksheetsAsync();
+    return Array.isArray(worksheets)
+      ? worksheets.flatMap((worksheet) =>
+          isTableauWorksheetLike(worksheet) ? [worksheet] : [],
+        )
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+type SelectedMarkTableLike = {
+  columns: Array<{ fieldName?: string }>;
+  data: unknown[];
+  totalRowCount?: number;
+};
+
+function resolveSelectedMarkTable(
+  selected: { data?: unknown; dataTable?: unknown; tables?: unknown } | null,
+): SelectedMarkTableLike | null {
+  const candidates = extractSelectedMarkTableCandidates(selected);
+  if (candidates.length === 0) {
+    return null;
+  }
+
+  const tableWithRows =
+    candidates.find(
+      (table) => Array.isArray(table.data) && table.data.length,
+    ) ??
+    candidates.find((table) => table.columns?.length) ??
+    candidates[0];
+
+  return tableWithRows ?? null;
+}
+
+function extractSelectedMarkTableCandidates(
+  selected: { data?: unknown; dataTable?: unknown; tables?: unknown } | null,
+): SelectedMarkTableLike[] {
+  if (!selected || typeof selected !== "object") {
+    return [];
+  }
+
+  const record = selected as Record<string, unknown>;
+  const candidateValues: unknown[] = [];
+
+  if (Array.isArray(record.data)) {
+    candidateValues.push(...record.data);
+  }
+
+  if (Array.isArray(record.tables)) {
+    candidateValues.push(...record.tables);
+  }
+
+  if (record.dataTable) {
+    candidateValues.push(record.dataTable);
+  }
+
+  if (!candidateValues.length && isSelectedMarkTableLike(record)) {
+    candidateValues.push(record);
+  }
+
+  return candidateValues.flatMap((value) => {
+    const table = normalizeSelectedMarkTable(value);
+    return table ? [table] : [];
+  });
+}
+
+function isSelectedMarkTableLike(
+  value: unknown,
+): value is SelectedMarkTableLike {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+
+  const record = value as Record<string, unknown>;
+  return (
+    Array.isArray(record.columns) ||
+    Array.isArray(record.data) ||
+    typeof record.totalRowCount === "number" ||
+    typeof record.rowCount === "number"
+  );
+}
+
+function normalizeSelectedMarkTable(
+  value: unknown,
+): SelectedMarkTableLike | null {
+  if (!isSelectedMarkTableLike(value)) {
+    return null;
+  }
+
+  const record = value as Record<string, unknown>;
+  const columns = Array.isArray(record.columns)
+    ? record.columns.flatMap((column) => {
+        const columnName = normalizeSelectedMarkColumnName(column);
+        return columnName ? [{ fieldName: columnName }] : [];
+      })
+    : [];
+  const data = Array.isArray(record.data) ? record.data : [];
+  const totalRowCount =
+    typeof record.totalRowCount === "number"
+      ? record.totalRowCount
+      : typeof record.rowCount === "number"
+        ? record.rowCount
+        : undefined;
+
+  if (!columns.length && !data.length && totalRowCount === undefined) {
+    return null;
+  }
+
+  return {
+    columns,
+    data,
+    totalRowCount,
+  };
+}
+
+function normalizeSelectedMarkColumnName(column: unknown): string {
+  if (!column || typeof column !== "object") {
+    return "Unknown column";
+  }
+
+  const record = column as Record<string, unknown>;
+  const candidate =
+    readStringProperty(record, "fieldName") ??
+    readStringProperty(record, "name") ??
+    readStringProperty(record, "caption") ??
+    readStringProperty(record, "displayName");
+
+  return candidate ?? "Unknown column";
 }
 
 function normalizeSelectedMarkRows(
@@ -459,6 +610,10 @@ function normalizeSelectedMarkRow(
   );
 
   return values.length ? { values } : undefined;
+}
+
+function isTableauWorksheetLike(value: unknown): value is TableauWorksheet {
+  return Boolean(value) && typeof value === "object";
 }
 
 function normalizeSelectedMarkCell(
