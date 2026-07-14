@@ -295,7 +295,7 @@ describe("ChatPanel", () => {
 
     await user.type(
       screen.getByRole("textbox"),
-      "選択中のマークについて、詳しく教えてください。",
+      "選択しているマークについて、詳しく教えてください。",
     );
     await user.click(screen.getByRole("button", { name: "送信" }));
 
