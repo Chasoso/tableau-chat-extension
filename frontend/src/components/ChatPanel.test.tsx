@@ -244,7 +244,7 @@ describe("ChatPanel", () => {
     );
   });
 
-  it("refreshes selected-mark context before sending selected-mark questions", async () => {
+  it("refreshes selected-mark context before sending when the current selection is stale", async () => {
     const user = userEvent.setup();
 
     mocks.getDashboardContext.mockResolvedValue({
@@ -295,7 +295,7 @@ describe("ChatPanel", () => {
 
     await user.type(
       screen.getByRole("textbox"),
-      "選択しているマークについて、詳しく教えてください。",
+      "このビジュアルについて、詳しく教えてください。",
     );
     await user.click(screen.getByRole("button", { name: "送信" }));
 

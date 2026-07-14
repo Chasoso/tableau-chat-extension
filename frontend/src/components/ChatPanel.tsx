@@ -56,12 +56,6 @@ const exampleQuestions = [
 ];
 
 const DEFAULT_JOB_POLL_DELAY_MS = 1500;
-const SELECTED_MARK_QUESTION_PATTERNS = [
-  /selected\s*marks?/i,
-  /selected-mark/i,
-  /選択(?:した|中の|している|されている)マーク/,
-  /現在選択中のマーク/,
-] as const;
 
 export default function ChatPanel({
   dashboardContext,
@@ -339,10 +333,8 @@ export default function ChatPanel({
     setJobView(null);
 
     try {
-      const dashboardContextForSend = await resolveDashboardContextForSend(
-        trimmedQuestion,
-        dashboardContext,
-      );
+      const dashboardContextForSend =
+        await resolveDashboardContextForSend(dashboardContext);
       const response = await createChatJob(
         {
           question: trimmedQuestion,
@@ -390,13 +382,10 @@ export default function ChatPanel({
   }
 
   async function resolveDashboardContextForSend(
-    question: string,
     currentContext: DashboardContext,
   ): Promise<DashboardContext> {
-    const refreshedSelectedMarkContext = await maybeRefreshSelectedMarkContext(
-      question,
-      currentContext,
-    );
+    const refreshedSelectedMarkContext =
+      await maybeRefreshSelectedMarkContext(currentContext);
     if (refreshedSelectedMarkContext) {
       currentContext = refreshedSelectedMarkContext;
     }
@@ -436,13 +425,8 @@ export default function ChatPanel({
   }
 
   async function maybeRefreshSelectedMarkContext(
-    question: string,
     currentContext: DashboardContext,
   ): Promise<DashboardContext | null> {
-    if (!looksLikeSelectedMarkQuestion(question)) {
-      return null;
-    }
-
     if (hasMeaningfulSelectedMarks(currentContext)) {
       return null;
     }
@@ -464,12 +448,6 @@ export default function ChatPanel({
     } catch {
       return null;
     }
-  }
-
-  function looksLikeSelectedMarkQuestion(question: string): boolean {
-    return SELECTED_MARK_QUESTION_PATTERNS.some((pattern) =>
-      pattern.test(question),
-    );
   }
 
   function hasMeaningfulSelectedMarks(context: DashboardContext): boolean {
