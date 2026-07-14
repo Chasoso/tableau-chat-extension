@@ -8,6 +8,7 @@ import type {
   TraceError,
   TraceEvent,
 } from "./types";
+import type { SelectedMarkSummary } from "../types/tableau";
 
 export type AgentRunBudget = {
   maxModelCalls?: number;
@@ -43,6 +44,7 @@ export type AgentRunContextSummary = {
     count?: number;
     worksheetNames?: string[];
     fieldNames?: string[];
+    items?: SelectedMarkSummary[];
     summary?: string;
     truncated?: boolean;
   };

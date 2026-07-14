@@ -42,6 +42,32 @@ function createSelectedMarkContextSummary(
       previewCount: 1,
       truncated: false,
       worksheetNames: ["Sales Trend"],
+      items: [
+        {
+          worksheetName: "Sales Trend",
+          columns: ["Region", "Sales"],
+          rowCount: 3,
+          status: "available",
+          rows: [
+            {
+              values: [
+                {
+                  fieldName: "Region",
+                  raw: "West",
+                  display: "West",
+                  isEmpty: false,
+                },
+                {
+                  fieldName: "Sales",
+                  raw: 123,
+                  display: "123",
+                  isEmpty: false,
+                },
+              ],
+            },
+          ],
+        },
+      ],
     },
     summaryDataPreview: {
       available: true,
@@ -102,6 +128,15 @@ describe("selected-mark explanation orchestration", () => {
           available: true,
           count: 3,
           worksheetNames: ["Sales Trend"],
+          summary:
+            "Selected 3 mark(s) across 1 worksheet(s). Row preview: Region=West, Sales=123",
+          items: [
+            expect.objectContaining({
+              worksheetName: "Sales Trend",
+              rowCount: 3,
+              status: "available",
+            }),
+          ],
         }),
         summaryDataPreview: expect.objectContaining({
           available: true,
@@ -125,9 +160,14 @@ describe("selected-mark explanation orchestration", () => {
     expect(JSON.stringify(response.responseMaterial)).toContain(
       "selected_mark_explanation",
     );
-    expect(JSON.stringify(response.responseMaterial)).not.toContain('"rows"');
-    expect(JSON.stringify(response.responseMaterial)).not.toContain('"values"');
+    expect(response.responseMaterial?.selectedMarks?.summary).toContain(
+      "Row preview: Region=West, Sales=123",
+    );
     expect(response.placeholderResponse).toContain("Selected marks: 3");
+    expect(response.placeholderResponse).toContain("Sales Trend: 3 row(s)");
+    expect(response.placeholderResponse).toContain(
+      "row 1: Region=West, Sales=123",
+    );
     expect(response.placeholderResponse).toContain(
       "Summary data preview: available",
     );

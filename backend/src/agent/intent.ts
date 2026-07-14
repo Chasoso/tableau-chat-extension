@@ -1,5 +1,6 @@
 import type { AgentRunId } from "./runId";
 import type { JsonObject } from "./types";
+import type { SelectedMarkSummary } from "../types/tableau";
 
 export type IntentId =
   | "selected_mark_explanation"
@@ -31,6 +32,7 @@ export type IntentResolutionSelectedMarksSummary = {
   previewCount?: number;
   truncated?: boolean;
   worksheetNames?: string[];
+  items?: SelectedMarkSummary[];
 };
 
 export type IntentResolutionContextSummary = {

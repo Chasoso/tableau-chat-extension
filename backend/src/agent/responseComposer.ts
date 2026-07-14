@@ -1,4 +1,9 @@
 import type { JsonObject, JsonValue } from "./types";
+import type {
+  SelectedMarkCellSummary,
+  SelectedMarkRowSummary,
+  SelectedMarkSummary,
+} from "../types/tableau";
 
 export type ResponseComposerStatus =
   | "composed"
@@ -260,6 +265,7 @@ function buildSelectedMarkExplanationMessage(
       "Structured orchestration is connected for selected_mark_explanation.",
       "Selected mark context has been collected; actual AI response generation is not connected yet.",
       `Selected marks: ${material.selectedMarks.count}`,
+      ...renderSelectedMarkEvidenceLines(material.selectedMarks.items),
       `Summary data preview: ${summaryDataPreviewStatus}`,
       `Filters: ${filterCount}`,
       `Parameters: ${parameterCount}`,
@@ -270,6 +276,7 @@ function buildSelectedMarkExplanationMessage(
     "Structured orchestration is connected for selected_mark_explanation.",
     "Selected mark context has been collected; actual AI response generation is not connected yet.",
     `Selected marks: ${material.selectedMarks.count}`,
+    ...renderSelectedMarkEvidenceLines(material.selectedMarks.items),
     `Summary data preview: ${summaryDataPreviewStatus}`,
     `Filters: ${filterCount}`,
     `Parameters: ${parameterCount}`,
@@ -286,6 +293,7 @@ function buildSelectedMarkSourceSummary(
       count: material.selectedMarks.count,
       worksheetNames: [...material.selectedMarks.worksheetNames],
       fieldNames: [...material.selectedMarks.fieldNames],
+      items: cloneSelectedMarkSummaries(material.selectedMarks.items),
     },
     ...(material.summaryDataPreview
       ? {
@@ -336,6 +344,167 @@ function buildSelectedMarkSourceSummary(
       : {}),
     warnings: [...material.warnings],
   };
+}
+
+function renderSelectedMarkEvidenceLines(
+  items: SelectedMarkSummary[],
+): string[] {
+  return items.slice(0, 3).flatMap((item) => {
+    const header = `${item.worksheetName}: ${item.rowCount ?? item.rows?.length ?? 0} row(s)`;
+    const rowLines = (item.rows ?? [])
+      .slice(0, 2)
+      .map((row, index) => `  row ${index + 1}: ${renderSelectedMarkRow(row)}`);
+
+    return [header, ...rowLines];
+  });
+}
+
+function renderSelectedMarkRow(row: SelectedMarkRowSummary): string {
+  return row.values
+    .map((cell) => renderSelectedMarkCell(cell))
+    .filter((value) => value.length > 0)
+    .join(", ");
+}
+
+function renderSelectedMarkCell(cell: SelectedMarkCellSummary): string {
+  const label = cell.fieldName?.trim();
+  const display = cell.display.trim();
+  if (!label) {
+    return display || "(empty)";
+  }
+
+  return display ? `${label}=${display}` : `${label}=(empty)`;
+}
+
+function cloneSelectedMarkSummaries(
+  items?: readonly SelectedMarkSummary[] | SelectedMarkSummary[],
+): SelectedMarkSummary[] {
+  return (items ?? []).map((item) => cloneSelectedMarkSummary(item));
+}
+
+function cloneSelectedMarkSummary(
+  item: SelectedMarkSummary,
+): SelectedMarkSummary {
+  return {
+    worksheetName: item.worksheetName,
+    ...(item.columns?.length ? { columns: [...item.columns] } : {}),
+    ...(item.rows?.length
+      ? {
+          rows: item.rows.map(
+            (row): SelectedMarkRowSummary => ({
+              values: row.values.map(
+                (cell): SelectedMarkCellSummary => ({
+                  fieldName: cell.fieldName ?? null,
+                  raw: cell.raw,
+                  display: cell.display,
+                  isEmpty: cell.isEmpty,
+                }),
+              ),
+            }),
+          ),
+        }
+      : {}),
+    ...(item.rowCount !== undefined ? { rowCount: item.rowCount } : {}),
+    ...(item.status ? { status: item.status } : {}),
+  };
+}
+
+function readSelectedMarkSummaryArray(
+  value: unknown,
+): SelectedMarkSummary[] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+
+  const items: SelectedMarkSummary[] = [];
+  for (const item of value) {
+    if (!isPlainObject(item) || typeof item.worksheetName !== "string") {
+      continue;
+    }
+
+    items.push({
+      worksheetName: item.worksheetName,
+      ...(Array.isArray(item.columns)
+        ? {
+            columns: item.columns.filter(
+              (column): column is string => typeof column === "string",
+            ),
+          }
+        : {}),
+      ...(Array.isArray(item.rows)
+        ? {
+            rows: item.rows
+              .map((row): SelectedMarkRowSummary | undefined =>
+                isPlainObject(row) && Array.isArray(row.values)
+                  ? {
+                      values: row.values
+                        .map((cell): SelectedMarkCellSummary | undefined =>
+                          isPlainObject(cell)
+                            ? {
+                                fieldName:
+                                  typeof cell.fieldName === "string"
+                                    ? cell.fieldName
+                                    : cell.fieldName === null
+                                      ? null
+                                      : undefined,
+                                raw: isCellValue(cell.raw) ? cell.raw : null,
+                                display:
+                                  typeof cell.display === "string"
+                                    ? cell.display
+                                    : "",
+                                isEmpty: Boolean(cell.isEmpty),
+                              }
+                            : undefined,
+                        )
+                        .filter((cell): cell is SelectedMarkCellSummary =>
+                          Boolean(cell),
+                        ),
+                    }
+                  : undefined,
+              )
+              .filter((row): row is SelectedMarkRowSummary => Boolean(row)),
+          }
+        : {}),
+      ...(typeof item.rowCount === "number" ? { rowCount: item.rowCount } : {}),
+      ...(item.status === "available" || item.status === "notAvailable"
+        ? { status: item.status }
+        : {}),
+    });
+  }
+
+  return items;
+}
+
+function isCellValue(
+  value: unknown,
+): value is string | number | boolean | null {
+  return (
+    value === null ||
+    typeof value === "string" ||
+    typeof value === "number" ||
+    typeof value === "boolean"
+  );
+}
+
+function buildSelectedMarksSummary(input: {
+  count: number;
+  worksheetNames: string[];
+  items: SelectedMarkSummary[];
+}): string {
+  const worksheetCount = input.worksheetNames.length;
+  const rowPreview = input.items
+    .flatMap((item) =>
+      (item.rows ?? []).slice(0, 2).map((row) => renderSelectedMarkRow(row)),
+    )
+    .filter((value) => value.length > 0)
+    .slice(0, 3);
+
+  return [
+    `Selected ${input.count} mark(s) across ${worksheetCount} worksheet(s).`,
+    rowPreview.length ? `Row preview: ${rowPreview.join(" | ")}` : undefined,
+  ]
+    .filter(Boolean)
+    .join(" ");
 }
 
 function buildResponseComposerTraceMetadata(input: {
@@ -418,6 +587,9 @@ function normalizeSelectedMarkExplanationMaterial(
     readStringArray(selectedMarksInput?.worksheetNames) ?? [];
   const selectedMarkFieldNames =
     readStringArray(selectedMarksInput?.fieldNames) ?? [];
+  const selectedMarkItems = cloneSelectedMarkSummaries(
+    readSelectedMarkSummaryArray(selectedMarksInput?.items),
+  );
 
   const summaryDataPreview = isPlainObject(output?.summaryDataPreview)
     ? output?.summaryDataPreview
@@ -441,10 +613,15 @@ function normalizeSelectedMarkExplanationMaterial(
         options.maxEntries,
         options.maxStringLength,
       ),
+      items: selectedMarkItems,
       summary:
         readString(selectedMarksInput?.summary) ??
         (selectedMarkAvailable
-          ? `Selected ${selectedMarksCount} marks across ${selectedMarkWorksheetNames.length} worksheet(s).`
+          ? buildSelectedMarksSummary({
+              count: selectedMarksCount,
+              worksheetNames: selectedMarkWorksheetNames,
+              items: selectedMarkItems,
+            })
           : "No selected marks are available."),
     },
     ...(summaryDataPreview
@@ -845,6 +1022,7 @@ type SelectedMarkExplanationMaterial = {
     count: number;
     worksheetNames: string[];
     fieldNames: string[];
+    items: SelectedMarkSummary[];
     summary: string;
   };
   summaryDataPreview?: {

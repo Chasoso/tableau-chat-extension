@@ -14,6 +14,11 @@ import type {
 import type { IntentResolutionContextSummary } from "./intent";
 import type { JsonObject, JsonValue } from "./types";
 import type { ToolExecutionHandler } from "./toolExecutionWrapper";
+import type {
+  SelectedMarkCellSummary,
+  SelectedMarkRowSummary,
+  SelectedMarkSummary,
+} from "../types/tableau";
 
 export type SelectedMarkExplanationContextToolName =
   | "context.selectedMarks"
@@ -31,6 +36,7 @@ export type SelectedMarkExplanationResponseMaterial = {
     count: number;
     worksheetNames: string[];
     fieldNames: string[];
+    items: SelectedMarkSummary[];
     summary: string;
   };
   summaryDataPreview?: {
@@ -80,6 +86,8 @@ export function createSelectedMarkExplanationToolRuntime(
   const executionWrapper = createDefaultToolExecutionWrapper({
     handlers: createSelectedMarkExplanationContextToolHandlers(contextSummary),
     defaultTimeoutMs: 15_000,
+    maxOutputDepth: 8,
+    maxOutputEntries: 24,
   });
 
   return {
@@ -130,6 +138,7 @@ export function createSelectedMarkExplanationContextToolDefinitions(): ToolDefin
       outputSchema: {
         ...CONTEXT_TOOL_OUTPUT_SCHEMA,
         requiredFields: ["available", "count", "worksheetNames", "summary"],
+        optionalFields: ["fieldNames", "items"],
       },
     }),
     createContextToolDefinition({
@@ -300,11 +309,25 @@ function buildSelectedMarksMaterial(
   contextSummary?: SelectedMarkExplanationContextSummary,
 ): JsonObject {
   const count = contextSummary?.selectedMarks?.totalCount ?? 0;
+  const items = cloneSelectedMarkSummaries(
+    contextSummary?.selectedMarks?.items,
+  );
   const worksheetNames = cloneStringList(
     contextSummary?.selectedMarks?.worksheetNames ??
       contextSummary?.worksheetNames,
   );
-  const fieldNames: string[] = [];
+  const fieldNames = uniqueStringList(
+    items.flatMap(
+      (item) =>
+        item.columns ??
+        item.rows?.flatMap((row) =>
+          row.values
+            .map((cell) => cell.fieldName?.trim())
+            .filter((value): value is string => Boolean(value)),
+        ) ??
+        [],
+    ),
+  );
   const available = count > 0;
 
   return {
@@ -312,8 +335,13 @@ function buildSelectedMarksMaterial(
     count,
     worksheetNames,
     fieldNames,
+    items,
     summary: available
-      ? `Selected ${count} marks across ${worksheetNames.length} worksheet(s).`
+      ? buildSelectedMarksSummary({
+          count,
+          worksheetNames,
+          items,
+        })
       : "No selected marks are available.",
   };
 }
@@ -373,15 +401,32 @@ function normalizeSelectedMarksMaterial(input: {
 }): SelectedMarkExplanationResponseMaterial["selectedMarks"] {
   const summary = input.contextSummary?.selectedMarks;
   const output = isPlainObject(input.output) ? input.output : undefined;
+  const items = cloneSelectedMarkSummaries(
+    readSelectedMarkSummaryArray(output?.items) ?? summary?.items,
+  );
   const worksheetNames = cloneStringList(
     readStringArray(output?.worksheetNames) ??
       summary?.worksheetNames ??
       input.contextSummary?.worksheetNames,
   );
-  const fieldNames = cloneStringList(readStringArray(output?.fieldNames));
+  const fieldNames = uniqueStringList(
+    cloneStringList(readStringArray(output?.fieldNames)).length
+      ? cloneStringList(readStringArray(output?.fieldNames))
+      : items.flatMap(
+          (item) =>
+            item.columns ??
+            item.rows?.flatMap((row) =>
+              row.values
+                .map((cell) => cell.fieldName?.trim())
+                .filter((value): value is string => Boolean(value)),
+            ) ??
+            [],
+        ),
+  );
   const count =
     readNumber(output?.count) ??
     summary?.totalCount ??
+    items.length ??
     worksheetNames.length ??
     0;
   const available = readBoolean(output?.available) ?? count > 0;
@@ -391,10 +436,15 @@ function normalizeSelectedMarksMaterial(input: {
     count,
     worksheetNames,
     fieldNames,
+    items,
     summary:
       readString(output?.summary) ??
       (available
-        ? `Selected ${count} marks across ${worksheetNames.length} worksheet(s).`
+        ? buildSelectedMarksSummary({
+            count,
+            worksheetNames,
+            items,
+          })
         : "No selected marks are available."),
   };
 }
@@ -458,6 +508,147 @@ function normalizeNamedCountMaterial(input: {
 
 function cloneStringList(values?: readonly string[] | string[]): string[] {
   return values ? [...values] : [];
+}
+
+function cloneSelectedMarkSummaries(
+  values?: readonly SelectedMarkSummary[] | SelectedMarkSummary[],
+): SelectedMarkSummary[] {
+  return (values ?? []).map((item) => ({
+    worksheetName: item.worksheetName,
+    ...(item.columns?.length ? { columns: [...item.columns] } : {}),
+    ...(item.rows?.length
+      ? {
+          rows: item.rows.map(
+            (row): SelectedMarkRowSummary => ({
+              values: row.values.map(
+                (cell): SelectedMarkCellSummary => ({
+                  fieldName: cell.fieldName ?? null,
+                  raw: cell.raw,
+                  display: cell.display,
+                  isEmpty: cell.isEmpty,
+                }),
+              ),
+            }),
+          ),
+        }
+      : {}),
+    ...(item.rowCount !== undefined ? { rowCount: item.rowCount } : {}),
+    ...(item.status ? { status: item.status } : {}),
+  }));
+}
+
+function readSelectedMarkSummaryArray(
+  value: JsonValue | undefined,
+): SelectedMarkSummary[] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+
+  const items: SelectedMarkSummary[] = [];
+  for (const item of value) {
+    if (!isPlainObject(item) || typeof item.worksheetName !== "string") {
+      continue;
+    }
+
+    const rows = Array.isArray(item.rows)
+      ? item.rows
+          .map((row): SelectedMarkRowSummary | undefined =>
+            isPlainObject(row) && Array.isArray(row.values)
+              ? {
+                  values: row.values
+                    .map((cell): SelectedMarkCellSummary | undefined =>
+                      isPlainObject(cell)
+                        ? {
+                            fieldName:
+                              typeof cell.fieldName === "string"
+                                ? cell.fieldName
+                                : cell.fieldName === null
+                                  ? null
+                                  : undefined,
+                            raw: isCellValue(cell.raw) ? cell.raw : null,
+                            display:
+                              typeof cell.display === "string"
+                                ? cell.display
+                                : "",
+                            isEmpty: Boolean(cell.isEmpty),
+                          }
+                        : undefined,
+                    )
+                    .filter((cell): cell is SelectedMarkCellSummary =>
+                      Boolean(cell),
+                    ),
+                }
+              : undefined,
+          )
+          .filter((row): row is SelectedMarkRowSummary => Boolean(row))
+      : undefined;
+
+    items.push({
+      worksheetName: item.worksheetName,
+      ...(Array.isArray(item.columns)
+        ? {
+            columns: item.columns.filter(
+              (column): column is string => typeof column === "string",
+            ),
+          }
+        : {}),
+      ...(rows?.length ? { rows } : {}),
+      ...(typeof item.rowCount === "number" ? { rowCount: item.rowCount } : {}),
+      ...(item.status === "available" || item.status === "notAvailable"
+        ? { status: item.status }
+        : {}),
+    });
+  }
+
+  return items;
+}
+
+function isCellValue(
+  value: unknown,
+): value is string | number | boolean | null {
+  return (
+    value === null ||
+    typeof value === "string" ||
+    typeof value === "number" ||
+    typeof value === "boolean"
+  );
+}
+
+function uniqueStringList(values: readonly string[]): string[] {
+  return Array.from(new Set(values.filter((value) => value.trim().length > 0)));
+}
+
+function buildSelectedMarksSummary(input: {
+  count: number;
+  worksheetNames: string[];
+  items: SelectedMarkSummary[];
+}): string {
+  const worksheetCount = input.worksheetNames.length;
+  const rowPreview = input.items
+    .flatMap((item) =>
+      (item.rows ?? []).slice(0, 2).map((row) =>
+        row.values
+          .map((cell) => {
+            const fieldName = cell.fieldName?.trim();
+            const display = cell.display.trim();
+            if (!fieldName) {
+              return display || "(empty)";
+            }
+            return display ? `${fieldName}=${display}` : `${fieldName}=(empty)`;
+          })
+          .filter(Boolean)
+          .join(", "),
+      ),
+    )
+    .filter(Boolean)
+    .slice(0, 3);
+
+  return [
+    `Selected ${input.count} mark(s) across ${worksheetCount} worksheet(s).`,
+    rowPreview.length ? `Row preview: ${rowPreview.join(" | ")}` : undefined,
+  ]
+    .filter(Boolean)
+    .join(" ");
 }
 
 function readStringArray(value: JsonValue | undefined): string[] | undefined {

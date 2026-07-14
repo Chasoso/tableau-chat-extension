@@ -6,6 +6,7 @@ import type {
   TraceEvent,
   MetadataDiscoveryOrchestrationResponse,
 } from "../agent";
+import type { SelectedMarkSummary } from "./tableau";
 
 export type ResolveIntentContextSummary = {
   dashboardName?: string;
@@ -13,6 +14,7 @@ export type ResolveIntentContextSummary = {
   viewName?: string;
   hasSelectedMarks?: boolean;
   selectedMarkCount?: number;
+  selectedMarks?: SelectedMarkSummary[];
   worksheetNames?: string[];
   summaryDataPreview?: {
     available?: boolean;
