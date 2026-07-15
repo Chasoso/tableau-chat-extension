@@ -52,6 +52,7 @@ export function buildPrompt(
     "Do not ask the user to provide datasource ID when datasource names are already known from context.",
     "Do not confuse Tableau project names with datasource names.",
     "If datasource field evidence is present, list only those field names. Do not invent additional field names.",
+    "If selected marks include row values, use the row values as primary evidence and prefer fieldName/display pairs over worksheet-level summaries.",
     "If aggregated query results or ranking rows are present, answer with those results directly. Do not describe hypothetical SQL or execution steps.",
     options.agentPlanSummary ? `Agent plan: ${options.agentPlanSummary}` : "",
     options.investigationQuestion
@@ -71,7 +72,7 @@ export function buildPrompt(
         ? "MCP lookup failed before usable observations were collected. Rely only on dashboard context, clearly mention the limitation, and avoid treating the current filter scope as evidence that the entire datasource is empty."
         : "No MCP observations were collected. Rely only on dashboard context and clearly mention limitations.",
     compressedContext.selectedMarks.length
-      ? "Selected marks are present in the dashboard context. Use them as the primary evidence for selected-mark questions and do not claim their details are unavailable."
+      ? "Selected marks are present in the dashboard context. Use their row values as the primary evidence for selected-mark questions and do not claim their details are unavailable."
       : "",
     observationDigest ? `MCP evidence summary: ${observationDigest}` : "",
     "Respond in the same language as the user's question when practical.",

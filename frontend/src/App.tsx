@@ -224,6 +224,26 @@ function DashboardExtensionApp() {
               viewName: contextPreview.view.name ?? undefined,
               hasSelectedMarks: contextPreview.selectedMarks.totalCount > 0,
               selectedMarkCount: contextPreview.selectedMarks.totalCount,
+              selectedMarks: contextPreview.selectedMarks.items.map((item) => ({
+                worksheetName: item.worksheetName,
+                ...(item.columns?.length ? { columns: [...item.columns] } : {}),
+                ...(item.rowCount !== undefined
+                  ? { rowCount: item.rowCount }
+                  : {}),
+                ...(item.status ? { status: item.status } : {}),
+                ...(item.rows?.length
+                  ? {
+                      rows: item.rows.map((row) => ({
+                        values: row.values.map((value) => ({
+                          fieldName: value.fieldName ?? null,
+                          raw: value.raw,
+                          display: value.display,
+                          isEmpty: value.isEmpty,
+                        })),
+                      })),
+                    }
+                  : {}),
+              })),
               worksheetNames: contextPreview.selectedMarks.items.map(
                 (item) => item.worksheetName,
               ),

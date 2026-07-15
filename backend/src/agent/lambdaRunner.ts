@@ -24,6 +24,7 @@ import type {
 import type { IntentResolutionContextSummary } from "./intent";
 import type { JsonObject, TraceEvent } from "./types";
 import { createTraceError, createTraceEvent } from "./trace";
+import type { SelectedMarkSummary } from "../types/tableau";
 
 export type LambdaAgentRunnerOptions = {
   runSelectedMarkExplanation?: (
@@ -245,6 +246,7 @@ function buildContextSummaryFromLegacyContextPack(
       count: selectedMarks.length,
       worksheetNames: selectedMarks.map((mark) => mark.worksheetName),
       fieldNames: selectedMarks.flatMap((mark) => mark.columns ?? []),
+      items: selectedMarks.map((mark) => cloneSelectedMarkSummary(mark)),
       summary:
         selectedMarks.length > 0
           ? `Selected ${selectedMarks.length} mark(s).`
@@ -343,6 +345,7 @@ function toIntentResolutionContextSummary(
           previewCount: context.selectedMarks.count ?? 0,
           truncated: context.selectedMarks.truncated,
           worksheetNames: context.selectedMarks.worksheetNames,
+          items: context.selectedMarks.items,
         }
       : undefined,
     summaryDataPreview: context.summaryDataPreview
@@ -886,6 +889,29 @@ function mergeJsonObjects(
 
 function cloneJsonObject(value?: JsonObject): JsonObject | undefined {
   return value ? { ...value } : undefined;
+}
+
+function cloneSelectedMarkSummary(
+  item: SelectedMarkSummary,
+): SelectedMarkSummary {
+  return {
+    worksheetName: item.worksheetName,
+    ...(item.columns?.length ? { columns: [...item.columns] } : {}),
+    ...(item.rows?.length
+      ? {
+          rows: item.rows.map((row) => ({
+            values: row.values.map((cell) => ({
+              fieldName: cell.fieldName ?? null,
+              raw: cell.raw,
+              display: cell.display,
+              isEmpty: cell.isEmpty,
+            })),
+          })),
+        }
+      : {}),
+    ...(item.rowCount !== undefined ? { rowCount: item.rowCount } : {}),
+    ...(item.status ? { status: item.status } : {}),
+  };
 }
 
 function toTraceError(error: unknown): ReturnType<typeof createTraceError> {

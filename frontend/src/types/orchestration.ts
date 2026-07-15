@@ -1,9 +1,12 @@
+import type { SelectedMarkSummary } from "./tableau";
+
 export type ResolveIntentContextSummary = {
   dashboardName?: string;
   workbookName?: string;
   viewName?: string;
   hasSelectedMarks?: boolean;
   selectedMarkCount?: number;
+  selectedMarks?: SelectedMarkSummary[];
   worksheetNames?: string[];
   summaryDataPreview?: {
     available?: boolean;
@@ -142,6 +145,7 @@ export type SelectedMarkOrchestrationResponse = {
       previewCount?: number;
       truncated?: boolean;
       worksheetNames?: string[];
+      items?: SelectedMarkSummary[];
     };
   };
   responseMaterial?: Record<string, unknown>;
