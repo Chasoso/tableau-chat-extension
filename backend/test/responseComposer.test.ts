@@ -16,7 +16,34 @@ function createSelectedMarkExplanationMaterial(
       count: 3,
       worksheetNames: ["Sales Map"],
       fieldNames: ["Region", "Sales"],
-      summary: "Selected 3 marks across 1 worksheet.",
+      items: [
+        {
+          worksheetName: "Sales Map",
+          columns: ["Region", "Sales"],
+          rowCount: 3,
+          status: "available",
+          rows: [
+            {
+              values: [
+                {
+                  fieldName: "Region",
+                  raw: "West",
+                  display: "West",
+                  isEmpty: false,
+                },
+                {
+                  fieldName: "Sales",
+                  raw: 123,
+                  display: "123",
+                  isEmpty: false,
+                },
+              ],
+            },
+          ],
+        },
+      ],
+      summary:
+        "Selected 3 mark(s) across 1 worksheet(s). Row preview: Region=West, Sales=123",
     },
     summaryDataPreview: {
       available: true,
@@ -80,6 +107,8 @@ describe("ResponseComposer", () => {
     expect(result.intentId).toBe("selected_mark_explanation");
     expect(result.message).toContain("Structured orchestration is connected");
     expect(result.message).toContain("Selected marks: 3");
+    expect(result.message).toContain("Sales Map: 3 row(s)");
+    expect(result.message).toContain("row 1: Region=West, Sales=123");
     expect(result.message).toContain("Summary data preview: available");
     expect(result.message).toContain("Filters: 2");
     expect(result.message).toContain("Parameters: 1");
@@ -90,6 +119,15 @@ describe("ResponseComposer", () => {
         count: 3,
         worksheetNames: ["Sales Map"],
         fieldNames: ["Region", "Sales"],
+        summary:
+          "Selected 3 mark(s) across 1 worksheet(s). Row preview: Region=West, Sales=123",
+        items: [
+          expect.objectContaining({
+            worksheetName: "Sales Map",
+            rowCount: 3,
+            status: "available",
+          }),
+        ],
       },
       summaryDataPreview: {
         available: true,
@@ -152,7 +190,8 @@ describe("ResponseComposer", () => {
     expect(result.jsonSafe).toBe(true);
     expect(JSON.parse(JSON.stringify(result))).toEqual(result);
     expect(JSON.stringify(result)).not.toContain("secret-value");
-    expect(JSON.stringify(result)).not.toContain('"rows"');
+    expect(JSON.stringify(result)).toContain('"rows"');
+    expect(JSON.stringify(result)).toContain('"values"');
   });
 
   it("falls back safely when selected marks are unavailable", async () => {

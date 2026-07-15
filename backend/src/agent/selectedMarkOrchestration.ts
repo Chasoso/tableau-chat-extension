@@ -457,12 +457,16 @@ function buildOrchestrationContextPack(
 ): ContextPack {
   const selectedMarkCount = contextSummary?.selectedMarks?.totalCount ?? 0;
   const worksheetNames = contextSummary?.worksheetNames ?? [];
-  const selectedMarks = Array.from({ length: selectedMarkCount }, (_, index) =>
-    createSelectedMarkSummary(
-      worksheetNames[index % Math.max(1, worksheetNames.length)],
-      index,
-    ),
-  );
+  const selectedMarks = contextSummary?.selectedMarks?.items?.length
+    ? contextSummary.selectedMarks.items.map((item) =>
+        cloneSelectedMarkSummary(item),
+      )
+    : Array.from({ length: selectedMarkCount }, (_, index) =>
+        createSelectedMarkSummary(
+          worksheetNames[index % Math.max(1, worksheetNames.length)],
+          index,
+        ),
+      );
 
   return {
     agentRunId: input.agentRunId,
@@ -494,5 +498,28 @@ function createSelectedMarkSummary(
     columns: ["Selected marks"],
     rowCount: 1,
     status: "available",
+  };
+}
+
+function cloneSelectedMarkSummary(
+  item: SelectedMarkSummary,
+): SelectedMarkSummary {
+  return {
+    worksheetName: item.worksheetName,
+    ...(item.columns?.length ? { columns: [...item.columns] } : {}),
+    ...(item.rows?.length
+      ? {
+          rows: item.rows.map((row) => ({
+            values: row.values.map((cell) => ({
+              fieldName: cell.fieldName ?? null,
+              raw: cell.raw,
+              display: cell.display,
+              isEmpty: cell.isEmpty,
+            })),
+          })),
+        }
+      : {}),
+    ...(item.rowCount !== undefined ? { rowCount: item.rowCount } : {}),
+    ...(item.status ? { status: item.status } : {}),
   };
 }

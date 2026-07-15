@@ -3,6 +3,8 @@ import type {
   DatasourceFieldProfile,
   QueryDatasourceInsight,
   TableauAdditionalContext,
+  SelectedMarkCellSummary,
+  SelectedMarkRowSummary,
 } from "../types/tableau";
 
 const REDACTED_KEYS =
@@ -69,7 +71,8 @@ export function compressDashboardContext(
           selectedMark.columns?.length && selectedMark.columns.length > 0
             ? selectedMark.columns.join(", ")
             : "no columns";
-        return `${selectedMark.worksheetName}: ${status}, ${rowCount} selected mark(s), columns: ${columns}`;
+        const rows = renderSelectedMarkRows(selectedMark.rows);
+        return `${selectedMark.worksheetName}: ${status}, ${rowCount} selected mark(s), columns: ${columns}${rows ? `, rows: ${rows}` : ""}`;
       })
       .filter(unique),
     dataSources: [
@@ -204,6 +207,30 @@ function renderDatasourceFieldEvidence(
     const suffix = profile.fieldNames.length > 40 ? ", ..." : "";
     return `${profile.datasourceName} fields (${profile.fieldCount}): ${topFields}${suffix}`;
   });
+}
+
+function renderSelectedMarkRows(rows?: SelectedMarkRowSummary[]): string {
+  if (!rows?.length) {
+    return "";
+  }
+
+  const previewRows = rows.slice(0, 3).map((row) =>
+    row.values
+      .map((cell) => renderSelectedMarkCell(cell))
+      .filter(Boolean)
+      .join(", "),
+  );
+
+  return previewRows.join(" | ");
+}
+
+function renderSelectedMarkCell(cell: SelectedMarkCellSummary): string {
+  const label = cell.fieldName?.trim();
+  const value = cell.display.trim();
+  if (!label) {
+    return value || "(empty)";
+  }
+  return value ? `${label}=${value}` : `${label}=(empty)`;
 }
 
 function renderQueryInsights(insights: QueryDatasourceInsight[]): string[] {

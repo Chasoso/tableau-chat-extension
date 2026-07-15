@@ -470,6 +470,12 @@ function validateResolveIntentRequest(
     }
   }
 
+  if (request.contextSummary?.selectedMarks) {
+    if (!Array.isArray(request.contextSummary.selectedMarks)) {
+      return "contextSummary.selectedMarks must be an array.";
+    }
+  }
+
   if (request.targetContext && !isJsonObject(request.targetContext)) {
     return "targetContext must be an object.";
   }
@@ -529,6 +535,32 @@ function buildIntentResolutionInput(
             previewCount: request.contextSummary.selectedMarkCount ?? 0,
             truncated: false,
             worksheetNames: request.contextSummary.worksheetNames,
+            ...(request.contextSummary.selectedMarks?.length
+              ? {
+                  items: request.contextSummary.selectedMarks.map((item) => ({
+                    worksheetName: item.worksheetName,
+                    ...(item.columns?.length
+                      ? { columns: [...item.columns] }
+                      : {}),
+                    ...(item.rows?.length
+                      ? {
+                          rows: item.rows.map((row) => ({
+                            values: row.values.map((cell) => ({
+                              fieldName: cell.fieldName ?? null,
+                              raw: cell.raw,
+                              display: cell.display,
+                              isEmpty: cell.isEmpty,
+                            })),
+                          })),
+                        }
+                      : {}),
+                    ...(item.rowCount !== undefined
+                      ? { rowCount: item.rowCount }
+                      : {}),
+                    ...(item.status ? { status: item.status } : {}),
+                  })),
+                }
+              : {}),
           },
           ...(request.contextSummary.summaryDataPreview
             ? {
@@ -723,6 +755,30 @@ function buildSelectedMarkAgentRunContextSummary(
       count: contextSummary.selectedMarkCount ?? 0,
       worksheetNames: contextSummary.worksheetNames,
       fieldNames: [],
+      ...(contextSummary.selectedMarks?.length
+        ? {
+            items: contextSummary.selectedMarks.map((item) => ({
+              worksheetName: item.worksheetName,
+              ...(item.columns?.length ? { columns: [...item.columns] } : {}),
+              ...(item.rows?.length
+                ? {
+                    rows: item.rows.map((row) => ({
+                      values: row.values.map((cell) => ({
+                        fieldName: cell.fieldName ?? null,
+                        raw: cell.raw,
+                        display: cell.display,
+                        isEmpty: cell.isEmpty,
+                      })),
+                    })),
+                  }
+                : {}),
+              ...(item.rowCount !== undefined
+                ? { rowCount: item.rowCount }
+                : {}),
+              ...(item.status ? { status: item.status } : {}),
+            })),
+          }
+        : {}),
       summary:
         contextSummary.hasSelectedMarks &&
         (contextSummary.selectedMarkCount ?? 0) > 0
@@ -821,8 +877,26 @@ function buildSelectedMarkLegacyContextPack(
       parameters: (contextSummary?.parameters?.names ?? []).map((name) => ({
         name,
       })),
-      selectedMarks:
-        selectedMarkCount > 0
+      selectedMarks: contextSummary?.selectedMarks?.length
+        ? contextSummary.selectedMarks.map((item) => ({
+            worksheetName: item.worksheetName,
+            ...(item.columns?.length ? { columns: [...item.columns] } : {}),
+            ...(item.rows?.length
+              ? {
+                  rows: item.rows.map((row) => ({
+                    values: row.values.map((cell) => ({
+                      fieldName: cell.fieldName ?? null,
+                      raw: cell.raw,
+                      display: cell.display,
+                      isEmpty: cell.isEmpty,
+                    })),
+                  })),
+                }
+              : {}),
+            ...(item.rowCount !== undefined ? { rowCount: item.rowCount } : {}),
+            ...(item.status ? { status: item.status } : {}),
+          }))
+        : selectedMarkCount > 0
           ? [
               {
                 worksheetName: worksheetNames[0] ?? "Selected marks",

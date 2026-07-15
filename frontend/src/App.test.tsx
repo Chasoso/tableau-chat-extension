@@ -400,7 +400,18 @@ describe("App", () => {
               columnCount: 1,
               rowCount: 3,
               previewRowCount: 1,
-              rows: [],
+              rows: [
+                {
+                  values: [
+                    {
+                      fieldName: "Region",
+                      raw: "West",
+                      display: "West",
+                      isEmpty: false,
+                    },
+                  ],
+                },
+              ],
               status: "available",
               truncated: false,
             },
@@ -504,6 +515,23 @@ describe("App", () => {
         contextSummary: expect.objectContaining({
           hasSelectedMarks: true,
           selectedMarkCount: 3,
+          selectedMarks: [
+            expect.objectContaining({
+              worksheetName: "Sales Trend",
+              rows: [
+                expect.objectContaining({
+                  values: [
+                    expect.objectContaining({
+                      fieldName: "Region",
+                      raw: "West",
+                      display: "West",
+                      isEmpty: false,
+                    }),
+                  ],
+                }),
+              ],
+            }),
+          ],
           worksheetNames: ["Sales Trend"],
           dashboardName: "Executive Overview",
           workbookName: "Sales Workbook",

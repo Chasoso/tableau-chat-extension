@@ -24,8 +24,20 @@ export type ParameterSummary = {
 export type SelectedMarkSummary = {
   worksheetName: string;
   columns?: string[];
+  rows?: SelectedMarkRowSummary[];
   rowCount?: number;
   status?: "available" | "notAvailable";
+};
+
+export type SelectedMarkCellSummary = {
+  fieldName?: string | null;
+  raw: string | number | boolean | null;
+  display: string;
+  isEmpty: boolean;
+};
+
+export type SelectedMarkRowSummary = {
+  values: SelectedMarkCellSummary[];
 };
 
 export type DataSourceSummary = {
