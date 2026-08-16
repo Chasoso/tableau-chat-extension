@@ -59,6 +59,103 @@ describe("ChatService final answer resolution", () => {
     expect(getFinalAnswerLog()?.answerHasActualQueryResult).toBe(true);
   });
 
+  it("uses a simple ranking result even when the query returns fewer rows than the requested topN", async () => {
+    const request: ChatRequest = {
+      question: "2026年8月15日のView数ランキングを教えてください。",
+      dashboardContext: {
+        dashboardName: "Overview",
+        workbookName: "Analytics",
+        worksheets: [],
+        filters: [],
+        parameters: [],
+        dataSources: [{ name: "Tableau Public Per Day(2025/04-)" }],
+        capturedAt: "2026-08-15T00:00:00.000Z",
+      },
+    };
+    const service = createService({
+      request,
+      additionalContext: {
+        provider: "tableau-mcp",
+        questionInterpretation: {
+          originalQuestion: request.question,
+          investigationQuestion: request.question,
+          datasourceMentions: ["Tableau Public Per Day(2025/04-)"],
+          requestType: "general",
+          analysisIntent: "ranking",
+          metricIntent: "views",
+          requestedMetricText: "View数",
+          asksForRanking: true,
+          topN: 10,
+          rankingTarget: "post",
+          period: {
+            kind: "day",
+            label: "2026年8月15日",
+            startDate: "2026-08-15",
+            endDate: "2026-08-15",
+            raw: "2026年8月15日",
+            warnings: [],
+          },
+        },
+        queryInsights: [
+          {
+            datasourceName: "Tableau Public Per Day(2025/04-)",
+            datasourceLuid: "ds-123",
+            dimensionField: "Workbook Title",
+            metricField: "Daily View Count",
+            rowCount: 1,
+            actualRowCount: 1,
+            rows: [{ label: "Viz A", value: 373 }],
+            requestedMetricIntent: "views",
+            requestedMetricText: "View数",
+            rankingTarget: "post",
+            requestedTopN: 10,
+            requestedRanking: true,
+            requestedPeriodStart: "2026-08-15",
+            requestedPeriodEnd: "2026-08-15",
+            sourceQuestion: request.question,
+            metricMatchConfidence: 1,
+            dimensionMatchConfidence: 0.6,
+            fulfillsMetricRequest: true,
+            fulfillsRankingRequest: true,
+            fulfillsPeriodRequest: true,
+            queryDebug: {
+              derivedMetricsComputedInApp: [],
+            },
+          },
+        ],
+        mcpExecutionDebug: {
+          intent: "data_analysis",
+          intentConfidence: 0.95,
+          answerableFromDashboardContext: false,
+          needsMcp: true,
+          maxToolCalls: 8,
+          plannedTools: ["query-datasource"],
+          blockedTools: [],
+          executedTools: ["query-datasource"],
+          skippedTools: [],
+          toolCallCount: 1,
+          replanUsed: false,
+          timingMs: { planning: 0, execution: 0 },
+        },
+        mcpToolResults: [
+          { toolName: "query-datasource", status: "success", summary: "ok" },
+        ],
+      },
+    });
+
+    const response = await service.generateAnswer(request);
+
+    expect(response.answer).toContain(
+      "2026年8月15日のポストのビュー数ランキング",
+    );
+    expect(response.answer).toContain("| 1 | Viz A | 373 |");
+    expect(response.answer).toContain("取得できたランキング件数は 1 件です");
+    expect(getFinalAnswerLog()?.finalAnswerSource).toBe(
+      "query_insight_template",
+    );
+    expect(getFinalAnswerLog()?.queryInsightUsedForFinalAnswer).toBe(true);
+  });
+
   it("does not overwrite the answer with query insight when the metric mismatches", async () => {
     const request = buildRankingRequest();
     const service = createService({

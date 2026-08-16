@@ -387,7 +387,10 @@ export default function ChatPanel({
     const refreshedSelectedMarkContext =
       await maybeRefreshSelectedMarkContext();
     if (refreshedSelectedMarkContext) {
-      currentContext = refreshedSelectedMarkContext;
+      currentContext = mergeDashboardContextsForSend(
+        currentContext,
+        refreshedSelectedMarkContext,
+      );
     }
 
     if (currentContext.workbookName) {
@@ -422,6 +425,57 @@ export default function ChatPanel({
     } catch {
       return currentContext;
     }
+  }
+
+  function mergeDashboardContextsForSend(
+    currentContext: DashboardContext,
+    refreshedContext: DashboardContext,
+  ): DashboardContext {
+    const selectedMarks = mergeSelectedMarksForSend({
+      currentSelectedMarks: currentContext.selectedMarks,
+      refreshedSelectedMarks: refreshedContext.selectedMarks,
+    });
+
+    return {
+      ...currentContext,
+      ...refreshedContext,
+      selectedMarks,
+    };
+  }
+
+  function mergeSelectedMarksForSend(input: {
+    currentSelectedMarks?: DashboardContext["selectedMarks"];
+    refreshedSelectedMarks?: DashboardContext["selectedMarks"];
+  }): DashboardContext["selectedMarks"] {
+    const refreshedHasMeaningfulSelection = hasMeaningfulSelectedMarks(
+      input.refreshedSelectedMarks,
+    );
+    if (refreshedHasMeaningfulSelection) {
+      return input.refreshedSelectedMarks;
+    }
+
+    const currentHasMeaningfulSelection = hasMeaningfulSelectedMarks(
+      input.currentSelectedMarks,
+    );
+    if (currentHasMeaningfulSelection) {
+      return input.currentSelectedMarks;
+    }
+
+    return input.refreshedSelectedMarks ?? input.currentSelectedMarks;
+  }
+
+  function hasMeaningfulSelectedMarks(
+    selectedMarks?: DashboardContext["selectedMarks"],
+  ): boolean {
+    return Boolean(
+      selectedMarks?.some(
+        (selectedMark) =>
+          (selectedMark.status ?? "notAvailable") === "available" &&
+          ((selectedMark.rowCount ?? 0) > 0 ||
+            (selectedMark.rows?.length ?? 0) > 0 ||
+            (selectedMark.columns?.length ?? 0) > 0),
+      ),
+    );
   }
 
   async function maybeRefreshSelectedMarkContext(): Promise<DashboardContext | null> {

@@ -402,6 +402,16 @@ function buildTraceContextSummary(
           previewCount: contextSummary.selectedMarks.previewCount,
           truncated: contextSummary.selectedMarks.truncated,
           worksheetNames: contextSummary.selectedMarks.worksheetNames,
+          fieldNames: deriveSelectedMarkFieldNames(
+            contextSummary.selectedMarks.items,
+          ),
+          ...(contextSummary.selectedMarks.items?.length
+            ? {
+                items: contextSummary.selectedMarks.items.map((item) =>
+                  cloneSelectedMarkSummary(item),
+                ),
+              }
+            : {}),
         }
       : undefined,
     summaryDataPreview: contextSummary.summaryDataPreview
@@ -449,6 +459,30 @@ function serializeOrchestrationContextSummary(
     ...(traceSummary.filters ? { filters: traceSummary.filters } : {}),
     ...(traceSummary.parameters ? { parameters: traceSummary.parameters } : {}),
   };
+}
+
+function deriveSelectedMarkFieldNames(items?: SelectedMarkSummary[]): string[] {
+  const fieldNames = new Set<string>();
+
+  for (const item of items ?? []) {
+    for (const column of item.columns ?? []) {
+      const columnName = column.trim();
+      if (columnName) {
+        fieldNames.add(columnName);
+      }
+    }
+
+    for (const row of item.rows ?? []) {
+      for (const cell of row.values) {
+        const fieldName = cell.fieldName?.trim();
+        if (fieldName) {
+          fieldNames.add(fieldName);
+        }
+      }
+    }
+  }
+
+  return [...fieldNames];
 }
 
 function buildOrchestrationContextPack(

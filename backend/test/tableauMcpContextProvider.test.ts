@@ -558,6 +558,66 @@ describe("TableauMcpContextProvider extraction helpers", () => {
     );
   });
 
+  it("accepts a single meaningful ranking row even when the requested topN is larger", () => {
+    const interpretation = interpretQuestion({
+      question: "2026年8月15日のView数ランキングを教えてください。",
+      dashboardContext: {
+        ...baseInput.dashboardContext,
+        dataSources: [{ name: "Tableau Public Per Day(2025/04-)" }],
+      },
+    });
+
+    const insights = extractQueryDatasourceInsightsFromRawToolResults(
+      [
+        {
+          toolName: "query-datasource",
+          args: {
+            datasourceLuid: "datasource-luid",
+            query: {
+              fields: [
+                {
+                  fieldCaption: "Workbook Title",
+                  fieldAlias: "dimension_label",
+                },
+                {
+                  fieldCaption: "Daily View Count",
+                  fieldAlias: "aggregated_value",
+                  function: "SUM",
+                },
+              ],
+            },
+          },
+          result: {
+            data: [
+              {
+                dimension_label: "Viz A",
+                aggregated_value: 373,
+              },
+            ],
+          },
+        },
+      ],
+      [
+        {
+          type: "datasource",
+          name: "Tableau Public Per Day(2025/04-)",
+          id: "datasource-luid",
+          luid: "datasource-luid",
+        },
+      ],
+      interpretation,
+    );
+
+    expect(insights[0]).toEqual(
+      expect.objectContaining({
+        fulfillsRankingRequest: true,
+        rowCount: 1,
+        actualRowCount: 1,
+        rows: [expect.objectContaining({ label: "Viz A", value: 373 })],
+      }),
+    );
+  });
+
   it("does not build aggregate recovery selections for field inventory questions", () => {
     const selection = buildDataAnalysisQueryRecoverySelection({
       tools: [{ name: "query-datasource", inputSchema: { properties: {} } }],
