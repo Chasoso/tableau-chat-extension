@@ -35,6 +35,7 @@ import type {
 } from "../types/api";
 import type { ChatRequest, ContextRequest } from "../types/chat";
 import type { AuthenticatedUser } from "../types/auth";
+import type { SelectedMarkSummary } from "../types/tableau";
 import type {
   ResolveIntentRequest,
   ResolveIntentResponse,
@@ -754,7 +755,7 @@ function buildSelectedMarkAgentRunContextSummary(
       ),
       count: contextSummary.selectedMarkCount ?? 0,
       worksheetNames: contextSummary.worksheetNames,
-      fieldNames: [],
+      fieldNames: deriveSelectedMarkFieldNames(contextSummary.selectedMarks),
       ...(contextSummary.selectedMarks?.length
         ? {
             items: contextSummary.selectedMarks.map((item) => ({
@@ -812,6 +813,32 @@ function buildSelectedMarkAgentRunContextSummary(
         }
       : undefined,
   };
+}
+
+function deriveSelectedMarkFieldNames(
+  selectedMarks?: SelectedMarkSummary[],
+): string[] {
+  const fieldNames = new Set<string>();
+
+  for (const selectedMark of selectedMarks ?? []) {
+    for (const column of selectedMark.columns ?? []) {
+      const columnName = column.trim();
+      if (columnName) {
+        fieldNames.add(columnName);
+      }
+    }
+
+    for (const row of selectedMark.rows ?? []) {
+      for (const cell of row.values) {
+        const fieldName = cell.fieldName?.trim();
+        if (fieldName) {
+          fieldNames.add(fieldName);
+        }
+      }
+    }
+  }
+
+  return [...fieldNames];
 }
 
 function buildSelectedMarkLegacyIntent(
@@ -1003,6 +1030,31 @@ function buildOrchestrationContextSummary(
       previewCount: contextSummary.selectedMarkCount,
       truncated: false,
       worksheetNames: contextSummary.worksheetNames,
+      fieldNames: deriveSelectedMarkFieldNames(contextSummary.selectedMarks),
+      ...(contextSummary.selectedMarks?.length
+        ? {
+            items: contextSummary.selectedMarks.map((item) => ({
+              worksheetName: item.worksheetName,
+              ...(item.columns?.length ? { columns: [...item.columns] } : {}),
+              ...(item.rows?.length
+                ? {
+                    rows: item.rows.map((row) => ({
+                      values: row.values.map((cell) => ({
+                        fieldName: cell.fieldName ?? null,
+                        raw: cell.raw,
+                        display: cell.display,
+                        isEmpty: cell.isEmpty,
+                      })),
+                    })),
+                  }
+                : {}),
+              ...(item.rowCount !== undefined
+                ? { rowCount: item.rowCount }
+                : {}),
+              ...(item.status ? { status: item.status } : {}),
+            })),
+          }
+        : {}),
     },
     ...(contextSummary.summaryDataPreview
       ? {
