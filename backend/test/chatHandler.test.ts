@@ -205,6 +205,32 @@ describe("chatHandler", () => {
           dashboardName: "Executive Overview",
           workbookName: "Sales Workbook",
           viewName: "Executive Overview",
+          selectedMarks: [
+            {
+              worksheetName: "Sales Trend",
+              status: "available",
+              rowCount: 1,
+              columns: ["Region", "Sales"],
+              rows: [
+                {
+                  values: [
+                    {
+                      fieldName: "Region",
+                      raw: "West",
+                      display: "West",
+                      isEmpty: false,
+                    },
+                    {
+                      fieldName: "Sales",
+                      raw: 1200,
+                      display: "1200",
+                      isEmpty: false,
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
         },
         metadata: {
           sourceKind: "tableau-extension",
@@ -222,6 +248,21 @@ describe("chatHandler", () => {
         status?: string;
         message?: string;
         placeholderResponse?: string;
+        contextSummary?: {
+          selectedMarks?: {
+            items?: Array<{
+              worksheetName?: string;
+              rows?: Array<{
+                values?: Array<{
+                  fieldName?: string | null;
+                  raw?: string | number | boolean | null;
+                  display?: string;
+                  isEmpty?: boolean;
+                }>;
+              }>;
+            }>;
+          };
+        };
         planSelection?: {
           selectedPlan?: {
             id?: string;
@@ -259,6 +300,28 @@ describe("chatHandler", () => {
       execution: {
         status: "partial",
       },
+    });
+    expect(body.orchestration?.contextSummary?.selectedMarks?.items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          worksheetName: "Sales Trend",
+          rows: expect.arrayContaining([
+            expect.objectContaining({
+              values: expect.arrayContaining([
+                expect.objectContaining({
+                  fieldName: "Region",
+                  raw: "West",
+                  display: "West",
+                  isEmpty: false,
+                }),
+              ]),
+            }),
+          ]),
+        }),
+      ]),
+    );
+    expect(body.orchestration?.contextSummary?.selectedMarks).toMatchObject({
+      fieldNames: expect.arrayContaining(["Region", "Sales"]),
     });
     expect(body.orchestration?.placeholderResponse).toContain(
       "Structured orchestration",

@@ -46,6 +46,7 @@ import type {
   TraceEventSeverity,
   OrchestrationTraceEventType,
 } from "./types";
+import type { SelectedMarkSummary } from "../types/tableau";
 import { createTraceEvent } from "./trace";
 
 export type OrchestrationTraceStage =
@@ -71,6 +72,8 @@ export type OrchestrationTraceContextSummary = {
     truncated?: boolean;
     worksheetCount?: number;
     worksheetNames?: string[];
+    fieldNames?: string[];
+    items?: SelectedMarkSummary[];
   };
   summaryDataPreview?: {
     available?: boolean;

@@ -325,6 +325,109 @@ describe("ChatPanel", () => {
     );
   });
 
+  it("keeps the current selected-mark context when refresh returns an empty snapshot", async () => {
+    const user = userEvent.setup();
+
+    mocks.getDashboardContext.mockResolvedValue({
+      ...dashboardContext,
+      selectedMarks: [
+        {
+          worksheetName: "Favorites",
+          status: "notAvailable",
+        },
+      ],
+    });
+    mocks.createChatJob.mockResolvedValue({
+      jobId: "job-preserved-selected-marks",
+      status: "queued",
+      stage: "queued",
+      pollUrl: "/chat-jobs/job-preserved-selected-marks",
+      retryAfterMs: 1500,
+      ownerToken: "owner-token-preserved-selected-marks",
+    });
+    mocks.getChatJob.mockResolvedValue({
+      jobId: "job-preserved-selected-marks",
+      status: "completed",
+      stage: "completed",
+      progressMessages: [],
+      result: {
+        answer: "## Final answer\n\nOK.",
+        sessionId: "session-preserved-selected-marks",
+        messageId: "message-preserved-selected-marks",
+      },
+      createdAt: "2026-06-07T00:00:00.000Z",
+      updatedAt: "2026-06-07T00:00:01.000Z",
+      expiresAt: 1_999_999_999,
+      ownerType: "anonymous",
+    });
+
+    render(
+      <ChatPanel
+        dashboardContext={{
+          ...dashboardContext,
+          selectedMarks: [
+            {
+              worksheetName: "Favorites",
+              status: "available",
+              rowCount: 1,
+              columns: ["Favorite Count"],
+              rows: [
+                {
+                  values: [
+                    {
+                      fieldName: "Favorite Count",
+                      raw: 2,
+                      display: "2",
+                      isEmpty: false,
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+        }}
+        isAuthenticated
+      />,
+    );
+
+    await user.type(
+      screen.getByRole("textbox"),
+      "選択したマークについて、詳しく教えてください。",
+    );
+    await user.click(screen.getByRole("button", { name: "送信" }));
+
+    await flushEffects();
+    expect(mocks.getDashboardContext).toHaveBeenCalledTimes(1);
+    expect(mocks.createChatJob).toHaveBeenCalledWith(
+      expect.objectContaining({
+        dashboardContext: expect.objectContaining({
+          selectedMarks: expect.arrayContaining([
+            expect.objectContaining({
+              worksheetName: "Favorites",
+              status: "available",
+              rowCount: 1,
+              columns: ["Favorite Count"],
+              rows: expect.arrayContaining([
+                expect.objectContaining({
+                  values: expect.arrayContaining([
+                    expect.objectContaining({
+                      fieldName: "Favorite Count",
+                      raw: 2,
+                      display: "2",
+                      isEmpty: false,
+                    }),
+                  ]),
+                }),
+              ]),
+            }),
+          ]),
+        }),
+      }),
+      undefined,
+      undefined,
+    );
+  });
+
   it("shows an error and stops polling when the job fails", async () => {
     const user = userEvent.setup();
 
