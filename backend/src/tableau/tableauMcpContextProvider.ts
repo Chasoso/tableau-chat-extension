@@ -3869,7 +3869,7 @@ export function extractQueryDatasourceInsightsFromRawToolResults(
           ),
         );
     const fulfillsRankingRequest = rankingRequested
-      ? rows.length >= Math.min(questionInterpretation?.topN ?? 10, 10) &&
+      ? rows.length > 0 &&
         hasMeaningfulRowLabels &&
         (rankingTarget === "unknown" || dimensionMatchConfidence >= 0.8)
       : true;
